@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TocLink } from '@nuxt/content'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const [DefineTemplate, ReuseTemplate] = createReusableTemplate<{
 	tocTree: TocLink[]
@@ -8,6 +9,38 @@ const [DefineTemplate, ReuseTemplate] = createReusableTemplate<{
 const contentStore = useContentStore()
 const { toc } = storeToRefs(contentStore)
 const { activeHeadingId } = useToc(toc)
+
+const scrollPercent = ref(0)
+const radius = 18
+const circumference = 2 * Math.PI * radius
+const offset = computed(() => circumference * (1 - scrollPercent.value / 100))
+
+function updateScrollProgress() {
+	if (process.client) {
+		const scrollTop = window.scrollY || window.pageYOffset
+		const docHeight = document.documentElement.scrollHeight - window.innerHeight
+		scrollPercent.value = docHeight > 0 ? Math.min(100, Math.max(0, (scrollTop / docHeight) * 100)) : 0
+	}
+}
+
+function scrollToTop() {
+	if (process.client) {
+		window.scrollTo({ top: 0, behavior: 'smooth' })
+	}
+}
+
+onMounted(() => {
+	updateScrollProgress()
+	if (process.client) {
+		window.addEventListener('scroll', updateScrollProgress, { passive: true })
+	}
+})
+
+onBeforeUnmount(() => {
+	if (process.client) {
+		window.removeEventListener('scroll', updateScrollProgress)
+	}
+})
 
 function hasHeading(tocTree: TocLink, heading?: string): boolean {
 	return tocTree.id === heading || !!tocTree.children?.some(child => hasHeading(child, heading))
@@ -18,14 +51,31 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 <BlogWidget>
 	<template #title>
 		<span class="title">文章目录</span>
-		<!-- use <a> for anchor -->
-		<a href="#main-content" aria-label="返回开头">
-			<Icon name="ph:arrow-circle-up-bold" />
-		</a>
+		<div class="toc-actions">
+			<button class="progress-ring" type="button" aria-label="阅读进度" :title="`${Math.round(scrollPercent)}%`">
+				<svg viewBox="0 0 40 40" aria-hidden="true">
+					<circle class="ring-track" cx="20" cy="20" r="18" />
+					<circle
+						class="ring-progress"
+						cx="20"
+						cy="20"
+						r="18"
+						:stroke-dasharray="circumference"
+						:stroke-dashoffset="offset"
+						style="transition: stroke-dashoffset 0.2s ease"
+					/>
+				</svg>
+				<span class="progress-value">{{ Math.round(scrollPercent) }}%</span>
+			</button>
 
-		<a href="#twikoo" aria-label="评论区">
-			<Icon name="ph:chat-circle-text-bold" />
-		</a>
+			<button class="back-to-top" type="button" aria-label="返回开头" @click="scrollToTop">
+				<Icon name="ph:arrow-circle-up-bold" />
+			</button>
+
+			<a class="comment-btn" href="#twikoo" aria-label="评论区">
+				<Icon name="ph:chat-circle-text-bold" />
+			</a>
+		</div>
 	</template>
 
 	<!-- 放在顶层会导致 Transition 失效 -->
@@ -115,6 +165,103 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 
 .title {
 	flex-grow: 1;
+}
+
+.toc-actions {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 0.4rem;
+	margin-left: auto;
+}
+
+.toc-actions button,
+.toc-actions a {
+	position: relative;
+	border: 0;
+	background: transparent;
+	color: var(--c-text);
+	width: 2.2rem;
+	height: 2.2rem;
+	padding: 0;
+	border-radius: 999px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	outline: none;
+	box-shadow: inset 0 0 0 1px var(--c-border);
+	transition: all 0.2s;
+}
+
+.toc-actions button:hover,
+.toc-actions a:hover {
+	color: var(--c-primary);
+	box-shadow: inset 0 0 0 1px var(--c-primary);
+}
+
+.progress-ring {
+	position: relative;
+}
+
+.progress-ring svg {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	transform: rotate(-90deg);
+}
+
+.progress-value {
+	position: relative;
+	z-index: 1;
+	font-size: 0.65rem;
+	font-weight: 700;
+}
+
+.back-to-top,
+.comment-btn {
+	position: relative;
+}
+
+.back-to-top,
+.comment-btn {
+	position: relative;
+}
+
+.back-to-top svg,
+.comment-btn svg {
+	position: relative;
+	z-index: 1;
+}
+
+.ring-track,
+.ring-progress {
+	fill: none;
+	stroke-width: 3;
+}
+
+.ring-track {
+	stroke: var(--c-bg-3);
+}
+
+.ring-progress {
+	stroke: var(--c-primary);
+	stroke-linecap: round;
+	transition: stroke-dashoffset 0.2s ease;
+}
+
+.progress-ring svg {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	transform: rotate(-90deg);
+}
+
+.progress-ring > *:not(svg) {
+	position: relative;
+	z-index: 1;
 }
 
 .no-toc {

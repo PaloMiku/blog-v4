@@ -8,6 +8,7 @@ export interface ArticleProps extends ArticleSchema {
 	path: string
 
 	meta?: {
+		subtitle?: string
 		coverDim?: boolean
 		coverFilter?: string
 		hideInfo?: boolean

@@ -77,7 +77,7 @@ function getInspectStyle(src: string): CSSProperties {
 			/>
 		</div>
 		<div class="desc-content">
-			<div class="date">
+			<div v-if="date" class="date">
 				{{ Temporal.PlainDate.from(date).toLocaleString() }}
 			</div>
 

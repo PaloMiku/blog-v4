@@ -2,16 +2,16 @@
 <BlogWidget
 	card
 	dim
-	title="博客/技术社区"
-	bg-img="https://p.qlogo.cn/gh/169994096/169994096/100/"
+	title="闲聊/技术社区"
+	bg-img="https://blog-files.101045700.xyz/backgrounds/2b8b5c190c2176b1bc7732f957ce8af8.avif"
 	bg-right
 >
 	<div class="title text-creative">
-		纸网接入点
+		次元技术宅
 	</div>
 
 	<Tip copy icon :tip-options="{ placement: 'left' }">
-		<Icon name="ri:qq-fill" />169994096
+		<Icon name="ri:qq-fill" />767876073
 	</Tip>
 </BlogWidget>
 </template>

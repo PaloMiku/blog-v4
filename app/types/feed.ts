@@ -18,18 +18,20 @@ export interface FeedEntry {
 	/** 博客技术架构 */
 	archs?: Arch[]
 	/** 订阅日期 */
-	date: string
+	date?: string
 	/** 博主备注 */
 	comment?: string
 	/** 错误信息 */
 	error?: string
 }
 
+export type FeedGroupEntry = FeedEntry | FeedGroup
+
 export interface FeedGroup {
 	/** 分组名 */
 	name: string
 	/** 描述 */
 	desc?: string
-	/** 友链列表 */
-	entries: FeedEntry[]
+	/** 友链列表，支持直接子条目或嵌套子分组 */
+	entries: FeedGroupEntry[]
 }

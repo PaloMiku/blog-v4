@@ -1,0 +1,82 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PNPM_VERSION: ''
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+
+      - name: Read pnpm version from package.json
+        id: pnpm-version
+        run: |
+          PNPM_VERSION=$(node -p "const pj = require('./package.json'); (pj.packageManager || '').split('@')[1] || ''")
+          if [ -z "$PNPM_VERSION" ]; then
+            echo "No pnpm version found in package.json.packageManager, fallback to latest"
+            PNPM_VERSION=latest
+          fi
+          echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
+
+      - name: Install dependencies with pnpm
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Cache .nuxt directory
+        uses: actions/cache@v4
+        with:
+          path: .nuxt
+          key: ${{ runner.os }}-nuxt-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-nuxt-
+
+      - name: Build static files
+        run: pnpm generate --no-clear
+
+      - name: Deploy to GitHub Public
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: main
+          folder: dist
+          repository-name: PaloMiku/blog-public
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
+          commit-message: Deploy to GitHub Public Repository

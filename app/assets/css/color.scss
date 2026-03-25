@@ -11,8 +11,8 @@
 	--c-border: hsl(var(--hue-theme) 10% 20%);
 	--c-bg-a50: hsl(var(--hue-theme) 10% 10% / 50%);
 	--c-bg-a80: hsl(var(--hue-theme) 10% 10% / 80%);
-	--c-primary: hsl(var(--hue-theme) 100% 70%);
-	--c-primary-soft: hsl(var(--hue-theme) 100% 60% / 20%);
+	--c-primary: hsl(var(--c-primary-h, var(--hue-theme)) var(--c-primary-s, 100%) calc(var(--c-primary-l, 70%) + 15%));
+	--c-primary-soft: hsl(var(--c-primary-h, var(--hue-theme)) var(--c-primary-s, 100%) 60% / 20%);
 	--ld-bg-blur: var(--c-bg-a80);
 	--ld-bg-card: var(--c-bg-3);
 	--ld-bg-active: var(--c-primary-soft);
@@ -21,7 +21,11 @@
 
 :root,
 .light {
-	--hue-theme: 220deg;
+	--hue-theme: 0deg;
+	--c-primary-base: #F38E8C;
+	--c-primary-h: 1deg;
+	--c-primary-s: 81%;
+	--c-primary-l: 76%;
 	--c-text: hsl(var(--hue-theme) 0% 0%);
 	--c-text-1: hsl(var(--hue-theme) 0% 20%);
 	--c-text-2: hsl(var(--hue-theme) 0% 40%);
@@ -34,8 +38,8 @@
 	--c-border: hsl(var(--hue-theme) 10% 91%);
 	--c-bg-a50: hsl(var(--hue-theme) 20% 98% / 50%);
 	--c-bg-a80: hsl(var(--hue-theme) 20% 98% / 80%);
-	--c-primary: hsl(var(--hue-theme) 100% 55%);
-	--c-primary-soft: hsl(var(--hue-theme) 100% 60% / 15%);
+	--c-primary: hsl(var(--c-primary-h, var(--hue-theme)) var(--c-primary-s, 100%) var(--c-primary-l, 55%));
+	--c-primary-soft: hsl(var(--c-primary-h, var(--hue-theme)) var(--c-primary-s, 100%) var(--c-primary-l, 60%) / 15%);
 	--c-accent: hsl(180deg 70% 60%);
 	--ld-bg-blur: var(--c-bg-1);
 	--ld-bg-card: var(--c-bg);

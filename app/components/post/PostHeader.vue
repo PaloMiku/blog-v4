@@ -20,106 +20,82 @@ const { copy, copied } = useCopy(shareText)
 <template>
 <div class="post-header" :class="{ 'has-cover': image }">
 	<Pic v-if="image" class="post-cover" :src="image" :alt="title" :filter="coverFilter" />
-	<div class="post-nav">
-		<div class="operations">
-			<ZButton
-				:icon="copied ? 'ph:check-bold' : 'ph:share-bold'"
-				@click="copy()"
-			>
-				文字分享
-			</ZButton>
-		</div>
 
-		<div v-if="!meta?.hideInfo" class="post-info">
-			<UtilDate
-				v-if="date"
-				v-tip
-				:tip-transform="d => `创建于${d}`"
-				:date
-				icon="ph:pencil-simple-line-bold"
-			/>
+	<div class="post-header-content">
+		<h1 class="post-title" :class="getPostTypeClassName(type)">
+			{{ title }}
+		</h1>
 
-			<UtilDate
-				v-if="updated && isTimeDiffSignificant(date, updated, 1)"
-				v-tip
-				:tip-transform="d => `修改于${d}`"
-				:date="updated"
-				icon="ph:clock-counter-clockwise-bold"
-			/>
+		<p v-if="meta?.subtitle" class="post-subtitle">
+			{{ meta.subtitle }}
+		</p>
 
-			<span v-if="categoryLabel">
-				<Icon :name="categoryIcon" />
-				{{ categoryLabel }}
-			</span>
+		<div class="post-nav">
+			<div class="post-info">
+				<UtilDate
+					v-if="date"
+					v-tip
+					:tip-transform="d => `创建于${d}`"
+					:date
+					icon="ph:pencil-simple-line-bold"
+				/>
 
-			<span>
-				<Icon name="ph:paragraph-bold" />
-				{{ formatNumber(readingTime?.words) }} 字
-			</span>
+				<UtilDate
+					v-if="updated && isTimeDiffSignificant(date, updated, 1)"
+					v-tip
+					:tip-transform="d => `修改于${d}`"
+					:date="updated"
+					icon="ph:clock-counter-clockwise-bold"
+				/>
+
+				<span v-if="categoryLabel">
+					<Icon :name="categoryIcon" />
+					{{ categoryLabel }}
+				</span>
+
+				<span>
+					<Icon name="ph:paragraph-bold" />
+					{{ formatNumber(readingTime?.words) }} 字
+				</span>
+			</div>
+
+			<div class="operations">
+				<ZButton
+					:icon="copied ? 'ph:check-bold' : 'ph:share-bold'"
+					@click="copy()"
+				>
+					文字分享
+				</ZButton>
+			</div>
 		</div>
 	</div>
-
-	<h1 class="post-title" :class="getPostTypeClassName(type)">
-		{{ title }}
-	</h1>
 </div>
 </template>
 
 <style lang="scss" scoped>
 .post-header {
-	contain: paint; // overflow hidden + position relative
-	display: flex;
-	flex-direction: column;
-	justify-content: space-between;
-	gap: 1rem;
 	margin: 0.5rem;
 	border-radius: 1rem;
 	background-color: var(--c-bg-2);
 	color: var(--c-text);
+	overflow: hidden;
+	box-shadow: var(--shadow-elevation-2);
+	transition: transform 0.2s ease;
 
 	@media (max-width: $breakpoint-mobile) {
 		margin: 0;
 		border-radius: 0;
 	}
 
-	&:hover .operations,
-	&:focus-within .operations {
-		opacity: 1;
+	&:hover {
+		transform: translateY(-2px);
 	}
-
-	&.has-cover {
-		min-height: 16rem;
-		max-height: 20rem;
-		color: white;
-		transition: font-size 0.2s;
-
-		.post-info {
-			filter: drop-shadow(0 1px 2px #000);
-		}
-
-		.post-title {
-			background-image: linear-gradient(transparent, #0003, #0005);
-			text-shadow: var(--text-shadow-black);
-
-			&.text-story {
-				text-align: center;
-			}
-		}
-	}
-}
-
-.operations {
-	position: absolute;
-	opacity: 0;
-	inset-inline-end: 1em;
-	color: var(--c-text-1);
-	transition: opacity 0.2s;
-	z-index: 1;
 }
 
 .post-cover {
-	position: absolute;
-	inset: 0;
+	width: 100%;
+	height: auto;
+	aspect-ratio: 16/9;
 
 	> :deep(img) {
 		width: 100%;
@@ -128,22 +104,55 @@ const { copy, copied } = useCopy(shareText)
 	}
 }
 
+.post-header-content {
+	padding: 1rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
 .post-title {
-	padding: 0.8em 1rem;
-	font-size: 1.6em;
-	line-height: 1.2;
-	z-index: 1;
+	margin: 0;
+	font-size: 1.75rem;
+	line-height: 1.3;
+	font-weight: 700;
+	color: var(--c-text);
+}
+
+.post-subtitle {
+	margin: 0;
+	font-size: 1rem;
+	line-height: 1.4;
+	color: var(--c-text-2);
+	max-width: 100%;
 }
 
 .post-nav {
-	padding: 0.8em 1rem;
-	font-size: 0.8em;
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	gap: 0.75rem;
+	font-size: 0.85rem;
+	color: var(--c-text-1);
+}
 
-	.post-info {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5em 1.2em;
-		column-gap: clamp(1em, 3%, 1.5em);
-	}
+.operations {
+	flex-shrink: 0;
+	opacity: 1;
+}
+
+.post-info {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 1rem;
+	align-items: center;
+}
+
+.post-info span,
+.post-info :deep(.icon) {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
 }
 </style>

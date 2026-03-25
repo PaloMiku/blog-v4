@@ -10,6 +10,7 @@ const articleTypes = Object.keys(blogConfig.article.types) as any
 
 export interface ArticleSchema {
 	title?: string
+	subtitle?: string
 	description?: string
 	date?: string
 	updated?: string
@@ -39,6 +40,7 @@ const articleSchema = z.object({
 	type: z.enum(articleTypes).optional().default(articleTypes[0]),
 
 	image: z.string().optional(),
+	subtitle: z.string().optional(),
 	recommend: z.number().optional(),
 	references: z.array(z.object({
 		title: z.string().optional(),

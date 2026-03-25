@@ -1,26 +1,27 @@
 import type { FeedEntry } from './app/types/feed'
 
 const basicConfig = {
-	title: '纸鹿摸鱼处',
-	subtitle: '纸鹿至麓不知路，支炉制露不止漉',
+	title: 'Mikuの极光星',
+	subtitle: '心有多宽，世界就有多远',
 	// 长 description 利好于 SEO
-	description: '纸鹿本鹿的个人博客，分享技术与生活。“折腾不止，摸鱼生活——摸门🙏🏻”。纸鹿是一名开源爱好者，结识了许多志同道合的朋友。这个博客记录了他在生活和技术学习中的点滴经历，充满启发与思考。网站界面简洁美观，内容丰富实用，人气互动活跃，涵盖了编程、生活、学习等多个领域，为读者提供了卓越的阅读体验。',
+	description: 'Mikuの鬆的个人博客，分享技术与生活。这个博客记录了他在生活和技术学习中的点滴经历，充满启发与思考。网站界面简洁美观，内容丰富实用，人气互动活跃，涵盖了编程、生活、学习等多个领域，为读者提供了卓越的阅读体验。',
 	author: {
-		name: '纸鹿本鹿',
-		avatar: 'https://www.zhilu.site/api/avatar.png',
-		email: 'hi@zhilu.cyou',
-		homepage: 'https://www.zhilu.site/',
+		name: 'Mikuの鬆',
+		avatar: 'https://cn.cravatar.com/avatar/1012bf78fb01d5b964c3a9a0f515911a.png',
+		email: 'admin@sotkg.com',
+		homepage: 'https://blog.sotkg.com/',
 	},
 	copyright: {
 		abbr: 'CC BY-NC-SA 4.0',
 		name: '署名-非商业性使用-相同方式共享 4.0 国际',
 		url: 'https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans',
 	},
-	favicon: 'https://www.zhilu.site/api/icon.png',
+	favicon: 'https://cn.cravatar.com/avatar/1012bf78fb01d5b964c3a9a0f515911a.png',
 	language: 'zh-CN',
-	timeEstablished: '2019-07-19',
+	qqGroup: '767876073',
+	timeEstablished: '2022-09-01',
 	timeZone: 'Asia/Shanghai',
-	url: 'https://blog.zhilu.site/',
+	url: 'https://blog.sotkg.com/',
 	defaultCategory: '未分类',
 }
 
@@ -33,6 +34,15 @@ const blogConfig = {
 	article: {
 		categories: {
 			[basicConfig.defaultCategory]: { icon: 'ph:folder-dotted-bold' },
+			技术探索: { icon: 'ph:lightbulb-bold', color: '#fa3' },
+			联邦宇宙: { icon: 'ph:planet-bold', color: '#a6f' },
+			旮瘩给木: { icon: 'ph:game-controller-bold', color: '#f6a' },
+			站点魔改: { icon: 'ph:wrench-bold', color: '#3fa' },
+			动漫番剧: { icon: 'ph:film-strip-bold', color: '#f5a' },
+			日志记录: { icon: 'ph:notebook-bold', color: '#7af' },
+			日常随笔: { icon: 'ph:pen-bold', color: '#af7' },
+			经验分享: { icon: 'ph:mouse-bold', color: '#3af' },
+			代码: { icon: 'ph:code-bold', color: '#77f' },
 			/** 实践可复用操作经验：工具/系统/部署/排障 */
 			技术: { icon: 'ph:mouse-bold', color: '#33aaff' },
 			/** 编程：代码实现/工程实践/开发方法 */
@@ -64,6 +74,11 @@ const blogConfig = {
 		robotsNotIndex: ['/preview', '/previews/*'],
 	},
 
+	excerpt: {
+		label: '智能摘要',
+		badge: 'Kimi·K2.5',
+	},
+
 	/** 博客 Atom 订阅源 */
 	feed: {
 		/** 订阅源最大文章数量 */
@@ -75,11 +90,11 @@ const blogConfig = {
 	/** 向 <head> 中添加脚本 */
 	scripts: [
 		// 自己部署的 Umami 统计服务
-		{ 'src': 'https://zhi.zhilu.site/zhi.js', 'data-website-id': 'a1997c81-a42b-46f6-8d1d-8fbd67a8ef41', 'defer': true },
-		// 自己网站的 Cloudflare Insights 统计服务
-		{ 'src': 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': '{"token": "97a4fe32ed8240ac8284e9bffaf03962"}', 'defer': true },
+		{ 'src': 'https://umami.sotkg.com/script.js', 'data-website-id': '372ccc48-32bf-434d-a1a2-9879fe82ca32', 'defer': true },
+		// Cloudflare Insights 统计服务
+		{ 'src': 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': '{"token": "b5c89be9025a4b1ba8750f8fd8850904"}', 'defer': true },
 		// Twikoo 评论系统
-		{ src: 'https://lib.baomitu.com/twikoo/1.6.44/twikoo.min.js', defer: true },
+		{ src: 'https://lib.baomitu.com/twikoo/1.7.4/twikoo.min.js', defer: true },
 	],
 
 	/** 自己部署的 Twikoo 服务 */

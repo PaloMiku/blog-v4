@@ -412,8 +412,6 @@ GitHub链接能自动识别头像 :badge[KazariEX]{link="https://github.com/Kaza
 ```
 ::
 
-鼠标悬浮时的动画 Emoji `📄🦌🙌🐟🏖️` 对应“纸鹿摸鱼处”的汉字，在 `app.config.ts` 中配置，字体由 [阿里妈妈方圆体](https://www.iconfont.cn/fonts/detail?cnid=pOvFIr086ADR) 分割而来。
-
 ```sh wrap
 # iconfont 网页版生成的字体子集在 Chrome 124 的版本无法解析，需要借助 fonttools 工具手动生成子集
 pip install fonttools brotli
@@ -816,39 +814,135 @@ footer: 可选的落款
 ```
 ::
 
-### Tab
+### ProjectGroup
+
+> 用于展示项目卡片列表，支持 Iconify 图标名和 URL 图片，点击可跳转到外部链接。支持响应式布局。
 
 ::tab{:tabs='["组件","语法"]'}
 #tab1
-  ::tab{:tabs='["一个简单的", "Tab"]'}
-  #tab1
-  ```md
-  # 一个简单的 Tab
-  ```
-  #tab2
-  ```md
-  # Tab
-  ```
-  ::
+::project-group
+---
+title: "开发工具"
+items:
+  - title: "VS Code"
+    description: "IDE"
+    icon: "devicon:vscode"
+    link: "https://code.visualstudio.com/"
+  - title: "PyCharm"
+    description: "IDE"
+    icon: "devicon:pycharm"
+    link: "https://www.jetbrains.com/pycharm/"
+  - title: "WebStorm"
+    description: "IDE"
+    icon: "devicon:webstorm"
+    link: "https://www.jetbrains.com/webstorm/"
+---
+::
 
-  ::tab
-  ---
-  tabs: ["当当当", "高级交互！", "就是藏得有点深"]
-  center: true
-  active: 2 # 默认显示第二个选项卡，可选
-  ---
-  #tab1
-  这个组件设置了居中（自动调整而不是占满宽度）和默认显示第二个选项卡。
-  #tab2
-  ```md
-  是这样。
-  ```
-  #tab3
-  你找到我了吗？
-  ::
+::project-group
+---
+title: "框架"
+items:
+  - title: "Vue"
+    description: "渐进式 JavaScript 框架"
+    icon: "devicon:vuejs"
+    link: "https://vuejs.org/"
+  - title: "Nuxt"
+    description: "Vue 全栈框架"
+    icon: "devicon:nuxtjs"
+    link: "https://nuxt.com/"
+  - title: "React"
+    description: "用于构建用户界面的库"
+    icon: "devicon:react"
+    link: "https://react.dev/"
+---
+::
 
 #tab2
 ````mdc wrap expand
+::project-group
+---
+title: "开发工具"
+items:
+  - title: "VS Code"
+    description: "IDE"
+    icon: "devicon:vscode"
+    link: "https://code.visualstudio.com/"
+  - title: "PyCharm"
+    description: "IDE"
+    icon: "devicon:pycharm"
+    link: "https://www.jetbrains.com/pycharm/"
+  - title: "WebStorm"
+    description: "IDE"
+    icon: "devicon:webstorm"
+    link: "https://www.jetbrains.com/webstorm/"
+---
+::
+
+::project-group
+---
+title: "框架"
+items:
+  - title: "Vue"
+    description: "渐进式 JavaScript 框架"
+    icon: "devicon:vuejs"
+    link: "https://vuejs.org/"
+  - title: "Nuxt"
+    description: "Vue 全栈框架"
+    icon: "devicon:nuxtjs"
+    link: "https://nuxt.com/"
+  - title: "React"
+    description: "用于构建用户界面的库"
+    icon: "devicon:react"
+    link: "https://react.dev/"
+---
+::
+````
+::
+
+### SeriesGroup
+
+> 展示单一系列的整合卡片组件，用于展示一个完整的系列。支持多张封面图的展开显示，卡片上方为图片区域，下方为系列信息。
+
+::tab{:tabs='["组件","语法"]'}
+#tab1
+::series-group
+---
+title: "苍之彼方的四重奏 系列"
+description: "《苍之彼方的四重奏》，《苍之彼方的四重奏 Extra 1》，《苍之彼方的四重奏 Extra 2》"
+cover:
+  - "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/1044620/header_schinese.jpg"
+  - "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/1340130/header_schinese.jpg"
+  - "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2206340/header_schinese.jpg"
+count: 3
+link: "/games/galgames/aokana"
+---
+::
+
+#tab2
+````mdc wrap expand
+::series-group
+---
+title: "苍之彼方的四重奏 系列"
+description: "Key 社经典青春恋爱游戏"
+cover:
+  - "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/1044620/header_schinese.jpg"
+  - "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/1340130/header_schinese.jpg"
+  - "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2206340/header_schinese.jpg"
+count: 3
+link: "/games/galgames/aokana"
+---
+::
+````
+::
+
+### Tab
+
+> Tab 组件支持两种样式：默认的标签栏样式和下拉框样式。
+
+::tab{:tabs='["组件","语法"]'}
+#tab1
+
 ::tab{:tabs='["一个简单的", "Tab"]'}
 #tab1
 ```md
@@ -874,6 +968,91 @@ active: 2 # 默认显示第二个选项卡，可选
 ```
 #tab3
 你找到我了吗？
+::
+
+::tab
+---
+tabs: ["HTML", "CSS", "JavaScript"]
+border: true
+---
+#tab1
+HTML 是网页的基础标记语言，定义了网页的结构。
+#tab2
+CSS 用于定义网页的样式和布局，使网页美观。
+#tab3
+JavaScript 是一种编程语言，为网页增加交互功能。
+::
+
+::tab
+---
+tabs: ["React", "Vue", "Angular"]
+combobox: true
+border: true
+---
+#tab1
+React 是一个由 Facebook 开发的 JavaScript 库，用于构建用户界面。
+#tab2
+Vue 是一个渐进式 JavaScript 框架，易于上手且功能强大。
+#tab3
+Angular 是一个由 Google 开发的完整前端框架，适合大型应用。
+::
+
+#tab2
+````mdc wrap expand
+#### 标签栏样式（默认）
+
+::tab{:tabs='["一个简单的", "Tab"]'}
+#tab1
+```md
+# 一个简单的 Tab
+```
+#tab2
+```md
+# Tab
+```
+::
+
+::tab
+---
+tabs: ["当当当", "高级交互！", "就是藏得有点深"]
+center: true
+active: 2 # 默认显示第二个选项卡，可选
+---
+#tab1
+这个组件设置了居中（自动调整而不是占满宽度）和默认显示第二个选项卡。
+#tab2
+```md
+是这样。
+```
+#tab3
+你找到我了吗？
+::
+
+::tab
+---
+tabs: ["HTML", "CSS", "JavaScript"]
+border: true
+---
+#tab1
+HTML 是网页的基础标记语言，定义了网页的结构。
+#tab2
+CSS 用于定义网页的样式和布局，使网页美观。
+#tab3
+JavaScript 是一种编程语言，为网页增加交互功能。
+::
+
+::tab
+---
+tabs: ["React", "Vue", "Angular"]
+combobox: true
+border: true
+---
+#tab1
+React 是一个由 Facebook 开发的 JavaScript 库，用于构建用户界面。
+#tab2
+Vue 是一个渐进式 JavaScript 框架，易于上手且功能强大。
+#tab3
+Angular 是一个由 Google 开发的完整前端框架，适合大型应用。
 ::
 ````
 ::

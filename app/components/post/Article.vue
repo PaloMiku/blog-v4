@@ -96,10 +96,13 @@ const categoryIcon = computed(() => getCategoryIcon(categoryLabel.value))
 .article-description {
 	font-size: 0.9em;
 	color: var(--c-text-2);
-}
-
-.article-category {
-	color: var(--cg-color);
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 4; /* 最多展示 4 行 */
+	line-clamp: 4;
+	text-overflow: ellipsis;
+	word-break: break-word;
 }
 
 .article-cover {
