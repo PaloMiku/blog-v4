@@ -17,11 +17,6 @@ recommend: 3
 
 那既然咱要玩这个游戏了，我也不打算啃英文，那肯定要去汉化它才能正常玩。
 
-::game-card
----
-appid: 1305300
----
-::
 
 B 站的一位 UP 主制作了汉化补丁，它是基于 BepInEx 和 Reipatcher 的。
 

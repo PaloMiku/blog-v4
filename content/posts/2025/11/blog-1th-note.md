@@ -17,7 +17,7 @@ image: https://imgheybox1.max-c.com/bbs/2025/09/28/2cf811cadb2502ec968ef966ee366
 
 不过虽然是上大学以后博客有了正式的起色，但没有过往那堆博客选择和部署经历，也不会让我有现在的经验。
 
-::music-player
+::music
 ---
 music:
   url: 'https://music.163.com/song/22706984'

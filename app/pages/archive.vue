@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ArticleProps } from '~/types/article'
-import { mapValues, sumBy } from 'es-toolkit'
+import { sumBy } from 'es-toolkit'
 import { groupBy } from 'es-toolkit/array'
 
 const appConfig = useAppConfig()
@@ -21,18 +21,78 @@ const { data: listRaw } = await useAsyncData('index_posts', () => useArticleInde
 const { listSorted, isAscending, sortOrder } = useArticleSort(listRaw)
 const { category, categories, listCategorized } = useCategory(listSorted)
 
+const seasonOrder = ['spring', 'summer', 'autumn', 'winter'] as const
+type Season = (typeof seasonOrder)[number]
+
+const seasonLabels: Record<Season, string> = {
+	spring: '春季',
+	summer: '夏季',
+	autumn: '秋季',
+	winter: '冬季',
+}
+
+function monthToSeason(month: number): Season {
+	if (month >= 3 && month <= 5)
+		return 'spring'
+	if (month >= 6 && month <= 8)
+		return 'summer'
+	if (month >= 9 && month <= 11)
+		return 'autumn'
+	return 'winter'
+}
+
+function getArticleSeason(article: ArticleProps): Season {
+	try {
+		const month = toZonedTemporal(article[sortOrder.value] as string).month
+		return monthToSeason(month)
+	}
+	catch {
+		return 'spring'
+	}
+}
+
+interface SeasonGroupItem {
+	season: Season
+	label: string
+	articles: ArticleProps[]
+}
+
 const listGrouped = computed(() => {
-	const groupList = Object.entries(groupBy(listCategorized.value, getArticleYear))
-	return isAscending.value ? groupList : groupList.reverse()
+	const yearGroupMap = groupBy(listCategorized.value, getArticleYear)
+	const yearEntries = Object.entries(yearGroupMap)
+	const sortedYearEntries = isAscending.value ? yearEntries : yearEntries.reverse()
+
+	return sortedYearEntries.map(([year, articles]) => {
+		const seasonGroup = groupBy(articles, getArticleSeason) as Record<Season, ArticleProps[]>
+		const seasonRecord: Record<Season, ArticleProps[]> = {
+			spring: seasonGroup.spring ?? [],
+			summer: seasonGroup.summer ?? [],
+			autumn: seasonGroup.autumn ?? [],
+			winter: seasonGroup.winter ?? [],
+		}
+
+		const seasons = seasonOrder
+			.map(season => ({ season, label: seasonLabels[season], articles: seasonRecord[season] }))
+			.filter(item => item.articles.length > 0)
+
+		return { year, seasons }
+	})
 })
 
 // 不能使用 /api/stats，因为可能切换分组方式
-const yearlyWordCount = computed(() =>
-	mapValues(Object.fromEntries(listGrouped.value), (articles) => {
+const yearlyWordCount = computed(() => {
+	const stats: Record<string, string> = {}
+	for (const { year, seasons } of listGrouped.value) {
+		const articles = seasons.flatMap(item => item.articles)
 		const total = sumBy(articles, a => a.readingTime?.words ?? 0)
-		return formatNumber(total)
-	}),
-)
+		stats[year] = formatNumber(total)
+	}
+	return stats
+})
+
+function getYearArticleCount(seasons: SeasonGroupItem[]) {
+	return seasons.flatMap(item => item.articles).length
+}
 
 watchImmediate(showTuning, (newVal) => {
 	panelTranslate.value.archiveTuning = newVal ? '0, -3em' : undefined
@@ -69,8 +129,8 @@ function getArticleYear(article: ArticleProps) {
 	</PostOrderToggle>
 
 	<section
-		v-for="[year, yearGroup] in listGrouped"
-		:key="year"
+		v-for="yearGroup in listGrouped"
+		:key="yearGroup.year"
 		class="archive-group"
 		:class="{ 'hide-info': column > 1 }"
 		:style="{
@@ -80,30 +140,42 @@ function getArticleYear(article: ArticleProps) {
 	>
 		<div class="archive-title">
 			<h2 class="archive-year">
-				{{ year }}
+				{{ yearGroup.year }}
 			</h2>
 
 			<div class="archive-age">
-				<span>{{ Number(year) - birthYear }}</span>
+				<span>{{ Number(yearGroup.year) - birthYear }}</span>
 				<span class="age-label">岁</span>
 			</div>
 
 			<div class="archive-info">
-				<span>{{ yearlyWordCount[year] }}字</span>
-				<span>{{ yearGroup?.length }}篇</span>
+				<span>{{ yearlyWordCount[yearGroup.year] }}字</span>
+				<span>{{ getYearArticleCount(yearGroup.seasons) }}篇</span>
 			</div>
 		</div>
 
-		<TransitionGroup tag="menu" class="archive-list" name="float-in">
-			<PostArchive
-				v-for="article, index in yearGroup"
-				:key="article.path"
-				v-bind="article"
-				:to="article.path"
-				:use-updated="sortOrder === 'updated'"
-				:style="getFixedDelay(index * 0.03)"
-			/>
-		</TransitionGroup>
+		<div class="archive-season-list">
+			<section
+				v-for="seasonItem in yearGroup.seasons"
+				:key="seasonItem.season"
+				class="archive-season"
+			>
+				<h3 class="archive-season-title">
+					{{ seasonItem.label }}
+				</h3>
+
+				<TransitionGroup tag="menu" class="archive-list" name="float-in">
+					<PostArchive
+						v-for="(article, index) in seasonItem.articles"
+						:key="article.path"
+						v-bind="article"
+						:to="article.path"
+						:use-updated="sortOrder === 'updated'"
+						:style="getFixedDelay(index * 0.03)"
+					/>
+				</TransitionGroup>
+			</section>
+		</div>
 	</section>
 
 	<div v-if="showTuning" class="archive-tuning card">
@@ -146,6 +218,21 @@ function getArticleYear(article: ArticleProps) {
 	&.hide-info :deep(.dim-hover) {
 		display: none;
 	}
+}
+
+.archive-season-list {
+	margin-top: 1rem;
+}
+
+.archive-season {
+	margin-bottom: 1.4rem;
+}
+
+.archive-season-title {
+	margin: 0.4rem 0 0.6rem;
+	font-size: 1.05rem;
+	font-weight: 600;
+	color: var(--c-text-2);
 }
 
 .archive-tuning {

@@ -94,13 +94,13 @@ const blogConfig = {
 		// Cloudflare Insights 统计服务
 		{ 'src': 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': '{"token": "b5c89be9025a4b1ba8750f8fd8850904"}', 'defer': true },
 		// Twikoo 评论系统
-		{ src: 'https://lib.baomitu.com/twikoo/1.7.4/twikoo.min.js', defer: true },
+		{ src: 'https://s4.zstatic.net/npm/twikoo@1.7.4/dist/twikoo.min.js', defer: true, crossorigin: 'anonymous' },
 	],
 
 	/** 自己部署的 Twikoo 服务 */
 	twikoo: {
-		envId: 'https://twikoo.zhilu.site/',
-		preload: 'https://twikoo.zhilu.site/',
+		envId: 'https://twikoo.sotkg.com/',
+		preload: 'https://twikoo.sotkg.com/',
 	},
 }
 

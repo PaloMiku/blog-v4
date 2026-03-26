@@ -39,7 +39,7 @@ music: 'https://music.163.com/#/song?id=1958727599'
 
 我有一个高中同学，我俩充分熟络起来的契机也是因为高木，很神奇吧？
 
-::music-player
+::music
 ---
 music:
   url: 'https://music.163.com/#/song?id=1958727599'

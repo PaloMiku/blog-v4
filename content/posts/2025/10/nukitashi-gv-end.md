@@ -19,7 +19,7 @@ recommend: 9
 
 这几天一直在撰写技术文，有点头疼，来篇日常点的文章缓解下。
 
-::music-player
+::music
 ---
 music:
   url: 'https://music.163.com/#/song?id=2734259397'
