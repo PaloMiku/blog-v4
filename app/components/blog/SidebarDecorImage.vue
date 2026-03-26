@@ -59,8 +59,17 @@ const style = computed(() => {
     z-index: 1;
     background: linear-gradient(
       to bottom,
-      var(--ld-bg-card, var(--c-bg, #fff)) 0%,
+      rgba(255, 255, 255, 0.8) 0%,
       rgba(255, 255, 255, 0) 100%
+    );
+  }
+
+  :global(.dark) &::before,
+  :global(.dark) &::after {
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.55) 0%,
+      rgba(0, 0, 0, 0) 100%
     );
   }
 
@@ -72,5 +81,13 @@ const style = computed(() => {
     bottom: 0;
     transform: rotate(180deg);
   }
+}
+
+:global(.dark) .sidebar-decor {
+  filter: brightness(1.1) saturate(1.1);
+}
+
+:global(.light) .sidebar-decor {
+  filter: brightness(1) saturate(1);
 }
 </style>

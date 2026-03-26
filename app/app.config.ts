@@ -57,14 +57,14 @@ export default defineAppConfig({
 		/** 页脚版权信息，支持 <br> 换行等 HTML 标签 */
 		copyright: `© ${Temporal.Now.plainDateISO().year.toString()} ${blogConfig.author.name}`,
 		/** 侧边栏底部装饰图片配置 */
-		decorativeImage: {
-			url: 'https://blog-files.101045700.xyz/MaitetsuVideoFix/Home.webp', // 装饰图 URL，为空则不显示
-			opacity: 0.6, // 透明度（0~1），越小越淡
-			height: '12rem', // 装饰层高度
-			backgroundSize: 'cover', // 背景拉伸方式
-			backgroundPosition: 'center', // 背景定位
-			backgroundRepeat: 'no-repeat', // 背景是否重复
-		},
+		// decorativeImage: {
+		//	url: 'https://blog-files.101045700.xyz/MaitetsuVideoFix/Home.webp', // 装饰图 URL，为空则不显示
+		//	opacity: 0.6, // 透明度（0~1），越小越淡
+		//	height: '12rem', // 装饰层高度
+		//	backgroundSize: 'cover', // 背景拉伸方式
+		//	backgroundPosition: 'center', // 背景定位
+		//	backgroundRepeat: 'no-repeat', // 背景是否重复
+		// },
 		/** 侧边栏底部图标导航 */
 		iconNav: [
 			{ icon: 'ph:house-bold', text: '个人主页', url: '/' },

@@ -2,8 +2,7 @@
 import { watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import SidebarDecorImage from './SidebarDecorImage.vue'
-
+// TODO: 暂时移除 SidebarDecorImage，保留实现以备恢复
 const appConfig = useAppConfig()
 const layoutStore = useLayoutStore()
 const searchStore = useSearchStore()
@@ -115,7 +114,6 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 	</nav>
 
 	<footer class="sidebar-footer">
-		<SidebarDecorImage :image="appConfig.footer.decorativeImage" />
 		<BlogThemeToggle />
 		<ZIconNavList :list="appConfig.footer.iconNav" />
 	</footer>
