@@ -2,7 +2,6 @@
 title: Lemmy 部署：Rust Fediverse 社区系统
 description: 本文介绍了如何以Docker方式自建Fediverse实例Lemmy：先装Docker，拉取官方compose文件，替换域名、数据库密码与邮箱参数；按需调优PostgreSQL，修正挂载路径，赋权pictrs目录；启动后用Caddy/Nginx反代10633端口即可上线。文末给出升级命令与故障排查示例，助你轻松拥有Rust驱动、150 MB内存占用、贴吧般的去中心化社区。
 date: 2025-10-22 06:00:00
-image: https://join-lemmy.org/static/assets/images/main_screen_2.webp
 categories: [联邦宇宙]
 tags: [Fediverse, Website]
 ---

@@ -5,6 +5,8 @@ const colorMode = useColorMode()
 // 主题色相关
 const primaryColor = useLocalStorage('blog-primary-color', '#f38e8c') as Ref<string | undefined>
 const colorPickerRef = ref<HTMLInputElement>()
+const isMounted = ref(false)
+const currentColor = computed(() => (isMounted.value ? primaryColor.value : undefined))
 
 // 将 hex 转换为 hsl
 const HEX_TO_HSL_RE = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i
@@ -88,11 +90,15 @@ function openColorPicker() {
 
 // 初始化主题色
 onMounted(() => {
+	isMounted.value = true
 	updatePrimaryColor(primaryColor.value)
 })
 
 // 监听主题色变化
 watch(primaryColor, (newColor) => {
+	if (!isMounted.value)
+		return
+
 	updatePrimaryColor(newColor)
 })
 </script>
@@ -119,7 +125,7 @@ watch(primaryColor, (newColor) => {
 		aria-label="切换主题色"
 		@click="openColorPicker"
 	>
-		<span class="color-dot" :style="{ '--current-color': primaryColor }" />
+		<span class="color-dot" :style="{ '--current-color': currentColor }" />
 		<input
 			ref="colorPickerRef"
 			type="color"
@@ -187,7 +193,7 @@ watch(primaryColor, (newColor) => {
 	width: 20px;
 	height: 20px;
 	border-radius: 50%;
-	background-color: var(--current-color, #F38E8C);
+	background-color: var(--current-color, var(--c-primary-base));
 	transition: transform 0.2s;
 
 	// 外层黑白圆圈 - 跟随日夜主题
