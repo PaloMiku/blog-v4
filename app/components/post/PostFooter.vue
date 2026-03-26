@@ -200,7 +200,7 @@ section {
 	position: absolute;
 	right: 1.5rem;
 	bottom: 1.5rem;
-	font-family: 'Playwrite DK Uloopet Guides', var(--font-creative), sans-serif;
+	font-family: 'Ephesis', var(--font-creative), sans-serif;
 	font-size: 2rem;
 	font-weight: 700;
 	color: var(--c-text);
@@ -208,8 +208,32 @@ section {
 	text-shadow: 0 0 4px rgba(255, 255, 255, 0.25);
 	z-index: 2;
 	padding: 0.25rem 0.4rem;
-	background-color: rgba(255, 255, 255, 0.1);
+	background-color: transparent;
 	border-radius: 0.35rem;
+}
+
+@media (max-width: 768px) {
+	.card-signature-text {
+		position: relative;
+		right: auto;
+		bottom: auto;
+		align-self: flex-end;
+		margin-top: 0.7rem;
+		text-align: right;
+		background-color: transparent;
+	}
+}
+
+@media (prefers-color-scheme: dark) {
+	.card-signature-text {
+		background-color: transparent;
+		text-shadow: 0 0 3px rgba(0, 0, 0, 0.35);
+	}
+}
+
+.dark .card-signature-text {
+	background-color: transparent;
+	text-shadow: 0 0 3px rgba(0, 0, 0, 0.35);
 }
 
 .reference .content ul { margin: 0; padding: 0; list-style: none; }

@@ -142,7 +142,7 @@ if (import.meta.dev) {
 	align-items: center;
 	gap: 0.32rem;
 	font-weight: 700;
-	color: var(--c-primary, #2f4f7d);
+	color: var(--c-primary-base, var(--c-primary, #2f4f7d));
 }
 
 .ai-icon-gpt {
@@ -152,8 +152,8 @@ if (import.meta.dev) {
 	width: 1.25rem;
 	height: 1.25rem;
 	border-radius: 0.5rem;
-	background: linear-gradient(135deg, #46a9ff, #1f90ff);
-	color: #fff;
+	background: linear-gradient(135deg, var(--c-primary), var(--c-primary-soft));
+	color: var(--c-bg, #fff);
 }
 
 .ai-gpt-icon {
