@@ -29,9 +29,9 @@ link: "/2025/06/self-fediverse-prepare"
 在有一台合适的服务器和域名后，我们就可以开始安装 Misskey 的第一步了。
 
 ::alert{type="warning" card}
-# title
+#title
 注意！
-# default
+#default
 域名一定要慎重决定，一旦你启动了实例，在此之后不要更改域名！
 ::
 

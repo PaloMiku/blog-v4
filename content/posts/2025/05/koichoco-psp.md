@@ -52,9 +52,9 @@ caption: （图片来自 B 站）希美线结局
 ::
 
 ::folding
-# title
+#title
 人物简介和游戏资源链接
-# default
+#default
   :::alert{type="error"}
   #title
   资源获取前注意！

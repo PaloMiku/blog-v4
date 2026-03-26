@@ -39,8 +39,9 @@ Clannad 个人还是比较重视的，希望整理的资料多点再多点，看
 
 ::music
 ---
-music:
-  url: 'https://music.163.com/#/song?id=1303019256'
+url: 'https://music.163.com/#/song?id=1303019256'
+name: 'astral ability'
+artist: '橋本みゆき / 佐咲紗花'
 ---
 ::
 
@@ -85,8 +86,9 @@ id: BV1rg4y1i7Ye
 
 ::music
 ---
-music:
-  url: 'https://music.163.com/#/song?id=541492408'
+url: 'https://music.163.com/#/song?id=541492408'
+name: '強がるオトナのSecret Labo'
+artist: '後藤麻衣'
 ---
 ::
 
@@ -129,8 +131,9 @@ music:
 
 ::music
 ---
-music:
-  url: 'https://music.163.com/#/song?id=530057368'
+url: 'https://music.163.com/#/song?id=530057368'
+name: 'PERFECT GIRL'
+artist: '種崎敦美'
 ---
 ::
 
@@ -146,7 +149,7 @@ music:
 
 在 OP MV 中徒手搓黑洞（~~我很期待却没在游戏里看到的场景~~）。
 
-实际上，剧情里有切实的介绍这一可能性。~~但是根据 VFB 所言，RJ 的 OP MV 是提前做好的，而在之后剧本经历了大改，因而在作品剧情中看不到OP的搓黑洞场面了。~~
+实际上，剧情里有切实的介绍这一可能性。~~但是根据 VFB 所言，RJ 的 OP MV 是提前做好的，而在之后剧本经历了大改，因而在作品剧情中看不到OP的搓黑洞场面了（真可惜）。~~
 
 ### 二条院羽月
 
@@ -164,8 +167,9 @@ music:
 
 ::music
 ---
-music:
-  url: 'https://music.163.com/#/song?id=542058337'
+url: 'https://music.163.com/#/song?id=542058337'
+name: '大和撫子はあこがれ'
+artist: '遥そら'
 ---
 ::
 

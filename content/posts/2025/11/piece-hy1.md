@@ -14,7 +14,6 @@ image: https://imgheybox1.max-c.com/bbs/2025/06/09/c6423865c39392f8772d7a744f484
 ---
 type: media
 id: 315069
-music: 'https://music.163.com/#/song?id=1818615632'
 ---
 ::
 
@@ -31,7 +30,6 @@ id: 425992
 ---
 type: media
 id: 347888
-music: 'https://music.163.com/#/song?id=1958727599'
 ---
 ::
 
@@ -41,8 +39,9 @@ music: 'https://music.163.com/#/song?id=1958727599'
 
 ::music
 ---
-music:
-  url: 'https://music.163.com/#/song?id=1958727599'
+url: 'https://music.163.com/#/song?id=1958727599'
+name: '明日への扉'
+artist: '高橋李依'
 ---
 ::
 

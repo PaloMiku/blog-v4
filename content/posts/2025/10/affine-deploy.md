@@ -97,9 +97,9 @@ wget -O .env https://github.com/toeverything/affine/releases/latest/download/def
 ### 修改环境变量文件
 
 ::alert{type="warning" card}
-# title
+#title
 注意！
-# default
+#default
 在初始化并开始使用 Affine 后，请不要随便修改环境变量。
 ::
 

@@ -19,8 +19,9 @@ image: https://imgheybox1.max-c.com/bbs/2025/09/28/2cf811cadb2502ec968ef966ee366
 
 ::music
 ---
-music:
-  url: 'https://music.163.com/song/22706984'
+url: 'https://music.163.com/song/22706984'
+name: 'Étude pour les petites supercordes'
+artist: '戸越まごめ'
 ---
 ::
 

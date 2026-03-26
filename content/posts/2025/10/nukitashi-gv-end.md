@@ -11,9 +11,9 @@ recommend: 9
 ---
 
 ::alert{type="warning"}
-# title
+#title
 注意！
-# default
+#default
 本文含有对《拔作岛》游戏和动漫剧情的剧透，若您未完成游戏和动漫流程，请谨慎观看本文。
 ::
 
@@ -21,8 +21,9 @@ recommend: 9
 
 ::music
 ---
-music:
-  url: 'https://music.163.com/#/song?id=2734259397'
+url: 'https://music.163.com/#/song?id=2734259397'
+name: 'Utopia or Dystopia'
+artist: '夢乃ゆき'
 ---
 ::
 
@@ -58,10 +59,10 @@ link: "/2025/05/gal-up"
 首先再次谈起我对游戏的体验，在结束整个游戏流程后，我能给出一个“不错”的评价。
 
 ::quote
-# icon
+#icon
 ヾ(•ω•`)o
-# default
-谁再说 Galgame 都是纯黄油我可真的不高兴了！
+#default
+谁说 Galgame 都是纯黄油的！
 ::
 
 游戏首先肯定不是单纯说是名字里的“拔作”，本身算是围绕主角的“热血”作，剧情核心大概是无畏强权的抗争精神。涩涩确实是必要存在而为游戏剧情服务的，但并非离了涩涩这个游戏剧情就一无是处。
@@ -69,9 +70,9 @@ link: "/2025/05/gal-up"
 不过游戏本身剧情确实过于炸裂，在 Steam 上属于你不安装补丁 5 分钟就能结束游戏的删减度。
 
 ::folding
-# title
+#title
 剧情简介
-# default
+#default
  :::tab{:tabs='["表", "里"]'}
  #tab1
 青蓝岛……这里通称“色情条例”，允许变态性交配的乐园。
@@ -192,7 +193,7 @@ id: 63863
 ::quote
 # icon
 ︿(￣︶￣)︿
-# default
+#default
 在游戏里开始本线路前，请先把大脑找个地方寄存起来。
 ::
 

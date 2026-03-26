@@ -11,9 +11,9 @@ image: https://blog-files.101045700.xyz/Fediverse/2025/Circlari-Set.webp
 Misskey是一个十分强大的 Fediverse 程序，今天我们来讲解一下里面特有的一个 :tip[侧边栏小工具功能]{tip="提起来我博客也有 Sidebar Tools（雾）"}，它还是十分的强大且易用的。
 
 ::alert{type="warning"}
-# title
+#title
 注意！
-# default
+#default
 本文基于 Sharkey 2025.4.2-rc-stelpolva 进行组件和功能示例讲解，可能不适用于所有 Misskey/Sharkey 版本。
 ::
 

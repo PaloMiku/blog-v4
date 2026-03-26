@@ -10,9 +10,9 @@ tags: [Fediverse, Website]
 ## 前言
 
 ::alert{type="warning" card}
-# title
+#title
 注意！
-# default
+#default
 考虑到目前个人的实际应用场景，本文仅为 Lemmy 的部署教程，个人暂未实际上线可用 Lemmy 公共实例。
 ::
 

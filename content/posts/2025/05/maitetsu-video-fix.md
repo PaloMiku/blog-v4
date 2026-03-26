@@ -37,9 +37,9 @@ recommend: 10
 使用第三方版本在 Deck 的 Gamescope 游戏桌面启动和切换也不方便和不美观。
 
 ::alert{type="question"}
-# title
+#title
 值得注意！
-# default
+#default
 :tip[笔者使用的 Linux 发行版为 Arch Linux]{tip="似乎很多 Linux Galgame 玩家都使用它（雾）"}，桌面环境为 GNOME，后文教程也主要围绕其进行，对于其他发行版，大部分情况下也就是安装方式和软件包存在差异。
 ::
 

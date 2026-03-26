@@ -9,9 +9,9 @@ image: https://blog-files.101045700.xyz/Gal2025Up/SPRB/AP2.webp
 recommend: 20
 ---
 ::alert{type="warning"}
-# title
+#title
 注意！
-# default
+#default
 本文可能含有部分剧透，请谨慎阅读！
 ::
 

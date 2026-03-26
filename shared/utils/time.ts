@@ -67,7 +67,9 @@ export function toInstantString(date: string | Temporal.ZonedDateTime) {
 	return (typeof date === 'string' ? toZonedTemporal(date) : date).toInstant().toString()
 }
 
-export function toZonedTemporal(date: string) {
+export function toZonedTemporal(date?: string) {
+	if (!date)
+		return Temporal.Now.zonedDateTimeISO()
 	try {
 		return Temporal.ZonedDateTime.from(date)
 	}

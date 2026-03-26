@@ -44,9 +44,9 @@ tags: [Fediverse,Misskey,Sharkey]
 如果说上面没有直接编辑还能找理由的话， Misskey 有关这个帖子没有单独的“私密化”设置我就有点想不通了。
 
 ::alert{type="question"}
-# title
+#title
 什么是“私密化”？
-# default
+#default
 似乎是在 Misskey 系列中出现的功能，用户可以把“私密化”标签打到帖子上，然后这个帖子就会进入“私密”状态，只有用户自己才能看到这个帖子的内容。
 
 不过实际上可能只有 Misskey 系列程序会遵守“私密化”，聊胜于无吧。
