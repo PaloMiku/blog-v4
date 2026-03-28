@@ -9,6 +9,7 @@ const appConfig = useAppConfig()
 const coverFilter = computed(() => props.meta?.coverFilter || (props.meta?.coverDim && 'brightness(0.75)') || undefined)
 const categoryLabel = computed(() => props.categories?.[0])
 const categoryIcon = computed(() => getCategoryIcon(categoryLabel.value))
+const subtitle = computed(() => props.subtitle || props.meta?.subtitle)
 
 const shareText = `【${appConfig.title}】${props.title}\n\n${
 	props.description ? `${props.description}\n\n` : ''}${
@@ -26,8 +27,8 @@ const { copy, copied } = useCopy(shareText)
 			{{ title }}
 		</h1>
 
-		<p v-if="meta?.subtitle" class="post-subtitle">
-			{{ meta.subtitle }}
+		<p v-if="subtitle" class="post-subtitle">
+			{{ subtitle }}
 		</p>
 
 		<div class="post-nav">
