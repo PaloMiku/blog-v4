@@ -16,7 +16,6 @@ export default defineAppConfig({
 			/** 默认使用卡片风格还是扁平风格 */
 			defaultStyle: 'card' as 'card' | 'flat',
 		},
-
 		codeblock: {
 			/** 代码块触发折叠的行数 */
 			triggerRows: 32,

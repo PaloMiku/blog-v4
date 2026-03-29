@@ -46,7 +46,7 @@ export default defineNuxtConfig({
 				separator: '|',
 			},
 			titleTemplate: `%s %separator ${blogConfig.title}`,
-			script: blogConfig.scripts,
+			script: blogConfig.scripts as any,
 		},
 		rootAttrs: {
 			id: 'blog-root',
@@ -100,6 +100,7 @@ export default defineNuxtConfig({
 		// @keep-sorted
 		public: {
 			arch,
+			bangumiApiBase: blogConfig.bangumiApiBase,
 			buildTime: Temporal.Now.zonedDateTimeISO().toString(),
 			// EdgeOne 检测暂时不可用
 			ci: env.TENCENTCLOUD_RUNENV === 'SCF' ? 'EdgeOne' : ciName || '',
