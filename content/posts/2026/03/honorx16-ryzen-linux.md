@@ -6,7 +6,6 @@ date: 2026-03-28 14:00:00
 image: https://hshop.honorfile.com/pimages/product/6936520840687/800_800_B9550EC85C571CD29A9224B67EACF21431164E8FCA14A640mp.png
 categories: [技术探索]
 tags: [Linux, 荣耀 X16]
-recommend: 1
 ---
 
 ## 前言
