@@ -1,6 +1,8 @@
 import {
 	ContentRenderer,
 	LazyBlogWidget,
+	LazyWidgetBlogMusic,
+	LazyWidgetBlogPresence,
 	LazyWidgetBlogLog,
 	LazyWidgetBlogStats,
 	LazyWidgetBlogTech,
@@ -14,6 +16,8 @@ import { pascalCase } from 'es-toolkit/string'
 // @keep-sorted
 const rawWidgets = {
 	LazyWidgetBlogLog,
+	LazyWidgetBlogMusic,
+	LazyWidgetBlogPresence,
 	LazyWidgetBlogStats,
 	LazyWidgetBlogTech,
 	LazyWidgetCommGroup,

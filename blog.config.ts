@@ -87,6 +87,12 @@ const blogConfig = {
 		enableStyle: true,
 	},
 
+	/** 在线状态组件数据源 */
+	presence: {
+		/** Process Reporter latest 读取接口 */
+		latestEndpoint: 'https://process-reporter.sotkg.com/report/latest',
+	},
+
 	/** 向 <head> 中添加脚本 */
 	scripts: [
 		// 自己部署的 Umami 统计服务
