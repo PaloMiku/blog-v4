@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ArticleProps } from '~/types/article'
+import { LazyPopoverShare } from '#components'
 
 defineOptions({ inheritAttrs: false })
 const props = defineProps<ArticleProps>()
@@ -10,12 +11,21 @@ const coverFilter = computed(() => props.meta?.coverFilter || (props.meta?.cover
 const categoryLabel = computed(() => props.categories?.[0])
 const categoryIcon = computed(() => getCategoryIcon(categoryLabel.value))
 const subtitle = computed(() => props.subtitle || props.meta?.subtitle)
+const articleUrl = computed(() => new URL(props.path!, appConfig.url).href)
 
-const shareText = `【${appConfig.title}】${props.title}\n\n${
-	props.description ? `${props.description}\n\n` : ''}${
-	new URL(props.path!, appConfig.url).href}`
-
-const { copy, copied } = useCopy(shareText)
+const modalStore = useModalStore()
+const {
+	open: openShare,
+	close: closeShare,
+} = modalStore.use(() => h(LazyPopoverShare, {
+	title: props.title,
+	description: props.description,
+	url: articleUrl.value,
+	onClose: () => closeShare(),
+}), {
+	unique: true,
+	duration: 200,
+})
 </script>
 
 <template>
@@ -62,10 +72,10 @@ const { copy, copied } = useCopy(shareText)
 
 			<div class="operations">
 				<ZButton
-					:icon="copied ? 'ph:check-bold' : 'ph:share-bold'"
-					@click="copy()"
+					icon="ph:share-bold"
+					@click="openShare()"
 				>
-					文字分享
+					分享文章
 				</ZButton>
 			</div>
 		</div>
@@ -75,12 +85,12 @@ const { copy, copied } = useCopy(shareText)
 
 <style lang="scss" scoped>
 .post-header {
+	overflow: hidden;
 	margin: 0.5rem;
 	border-radius: 1rem;
+	box-shadow: var(--shadow-elevation-2);
 	background-color: var(--c-bg-2);
 	color: var(--c-text);
-	overflow: hidden;
-	box-shadow: var(--shadow-elevation-2);
 	transition: transform 0.2s ease;
 
 	@media (max-width: $breakpoint-mobile) {
@@ -106,33 +116,33 @@ const { copy, copied } = useCopy(shareText)
 }
 
 .post-header-content {
-	padding: 1rem;
 	display: flex;
 	flex-direction: column;
 	gap: 0.75rem;
+	padding: 1rem;
 }
 
 .post-title {
 	margin: 0;
 	font-size: 1.75rem;
-	line-height: 1.3;
 	font-weight: 700;
+	line-height: 1.3;
 	color: var(--c-text);
 }
 
 .post-subtitle {
+	max-width: 100%;
 	margin: 0;
 	font-size: 1rem;
 	line-height: 1.4;
 	color: var(--c-text-2);
-	max-width: 100%;
 }
 
 .post-nav {
 	display: flex;
 	flex-direction: row;
-	justify-content: space-between;
 	align-items: center;
+	justify-content: space-between;
 	gap: 0.75rem;
 	font-size: 0.85rem;
 	color: var(--c-text-1);
@@ -146,8 +156,8 @@ const { copy, copied } = useCopy(shareText)
 .post-info {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 0.5rem 1rem;
 	align-items: center;
+	gap: 0.5rem 1rem;
 }
 
 .post-info span,

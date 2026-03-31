@@ -35,7 +35,12 @@ onMounted(() => {
 </script>
 
 <template>
-<p :id="props.id" ref="paragraph" class="prose-paragraph">
+<p
+	:id="props.id"
+	ref="paragraph"
+	class="prose-paragraph"
+	:class="{ 'has-quote-button': showQuoteButton }"
+>
 	<slot />
 	<button
 		v-if="showQuoteButton"
@@ -52,6 +57,10 @@ onMounted(() => {
 <style scoped lang="scss">
 .prose-paragraph {
 	position: relative;
+
+	&.has-quote-button {
+		padding-inline-end: 1.8em;
+	}
 
 	>.paragraph-quote-btn {
 		position: absolute;

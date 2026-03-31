@@ -51,6 +51,7 @@
     "nuxt": "catalog:framework",
     "parse-domain": "catalog:util",
     "plain-shiki": "catalog:content",
+    "qrcode": "catalog:util",
     "shiki": "catalog:content",
     "site-config-stack": "catalog:util",
     "temporal-polyfill": "catalog:util",
@@ -60,6 +61,7 @@
   },
   "devDependencies": {
     "@antfu/eslint-config": "catalog:quality",
+    "@types/qrcode": "catalog:quality",
     "@clack/prompts": "catalog:util",
     "@iconify-json/catppuccin": "catalog:ui",
     "@iconify-json/ph": "catalog:ui",
