@@ -164,16 +164,6 @@ export default [
 				archs: ['Astro', 'Vercel'],
 				comment: '很有设计感，RefactX 博客主题作者。',
 			},
-			{
-				author: '猫猫博客',
-				title: '猫猫博客',
-				desc: 'It\'s the only NEET thing to do…',
-				link: 'https://catcat.blog',
-				icon: 'https://s3.catcat.blog/avatar.avif',
-				avatar: 'https://s3.catcat.blog/avatar.avif',
-				archs: ['Astro', 'Vercel'],
-				comment: '猫猫博客，以前就看过他的一些文章，大佬。',
-			},
 		],
 	},
 	// #endregion
