@@ -1,0 +1,86 @@
+<script setup lang="ts">
+const props = defineProps<{
+	id?: string
+}>()
+
+const INLINE_SPACE_RE = /\s+/g
+
+const paragraphEl = useTemplateRef('paragraph')
+const showDesktopInteraction = useMediaQuery('(hover: hover) and (pointer: fine)')
+const hasCommentTarget = ref(false)
+
+const { insertQuote } = useCommentQuote()
+
+const showQuoteButton = computed(() => showDesktopInteraction.value && hasCommentTarget.value)
+
+function getParagraphText() {
+	if (!paragraphEl.value)
+		return ''
+
+	const clone = paragraphEl.value.cloneNode(true) as HTMLElement
+	clone.querySelector('.paragraph-quote-btn')?.remove()
+	return clone.textContent?.replace(INLINE_SPACE_RE, ' ').trim() || ''
+}
+
+async function quoteParagraph() {
+	const text = getParagraphText()
+	if (!text)
+		return
+	await insertQuote(text)
+}
+
+onMounted(() => {
+	hasCommentTarget.value = Boolean(document.querySelector('#twikoo'))
+})
+</script>
+
+<template>
+<p :id="props.id" ref="paragraph" class="prose-paragraph">
+	<slot />
+	<button
+		v-if="showQuoteButton"
+		type="button"
+		class="paragraph-quote-btn"
+		aria-label="引用整段到评论区"
+		@click="quoteParagraph"
+	>
+		<Icon name="ph:chat-circle-text" />
+	</button>
+</p>
+</template>
+
+<style scoped lang="scss">
+.prose-paragraph {
+	position: relative;
+
+	>.paragraph-quote-btn {
+		position: absolute;
+		top: 0.15em;
+		right: 0.15em;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.16em;
+		border-radius: 0.35em;
+		line-height: 1;
+		color: var(--c-text-2);
+		opacity: 0;
+		pointer-events: auto;
+		transition: 0.2s;
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		&:hover > .paragraph-quote-btn,
+		>.paragraph-quote-btn:hover,
+		>.paragraph-quote-btn:focus-visible {
+			opacity: 0.85;
+		}
+	}
+
+	>.paragraph-quote-btn:hover,
+	>.paragraph-quote-btn:focus-visible {
+		color: var(--c-primary);
+		opacity: 1;
+	}
+}
+</style>
