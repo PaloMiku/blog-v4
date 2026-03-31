@@ -95,7 +95,12 @@ const blogConfig = {
 		{ 'src': 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': '{"token": "b5c89be9025a4b1ba8750f8fd8850904"}', 'defer': true },
 		// Twikoo 评论系统
 		{ src: 'https://s4.zstatic.net/npm/twikoo@1.7.4/dist/twikoo.min.js', defer: true, crossorigin: 'anonymous' },
-	],
+	] satisfies Array<{
+		src: string
+		defer?: boolean
+		crossorigin?: '' | 'anonymous' | 'use-credentials'
+		[key: `data-${string}`]: string | undefined
+	}>,
 
 	/** 自己部署的 Twikoo 服务 */
 	twikoo: {

@@ -46,7 +46,7 @@ export default defineNuxtConfig({
 				separator: '|',
 			},
 			titleTemplate: `%s %separator ${blogConfig.title}`,
-			script: blogConfig.scripts,
+			script: blogConfig.scripts as any,
 		},
 		rootAttrs: {
 			id: 'blog-root',
@@ -90,6 +90,7 @@ export default defineNuxtConfig({
 	// @keep-sorted
 	routeRules: {
 		...mapValues(redirectList, to => ({ redirect: { to, statusCode: 308 as const } })),
+		'/api/recent-comments': { swr: 60, headers: { 'Content-Type': 'application/json' } },
 		'/api/stats': { prerender: true, headers: { 'Content-Type': 'application/json' } },
 		'/atom.xml': { prerender: true, headers: { 'Content-Type': 'application/xml' } },
 		'/favicon.ico': { redirect: { to: blogConfig.favicon } },
