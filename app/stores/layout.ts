@@ -1,4 +1,4 @@
-export type LayoutState = 'none' | 'sidebar' | 'aside' | 'search' | 'lightbox'
+export type LayoutState = 'none' | 'sidebar' | 'aside' | 'search' | 'lightbox' | 'fullwidth'
 
 export type PanelTranslateSource = 'pagination' | 'archiveTuning'
 

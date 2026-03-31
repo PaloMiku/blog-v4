@@ -21,7 +21,7 @@ const { data: listRaw } = await useAsyncData('index_posts', () => useArticleInde
 const { listSorted, isAscending, sortOrder } = useArticleSort(listRaw)
 const { category, categories, listCategorized } = useCategory(listSorted)
 
-const seasonOrder = ['spring', 'summer', 'autumn', 'winter'] as const
+const seasonOrder = ['winter', 'autumn', 'summer', 'spring'] as const
 type Season = (typeof seasonOrder)[number]
 
 const seasonLabels: Record<Season, string> = {

@@ -180,7 +180,7 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 	transition: all 0.2s;
 }
 
-.sidebar-nav-item:hover,
+.sidebar-nav-item:not(.search-btn):hover,
 .sidebar-nav-item.router-link-active,
 .sidebar-nav-item-parent.active,
 .sidebar-nav-item-parent:hover {

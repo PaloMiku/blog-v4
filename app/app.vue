@@ -1,14 +1,19 @@
+<script setup lang="ts">
+const layoutStore = useLayoutStore()
+const isFullwidth = computed(() => layoutStore.state === 'fullwidth')
+</script>
+
 <template>
 <NuxtLoadingIndicator />
 <NuxtRouteAnnouncer :style="{ position: 'absolute' }" />
 <BlogSkipToContent />
-<BlogSidebar />
-<div id="content">
+<BlogSidebar :class="{ 'is-fullwidth-hidden': isFullwidth }" />
+<div id="content" :class="{ fullwidth: isFullwidth }">
 	<main id="main-content">
 		<NuxtPage />
 		<BlogFooter />
 	</main>
-	<BlogAside />
+	<BlogAside :class="{ 'is-fullwidth-hidden': isFullwidth }" />
 </div>
 <BlogPanel />
 <BikariyaModals />
@@ -55,6 +60,17 @@
 		// 使内容正确计算宽度而不横向溢出
 		// 也可设置 width: 0 或者 contain: inline-size（兼容性不佳）
 		min-width: 0;
+	}
+}
+
+@media (min-width: #{$breakpoint-widescreen + 1px}) {
+	.is-fullwidth-hidden {
+		display: none;
+	}
+
+	#content.fullwidth {
+		width: calc(100vw - 2rem);
+		max-width: none;
 	}
 }
 </style>

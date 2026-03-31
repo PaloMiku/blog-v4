@@ -7,39 +7,66 @@ const [DefineTemplate, ReuseTemplate] = createReusableTemplate<{
 }>({ inheritAttrs: false })
 
 const contentStore = useContentStore()
+const layoutStore = useLayoutStore()
 const { toc } = storeToRefs(contentStore)
 const { activeHeadingId } = useToc(toc)
 
 const scrollPercent = ref(0)
+const scrollValue = computed(() => Math.round(scrollPercent.value))
+const isFullwidth = computed(() => layoutStore.state === 'fullwidth')
+
+let scrollRafId: number | null = null
 const radius = 18
 const circumference = 2 * Math.PI * radius
 const offset = computed(() => circumference * (1 - scrollPercent.value / 100))
 
 function updateScrollProgress() {
-	if (process.client) {
-		const scrollTop = window.scrollY || window.pageYOffset
-		const docHeight = document.documentElement.scrollHeight - window.innerHeight
-		scrollPercent.value = docHeight > 0 ? Math.min(100, Math.max(0, (scrollTop / docHeight) * 100)) : 0
-	}
+	if (!import.meta.client)
+		return
+
+	const scrollTop = window.scrollY || window.pageYOffset
+	const docHeight = document.documentElement.scrollHeight - window.innerHeight
+	scrollPercent.value = docHeight > 0 ? Math.min(100, Math.max(0, (scrollTop / docHeight) * 100)) : 0
+}
+
+function handleScrollProgress() {
+	if (!import.meta.client || scrollRafId !== null)
+		return
+
+	scrollRafId = window.requestAnimationFrame(() => {
+		scrollRafId = null
+		updateScrollProgress()
+	})
 }
 
 function scrollToTop() {
-	if (process.client) {
-		window.scrollTo({ top: 0, behavior: 'smooth' })
-	}
+	if (!import.meta.client)
+		return
+
+	window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function toggleFullwidth() {
+	layoutStore.toggle('fullwidth')
 }
 
 onMounted(() => {
 	updateScrollProgress()
-	if (process.client) {
-		window.addEventListener('scroll', updateScrollProgress, { passive: true })
-	}
+	if (!import.meta.client)
+		return
+
+	window.addEventListener('scroll', handleScrollProgress, { passive: true })
+	window.addEventListener('resize', handleScrollProgress, { passive: true })
 })
 
 onBeforeUnmount(() => {
-	if (process.client) {
-		window.removeEventListener('scroll', updateScrollProgress)
-	}
+	if (!import.meta.client)
+		return
+
+	window.removeEventListener('scroll', handleScrollProgress)
+	window.removeEventListener('resize', handleScrollProgress)
+	if (scrollRafId !== null)
+		window.cancelAnimationFrame(scrollRafId)
 })
 
 function hasHeading(tocTree: TocLink, heading?: string): boolean {
@@ -52,7 +79,15 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 	<template #title>
 		<span class="title">文章目录</span>
 		<div class="toc-actions">
-			<button class="progress-ring" type="button" aria-label="阅读进度" :title="`${Math.round(scrollPercent)}%`">
+			<div
+				class="progress-ring"
+				role="progressbar"
+				aria-label="阅读进度"
+				aria-valuemin="0"
+				aria-valuemax="100"
+				:aria-valuenow="scrollValue"
+				:title="`${scrollValue}%`"
+			>
 				<svg viewBox="0 0 40 40" aria-hidden="true">
 					<circle class="ring-track" cx="20" cy="20" r="18" />
 					<circle
@@ -65,8 +100,8 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 						style="transition: stroke-dashoffset 0.2s ease"
 					/>
 				</svg>
-				<span class="progress-value">{{ Math.round(scrollPercent) }}%</span>
-			</button>
+				<span class="progress-value">{{ scrollValue }}%</span>
+			</div>
 
 			<button class="back-to-top" type="button" aria-label="返回开头" @click="scrollToTop">
 				<Icon name="ph:arrow-circle-up-bold" />
@@ -75,6 +110,17 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 			<a class="comment-btn" href="#twikoo" aria-label="评论区">
 				<Icon name="ph:chat-circle-text-bold" />
 			</a>
+
+			<button
+				class="fullscreen-btn widescreen-hidden"
+				:class="{ active: isFullwidth }"
+				type="button"
+				:aria-label="isFullwidth ? '退出全屏阅读' : '进入全屏阅读'"
+				:title="isFullwidth ? '退出全屏阅读' : '进入全屏阅读'"
+				@click="toggleFullwidth"
+			>
+				<Icon :name="isFullwidth ? 'ph:arrows-in-bold' : 'ph:arrows-out-bold'" />
+			</button>
 		</div>
 	</template>
 
@@ -176,7 +222,8 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 }
 
 .toc-actions button,
-.toc-actions a {
+.toc-actions a,
+.progress-ring {
 	position: relative;
 	border: 0;
 	background: transparent;
@@ -195,13 +242,10 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 }
 
 .toc-actions button:hover,
-.toc-actions a:hover {
+.toc-actions a:hover,
+.progress-ring:hover {
 	color: var(--c-primary);
 	box-shadow: inset 0 0 0 1px var(--c-primary);
-}
-
-.progress-ring {
-	position: relative;
 }
 
 .progress-ring svg {
@@ -224,13 +268,13 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 	position: relative;
 }
 
-.back-to-top,
-.comment-btn {
+.fullscreen-btn {
 	position: relative;
 }
 
 .back-to-top svg,
-.comment-btn svg {
+.comment-btn svg,
+.fullscreen-btn svg {
 	position: relative;
 	z-index: 1;
 }
@@ -249,14 +293,6 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 	stroke: var(--c-primary);
 	stroke-linecap: round;
 	transition: stroke-dashoffset 0.2s ease;
-}
-
-.progress-ring svg {
-	position: absolute;
-	inset: 0;
-	width: 100%;
-	height: 100%;
-	transform: rotate(-90deg);
 }
 
 .progress-ring > *:not(svg) {
