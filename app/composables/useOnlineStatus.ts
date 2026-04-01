@@ -88,11 +88,32 @@ function normalizeResponse(response: ReporterLatestResponse): OnlineStatusData {
 }
 
 export default function useOnlineStatus() {
+	const appConfig = useAppConfig()
 	const { public: { processReporterLatestEndpoint } } = useRuntimeConfig()
+	const visibility = useDocumentVisibility()
 
 	const data = useState<OnlineStatusData>('online-status-data', () => ({ ...FALLBACK_STATUS }))
 	const pending = useState<boolean>('online-status-pending', () => false)
 	const hasError = useState<boolean>('online-status-error', () => false)
+	const lastSnapshot = useState<string>('online-status-snapshot', () => '')
+
+	const refreshInterval = computed(() => Math.max(5000, appConfig.component.presence.refreshInterval || 15000))
+
+	function toSnapshot(value: OnlineStatusData) {
+		return JSON.stringify([
+			value.ok,
+			value.presence.isOnline,
+			value.presence.status,
+			value.presence.lastSeenAgeSeconds,
+			value.window.appId,
+			value.window.appName,
+			value.media.playerIdentity,
+			value.media.isPlaying,
+			value.media.trackTitle,
+			value.media.trackArtist,
+			value.media.trackArtUrl,
+		])
+	}
 
 	async function refresh() {
 		if (pending.value)
@@ -112,7 +133,12 @@ export default function useOnlineStatus() {
 				headers: { accept: 'application/json' },
 				timeout: 6000,
 			})
-			data.value = normalizeResponse(response)
+			const nextData = normalizeResponse(response)
+			const nextSnapshot = toSnapshot(nextData)
+			if (nextSnapshot !== lastSnapshot.value) {
+				data.value = nextData
+				lastSnapshot.value = nextSnapshot
+			}
 			hasError.value = false
 		}
 		catch (error) {
@@ -126,8 +152,23 @@ export default function useOnlineStatus() {
 		}
 	}
 
+	const { pause, resume } = useIntervalFn(() => {
+		if (visibility.value === 'visible')
+			refresh()
+	}, refreshInterval, { immediate: false })
+
 	onMounted(() => {
 		if (!data.value.ok && !pending.value)
+			refresh()
+		resume()
+	})
+
+	onUnmounted(() => {
+		pause()
+	})
+
+	watch(visibility, (state) => {
+		if (state === 'visible')
 			refresh()
 	})
 

@@ -2,7 +2,7 @@
 import useOnlineStatus from '~/composables/useOnlineStatus'
 import { appIdConfig } from '~/utils/presence'
 
-const { data, hasError } = useOnlineStatus()
+const { data, hasError, status, refresh } = useOnlineStatus()
 
 const statusLabel = computed(() => data.value.presence.status === 'online' ? '在线' : '离线')
 
@@ -42,7 +42,15 @@ const appIcon = computed(() => {
 <BlogWidget card title="在线状态">
 	<template #title>
 		<span>在线状态</span>
-		<small class="status-hint" title="非实时状态，需手动刷新页面">（非实时）</small>
+		<button
+			type="button"
+			class="refresh-btn"
+			title="手动刷新状态"
+			:disabled="status === 'pending'"
+			@click="refresh()"
+		>
+			<Icon name="ph:arrows-clockwise-bold" :class="{ spinning: status === 'pending' }" />
+		</button>
 	</template>
 
 	<p v-if="hasError && !data.ok" class="tip">
@@ -85,6 +93,35 @@ const appIcon = computed(() => {
 	}
 }
 
+.refresh-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.15rem;
+	height: 1.15rem;
+	padding: 0;
+	border: none;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--c-text-2);
+	cursor: pointer;
+	transition: color 0.2s, background-color 0.2s;
+
+	&:hover:not(:disabled) {
+		color: var(--c-primary);
+		background-color: var(--c-bg-soft);
+	}
+
+	&:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+}
+
+.spinning {
+	animation: spin 0.8s linear infinite;
+}
+
 .app-entry {
 	display: inline-flex;
 	align-items: center;
@@ -94,12 +131,6 @@ const appIcon = computed(() => {
 .app-icon {
 	font-size: 0.95em;
 	color: var(--c-primary);
-}
-
-.status-hint {
-	margin-left: 0.4rem;
-	font-size: 0.75em;
-	color: var(--c-text-2);
 }
 
 .tip {
