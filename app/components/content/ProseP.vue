@@ -6,15 +6,12 @@ const props = defineProps<{
 const INLINE_SPACE_RE = /\s+/g
 
 const paragraphEl = useTemplateRef('paragraph')
-// 移动端长按才显示引用按钮
 const hasCommentTarget = ref(false)
-const mobileLongPressed = ref(false)
 const isDesktopPointer = useMediaQuery('(hover: hover) and (pointer: fine)')
-let touchTimer: ReturnType<typeof setTimeout> | null = null
 
 const { insertQuote } = useCommentQuote()
 
-const showQuoteButton = computed(() => hasCommentTarget.value && (isDesktopPointer.value || mobileLongPressed.value))
+const showQuoteButton = computed(() => hasCommentTarget.value && isDesktopPointer.value)
 
 function getParagraphText() {
 	if (!paragraphEl.value)
@@ -32,22 +29,6 @@ async function quoteParagraph() {
 	await insertQuote(text)
 }
 
-function startMobileLongPress() {
-	if (isDesktopPointer.value)
-		return
-	if (touchTimer)
-		clearTimeout(touchTimer)
-	touchTimer = setTimeout(() => {
-		mobileLongPressed.value = true
-	}, 500)
-}
-
-function cancelMobileLongPress() {
-	if (touchTimer)
-		clearTimeout(touchTimer)
-	touchTimer = null
-}
-
 onMounted(() => {
 	hasCommentTarget.value = Boolean(document.querySelector('#twikoo'))
 })
@@ -59,9 +40,6 @@ onMounted(() => {
 	ref="paragraph"
 	class="prose-paragraph"
 	:class="{ 'has-quote-button': showQuoteButton }"
-	@touchstart="startMobileLongPress"
-	@touchend="cancelMobileLongPress"
-	@touchcancel="cancelMobileLongPress"
 >
 	<slot />
 	<button
