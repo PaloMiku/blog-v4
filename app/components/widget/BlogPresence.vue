@@ -42,6 +42,7 @@ const appIcon = computed(() => {
 <BlogWidget card title="在线状态">
 	<template #title>
 		<span>在线状态</span>
+		<small class="status-hint" title="非实时状态，需手动刷新页面">（非实时）</small>
 	</template>
 
 	<p v-if="hasError && !data.ok" class="tip">
@@ -93,6 +94,12 @@ const appIcon = computed(() => {
 .app-icon {
 	font-size: 0.95em;
 	color: var(--c-primary);
+}
+
+.status-hint {
+	margin-left: 0.4rem;
+	font-size: 0.75em;
+	color: var(--c-text-2);
 }
 
 .tip {

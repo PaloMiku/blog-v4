@@ -6,12 +6,12 @@ const props = defineProps<{
 const INLINE_SPACE_RE = /\s+/g
 
 const paragraphEl = useTemplateRef('paragraph')
-const showDesktopInteraction = useMediaQuery('(hover: hover) and (pointer: fine)')
+// 移动端也显示引用按钮
 const hasCommentTarget = ref(false)
 
 const { insertQuote } = useCommentQuote()
 
-const showQuoteButton = computed(() => showDesktopInteraction.value && hasCommentTarget.value)
+const showQuoteButton = computed(() => hasCommentTarget.value)
 
 function getParagraphText() {
 	if (!paragraphEl.value)
@@ -82,6 +82,12 @@ onMounted(() => {
 		&:hover > .paragraph-quote-btn,
 		>.paragraph-quote-btn:hover,
 		>.paragraph-quote-btn:focus-visible {
+			opacity: 0.85;
+		}
+	}
+
+	@media (hover: none), (pointer: coarse) {
+		>.paragraph-quote-btn {
 			opacity: 0.85;
 		}
 	}
