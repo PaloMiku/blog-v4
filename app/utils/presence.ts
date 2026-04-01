@@ -1,4 +1,11 @@
-export const appIdNameMapByCategory: Record<string, Record<string, string>> = {
+export interface AppIdConfig {
+	name: string
+	icon?: string
+}
+
+export type AppIdEntry = string | AppIdConfig
+
+export const appIdNameMapByCategory: Record<string, Record<string, AppIdEntry>> = {
 	dev: {
 		'code': 'Visual Studio Code',
 		'Code': 'Visual Studio Code',
@@ -21,29 +28,17 @@ export const appIdNameMapByCategory: Record<string, Record<string, string>> = {
 		'com.example.piliplus': 'PiliPlus',
 		'echomusic': 'EchoMusic',
 		'mpv': 'mpv 媒体播放器',
-		'org.pulseaudio.pavucontrol': '音量控制',
-		'wps-office-pdf': 'WPS PDF',
-		'wpspdf': 'WPS PDF',
 	},
 	network: {
-		'Clash Verge': 'Clash Verge',
-		'avahi-discover': 'Avahi Zeroconf 浏览器',
-		'bluetooth-sendto': '蓝牙传送',
-		'bssh': 'Avahi SSH 服务器的浏览器',
-		'bvnc': 'Avahi VNC 服务器的浏览器',
-		'clash-verge': 'Clash Verge',
-		'clash-verge-handler': 'Clash Verge',
+		'firefox': { name: ' Mozilla Firefox', icon: 'logos:firefox' },
+		'clash-verge': {
+			name: 'Clash Verge',
+			icon: 'arcticons:clash',
+		},
 	},
 	office: {
-		'obsidian': 'Obsidian',
-		'wps-office-et': 'WPS 表格',
-		'et': 'WPS 表格',
-		'wps-office-prometheus': 'WPS Office',
-		'wpsoffice': 'WPS Office',
-		'wps-office-wpp': 'WPS 演示',
-		'wpp': 'WPS 演示',
-		'wps-office-wps': 'WPS 文字',
-		'wps': 'WPS 文字',
+		obsidian: { name: 'Obsidian', icon: 'logos:obsidian-icon' },
+		wpsoffice: { name: 'WPS Office', icon: 'arcticons:wpsoffice' },
 	},
 	social: {
 		'Element': 'Element',
@@ -60,7 +55,6 @@ export const appIdNameMapByCategory: Record<string, Record<string, string>> = {
 		'cherry-studio': 'Cherry Studio',
 		'cherrystudio-url-handler': 'Cherry Studio',
 		'dolphin': 'Dolphin 文件管理器',
-		'firefox': 'Firefox',
 		'kbd-layout-viewer5': '键盘布局测试器',
 		'kcm_fcitx5': '输入法',
 		'kcm_trash': '回收站',
@@ -93,43 +87,55 @@ export const appIdNameMapByCategory: Record<string, Record<string, string>> = {
 		'zen': 'Zen Browser',
 	},
 	settings: {
-		'gnome-about-panel': '关于',
-		'gnome-applications-panel': '应用',
-		'gnome-background-panel': '外观',
-		'gnome-bluetooth-panel': '蓝牙',
-		'gnome-color-panel': '色彩管理',
-		'gnome-datetime-panel': '日期和时间',
-		'gnome-display-panel': '显示器',
-		'gnome-keyboard-panel': '键盘',
-		'gnome-mouse-panel': '鼠标和触摸板',
-		'gnome-multitasking-panel': '多任务',
-		'gnome-network-panel': '网络',
-		'gnome-notifications-panel': '通知',
-		'gnome-online-accounts-panel': '在线账号',
-		'gnome-power-panel': '电源',
-		'gnome-printers-panel': '打印机',
-		'gnome-privacy-panel': '隐私与安全',
-		'gnome-region-panel': '区域与语言',
-		'gnome-search-panel': '搜索',
-		'gnome-sharing-panel': '共享',
-		'gnome-sound-panel': '声音',
-		'gnome-system-panel': '系统',
-		'gnome-universal-access-panel': '无障碍',
-		'gnome-users-panel': '用户',
-		'gnome-wacom-panel': '数位板',
-		'gnome-wellbeing-panel': '健康',
-		'gnome-wifi-panel': 'Wi-Fi',
-		'gnome-wwan-panel': '移动网络',
 	},
 }
 
-export const appIdNameMap: Record<string, string> = {
-	...appIdNameMapByCategory.dev,
-	...appIdNameMapByCategory.games,
-	...appIdNameMapByCategory.media,
-	...appIdNameMapByCategory.network,
-	...appIdNameMapByCategory.office,
-	...appIdNameMapByCategory.social,
-	...appIdNameMapByCategory.system,
-	...appIdNameMapByCategory.settings,
+export interface AppIdConfig {
+	name: string
+	icon?: string
 }
+
+export const appIdConfigByCategory: Record<string, Record<string, AppIdConfig>> = Object.fromEntries(
+	Object.entries(appIdNameMapByCategory).map(([category, mapping]) => [
+		category,
+		Object.fromEntries(
+			Object.entries(mapping).map(([appId, entry]) => {
+				if (typeof entry === 'string')
+					return [appId, { name: entry }]
+				return [appId, entry]
+			}),
+		) as Record<string, AppIdConfig>,
+	]),
+)
+
+export const appIdConfig: Record<string, AppIdConfig> = (() => {
+	const result: Record<string, AppIdConfig> = {}
+	const categories = [
+		appIdConfigByCategory.dev,
+		appIdConfigByCategory.games,
+		appIdConfigByCategory.media,
+		appIdConfigByCategory.network,
+		appIdConfigByCategory.office,
+		appIdConfigByCategory.social,
+		appIdConfigByCategory.system,
+		appIdConfigByCategory.settings,
+	]
+
+	for (const category of categories) {
+		if (!category)
+			continue
+
+		for (const [appId, config] of Object.entries(category)) {
+			if (!result[appId])
+				result[appId] = config
+			else if (!result[appId].icon && config.icon)
+				result[appId] = config
+		}
+	}
+
+	return result
+})()
+
+export const appIdNameMap: Record<string, string> = Object.fromEntries(
+	Object.entries(appIdConfig).map(([appId, config]) => [appId, config.name]),
+)
