@@ -2,7 +2,7 @@
 const route = useRoute()
 
 const layoutStore = useLayoutStore()
-layoutStore.setAside(['toc'])
+layoutStore.setAside(['toc', 'blog-presence'])
 
 const { data: post } = await useAsyncData(
 	route.path,
