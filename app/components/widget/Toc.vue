@@ -104,11 +104,11 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 			</div>
 
 			<button class="back-to-top" type="button" aria-label="返回开头" @click="scrollToTop">
-				<Icon name="ph:arrow-circle-up-bold" />
+				<Icon name="tabler:arrow-up-circle" />
 			</button>
 
 			<a class="comment-btn" href="#twikoo" aria-label="评论区">
-				<Icon name="ph:chat-circle-text-bold" />
+				<Icon name="tabler:message-circle" />
 			</a>
 
 			<button
@@ -119,7 +119,7 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 				:title="isFullwidth ? '退出全屏阅读' : '进入全屏阅读'"
 				@click="toggleFullwidth"
 			>
-				<Icon :name="isFullwidth ? 'ph:arrows-in-bold' : 'ph:arrows-out-bold'" />
+				<Icon :name="isFullwidth ? 'tabler:minimize' : 'tabler:maximize'" />
 			</button>
 		</div>
 	</template>

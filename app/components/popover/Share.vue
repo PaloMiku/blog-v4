@@ -87,14 +87,14 @@ function openShareTarget(type: 'weibo' | 'qq' | 'mail') {
 				</button>
 
 				<button class="share-item" @click="copy()">
-					<Icon :name="copied ? 'ph:check-bold' : 'ph:link-bold'" />
+					<Icon :name="copied ? 'tabler:check' : 'tabler:link'" />
 					{{ copied ? '已复制链接' : '复制链接' }}
 				</button>
 			</div>
 		</div>
 
 		<button class="close" aria-label="关闭分享弹窗" @click="emit('close')">
-			<Icon name="ph:x-bold" />
+			<Icon name="tabler:x" />
 		</button>
 	</div>
 </Transition>

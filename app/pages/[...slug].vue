@@ -64,7 +64,7 @@ if (import.meta.dev) {
 
 <ZError
 	v-else
-	icon="solar:confounded-square-bold-duotone"
+	icon="line-md:alert-circle"
 	title="内容为空或页面不存在"
 />
 </template>

@@ -33,28 +33,28 @@ const blogConfig = {
 
 	article: {
 		categories: {
-			[basicConfig.defaultCategory]: { icon: 'ph:folder-dotted-bold' },
-			技术探索: { icon: 'ph:lightbulb-bold', color: '#fa3' },
-			联邦宇宙: { icon: 'ph:planet-bold', color: '#a6f' },
-			旮瘩给木: { icon: 'ph:game-controller-bold', color: '#f6a' },
-			站点魔改: { icon: 'ph:wrench-bold', color: '#3fa' },
-			动漫番剧: { icon: 'ph:film-strip-bold', color: '#f5a' },
-			日志记录: { icon: 'ph:notebook-bold', color: '#7af' },
-			日常随笔: { icon: 'ph:pen-bold', color: '#af7' },
-			经验分享: { icon: 'ph:mouse-bold', color: '#3af' },
-			代码: { icon: 'ph:code-bold', color: '#77f' },
+			[basicConfig.defaultCategory]: { icon: 'tabler:folder-dotted' },
+			技术探索: { icon: 'tabler:bulb', color: '#fa3' },
+			联邦宇宙: { icon: 'tabler:planet', color: '#a6f' },
+			旮瘩给木: { icon: 'tabler:device-gamepad-2', color: '#f6a' },
+			站点魔改: { icon: 'tabler:tool', color: '#3fa' },
+			动漫番剧: { icon: 'tabler:movie', color: '#f5a' },
+			日志记录: { icon: 'tabler:notebook', color: '#7af' },
+			日常随笔: { icon: 'tabler:scribble', color: '#af7' },
+			经验分享: { icon: 'tabler:click', color: '#3af' },
+			代码: { icon: 'tabler:code', color: '#77f' },
 			/** 实践可复用操作经验：工具/系统/部署/排障 */
-			技术: { icon: 'ph:mouse-bold', color: '#33aaff' },
+			技术: { icon: 'tabler:click', color: '#33aaff' },
 			/** 编程：代码实现/工程实践/开发方法 */
-			开发: { icon: 'ph:code-bold', color: '#7777ff' },
+			开发: { icon: 'tabler:code', color: '#7777ff' },
 			/** 安全：漏洞/CTF/恶意软件/安全事件分析 */
-			安全: { icon: 'ph:bug-beetle-bold', color: '#ff7733' },
+			安全: { icon: 'tabler:bug', color: '#ff7733' },
 			/** 思考：观点讨论/复盘反思/行业或产品观察 */
-			杂谈: { icon: 'ph:chat-bold', color: '#33bbaa' },
+			杂谈: { icon: 'tabler:message-circle', color: '#33bbaa' },
 			/** 记录叙事：个人经历/校园家庭/日常片段 */
-			生活: { icon: 'ph:shooting-star-bold', color: '#ff7777' },
+			生活: { icon: 'tabler:comet', color: '#ff7777' },
 		},
-		defaultCategoryIcon: 'ph:folder-bold',
+		defaultCategoryIcon: 'tabler:folder',
 		/** 文章版式，首个为默认版式 */
 		types: {
 			tech: {},

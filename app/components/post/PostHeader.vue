@@ -48,7 +48,7 @@ const {
 					v-tip
 					:tip-transform="d => `创建于${d}`"
 					:date
-					icon="ph:pencil-simple-line-bold"
+					icon="tabler:pencil"
 				/>
 
 				<UtilDate
@@ -56,7 +56,7 @@ const {
 					v-tip
 					:tip-transform="d => `修改于${d}`"
 					:date="updated"
-					icon="ph:clock-counter-clockwise-bold"
+					icon="tabler:history"
 				/>
 
 				<span v-if="categoryLabel">
@@ -65,14 +65,14 @@ const {
 				</span>
 
 				<span>
-					<Icon name="ph:paragraph-bold" />
+					<Icon name="tabler:pilcrow" />
 					{{ formatNumber(readingTime?.words) }} 字
 				</span>
 			</div>
 
 			<div class="operations">
 				<ZButton
-					icon="ph:share-bold"
+					icon="tabler:share-3"
 					@click="openShare()"
 				>
 					分享文章

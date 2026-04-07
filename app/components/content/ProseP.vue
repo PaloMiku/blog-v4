@@ -49,7 +49,7 @@ onMounted(() => {
 		aria-label="引用整段到评论区"
 		@click="quoteParagraph"
 	>
-		<Icon name="ph:chat-circle-text" />
+		<Icon name="tabler:message-circle-quote" />
 	</button>
 </p>
 </template>

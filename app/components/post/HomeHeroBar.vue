@@ -57,11 +57,11 @@ function toggleCollapse() {
 	<div class="hero-left">
 		<div class="hero-control">
 			<button class="hero-control-btn" type="button" @click="toggleCollapse">
-				<Icon name="ph:caret-double-down-bold" :class="{ open: isCollapsed }" />
+				<Icon name="tabler:chevrons-down" :class="{ open: isCollapsed }" />
 				<span>{{ isCollapsed ? '展开' : '收起' }}</span>
 			</button>
 			<button class="hero-control-btn" type="button" @click="close">
-				<Icon name="ph:x-bold" />
+				<Icon name="tabler:x" />
 				<span>关闭</span>
 			</button>
 		</div>
@@ -76,7 +76,7 @@ function toggleCollapse() {
 				class="action-btn"
 				:title="item.text || item.url"
 			>
-				<Icon :name="item.icon || 'ph:link-bold'" />
+				<Icon :name="item.icon || 'tabler:link'" />
 			</a>
 			<span v-if="actionItems.length === 0" class="no-action">暂无社交链接</span>
 		</div>

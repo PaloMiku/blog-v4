@@ -49,7 +49,7 @@ const appIcon = computed(() => {
 			:disabled="status === 'pending'"
 			@click="refresh()"
 		>
-			<Icon name="ph:arrows-clockwise-bold" :class="{ spinning: status === 'pending' }" />
+			<Icon name="tabler:refresh" :class="{ spinning: status === 'pending' }" />
 		</button>
 	</template>
 

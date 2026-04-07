@@ -47,13 +47,13 @@ const providerMeta = computed(() => {
 	if (parsed.provider) {
 		return {
 			label: parsed.provider,
-			icon: "ph:music-note",
+			icon: "tabler:music",
 		};
 	}
 
 	return {
 		label: "音乐",
-		icon: "ph:music-note",
+		icon: "tabler:music",
 	};
 });
 

@@ -16,7 +16,7 @@ const { asideWidgets, panelTransform } = storeToRefs(layoutStore)
 		aria-label="切换菜单"
 		@click="layoutStore.toggle('sidebar')"
 	>
-		<Icon class="rtl-flip" name="ph:sidebar-duotone" />
+		<Icon class="rtl-flip" name="tabler:layout-sidebar-left-expand" />
 	</button>
 
 	<button
@@ -26,7 +26,7 @@ const { asideWidgets, panelTransform } = storeToRefs(layoutStore)
 		aria-label="切换侧边栏"
 		@click="layoutStore.toggle('aside')"
 	>
-		<Icon class="rtl-flip" name="ph:align-right-duotone" />
+		<Icon class="rtl-flip" name="tabler:layout-sidebar-right-expand" />
 	</button>
 </div>
 </template>

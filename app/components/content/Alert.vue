@@ -14,30 +14,30 @@ const props = withDefaults(defineProps<{
 const appConfig = useAppConfig()
 const card = computed(() => appConfig.component.alert.defaultStyle === 'flat' ? props.card : !props.flat)
 
-const typeMap = {
-	tip: {
-		icon: 'ph:notepad-bold',
-		color: '#3A7',
-		title: '提醒',
-	},
-	info: {
-		icon: 'ph-info-bold',
+	const typeMap = {
+		tip: {
+			icon: 'tabler:notebook',
+			color: '#3A7',
+			title: '提醒',
+		},
+		info: {
+			icon: 'tabler:info-circle',
 		// 使用 currentColor 会导致 --c-primary-soft 颜色混合错误
 		color: 'var(--c-text-1)',
 		title: '信息',
 	},
-	question: {
-		icon: 'ph:question-bold',
+		question: {
+			icon: 'tabler:help-circle',
 		color: '#3AF',
 		title: '问题',
 	},
-	warning: {
-		icon: 'ph:warning-bold',
+		warning: {
+			icon: 'tabler:alert-triangle',
 		color: '#F80',
 		title: '警告',
 	},
-	error: {
-		icon: 'ph:x-circle-bold',
+		error: {
+			icon: 'tabler:circle-x',
 		color: '#F33',
 		title: '错误',
 	},

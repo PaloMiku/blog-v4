@@ -49,7 +49,7 @@ const fullUrl = computed(() => {
 <div v-if="!meta?.hideInfo" class="post-footer">
 	<section class="author-card">
 		<div class="copyright-badge">
-			<Icon name="ph:copyright-bold" />
+			<Icon name="tabler:copyright" />
 		</div>
 
 		<div class="card-left">

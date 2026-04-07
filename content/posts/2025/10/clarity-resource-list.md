@@ -77,7 +77,7 @@ defineProps<{
 			target="_blank"
 			rel="noopener"
 		>
-			<Icon name="ph:download-simple" />
+			<Icon name="tabler:download" />
 		</ZRawLink>
 		<button
 			v-else
@@ -86,7 +86,7 @@ defineProps<{
 			aria-label="下载资源"
 			title="下载资源"
 		>
-			<Icon name="ph:download-simple" />
+			<Icon name="tabler:download" />
 		</button>
 	</li>
 </ol>

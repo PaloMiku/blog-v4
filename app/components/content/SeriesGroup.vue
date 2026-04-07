@@ -76,7 +76,7 @@ function toggleExpand() {
 		<div class="meta-actions">
 			<!-- 统计信息 -->
 			<div v-if="count" class="series-count">
-				<Icon name="ph:game-controller-bold" />
+				<Icon name="tabler:device-gamepad-2" />
 				<span>共 {{ count }} 部 Galgame</span>
 			</div>
 
@@ -89,7 +89,7 @@ function toggleExpand() {
 					:title="isExpanded ? '收起' : '展开'"
 					@click="toggleExpand"
 				>
-					<Icon :name="isExpanded ? 'ph:caret-up-bold' : 'ph:caret-down-bold'" />
+					<Icon :name="isExpanded ? 'tabler:chevron-up' : 'tabler:chevron-down'" />
 				</button>
 
 				<!-- 查看详情按钮 -->
@@ -100,7 +100,7 @@ function toggleExpand() {
 					target="_blank"
 					title="查看详情"
 				>
-					<Icon name="ph:arrow-right-bold" />
+					<Icon name="tabler:arrow-right" />
 					<span>查看详情</span>
 				</NuxtLink>
 			</div>

@@ -72,12 +72,12 @@ export default defineAppConfig({
 		// },
 		/** 侧边栏底部图标导航 */
 		iconNav: [
-			{ icon: 'ph:house-bold', text: '个人主页', url: '/' },
+			{ icon: 'tabler:home', text: '个人主页', url: '/' },
 			{ icon: 'ri:qq-line', text: '交流群: 767876073', url: 'https://qm.qq.com/q/NH7OS40dY6' },
-			{ icon: 'ph:github-logo-bold', text: 'GitHub: PaloMiku', url: 'https://github.com/PaloMiku' },
-			{ icon: 'ph:fediverse-logo', text: 'Fediverse', url: 'https://circle.tkg3.top/@PaloMiku' },
-			{ icon: 'ph:rss-simple-bold', text: 'Atom订阅', url: '/atom.xml' },
-			{ icon: 'ph:subway-bold', text: '开往', url: 'https://travellings.cn/go.html' },
+			{ icon: 'tabler:brand-github', text: 'GitHub: PaloMiku', url: 'https://github.com/PaloMiku' },
+			{ icon: 'tabler:brand-mastodon', text: 'Fediverse', url: 'https://circle.tkg3.top/@PaloMiku' },
+			{ icon: 'tabler:rss', text: 'Atom订阅', url: '/atom.xml' },
+			{ icon: 'tabler:train', text: '开往', url: 'https://travellings.cn/go.html' },
 		] satisfies NavItem[],
 		/** 页脚版权信息底部的其他信息 */
 		message: '',
@@ -86,24 +86,24 @@ export default defineAppConfig({
 			{
 				title: '探索',
 				items: [
-					{ icon: 'ph:rss-simple-bold', text: 'Atom订阅', url: '/atom.xml' },
-					{ icon: 'ph:subway-bold', text: '开往', url: 'https://travellings.cn/go.html' },
+					{ icon: 'tabler:rss', text: 'Atom订阅', url: '/atom.xml' },
+					{ icon: 'tabler:train', text: '开往', url: 'https://travellings.cn/go.html' },
 				],
 			},
 			{
 				title: '社交',
 				items: [
-					{ icon: 'ph:github-logo-bold', text: 'PaloMiku', url: 'https://github.com/PaloMiku' },
+					{ icon: 'tabler:brand-github', text: 'PaloMiku', url: 'https://github.com/PaloMiku' },
 					{ icon: 'ri:qq-line', text: '群: 767876073', url: 'https://qm.qq.com/q/NH7OS40dY6' },
-					{ icon: 'ph:envelope-simple-bold', text: blogConfig.author.email, url: `mailto:${blogConfig.author.email}` },
+					{ icon: 'tabler:mail', text: blogConfig.author.email, url: `mailto:${blogConfig.author.email}` },
 				],
 			},
 			{
 				title: '信息',
 				items: [
 					{ icon: 'simple-icons:nuxtdotjs', text: `主题: Clarity ${version}`, url: 'https://github.com/L33Z22L11/blog-v3' },
-					{ icon: 'ph:swatches-bold', text: '主题和组件文档', url: '/previews/example' },
-					{ icon: 'ph:certificate-bold', text: '鲁ICP备2024102866号-2', url: 'https://beian.miit.gov.cn/' },
+					{ icon: 'tabler:color-swatch', text: '主题和组件文档', url: '/previews/example' },
+					{ icon: 'tabler:certificate', text: '鲁ICP备2024102866号-2', url: 'https://beian.miit.gov.cn/' },
 				],
 			},
 		] satisfies Nav,
@@ -129,19 +129,19 @@ export default defineAppConfig({
 		{
 			title: '',
 			items: [
-				{ icon: 'ph:files-bold', text: '文章', url: '/' },
-				{ icon: 'ph:archive-bold', text: '归档', url: '/archive' },
+				{ icon: 'tabler:files', text: '文章', url: '/' },
+				{ icon: 'tabler:archive', text: '归档', url: '/archive' },
 				{
-					icon: 'ph:book-bold',
+					icon: 'tabler:book',
 					text: '资料',
 					url: '#',
 					children: [
-						{ icon: 'ph:game-controller-bold', text: '游戏', url: '/games' },
-						{ icon: 'ph:cloud-bold', text: '云盘', url: '/drive' },
+						{ icon: 'tabler:device-gamepad-2', text: '游戏', url: '/games' },
+						{ icon: 'tabler:cloud', text: '云盘', url: '/drive' },
 					],
 				},
-				{ icon: 'ph:link-bold', text: '友链', url: '/link' },
-				{ icon: 'ph:info-bold', text: '关于', url: '/about' },
+				{ icon: 'tabler:link', text: '友链', url: '/link' },
+				{ icon: 'tabler:info-circle', text: '关于', url: '/about' },
 			],
 		},
 	] satisfies Nav,
@@ -156,15 +156,15 @@ export default defineAppConfig({
 
 	themes: {
 		light: {
-			icon: 'ph:sun-bold',
+			icon: 'tabler:sun',
 			tip: '浅色模式',
 		},
 		system: {
-			icon: 'ph:monitor-bold',
+			icon: 'tabler:device-desktop',
 			tip: '跟随系统',
 		},
 		dark: {
-			icon: 'ph:moon-bold',
+			icon: 'tabler:moon',
 			tip: '深色模式',
 		},
 	},

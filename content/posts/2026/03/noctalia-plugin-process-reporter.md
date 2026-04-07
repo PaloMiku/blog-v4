@@ -3,7 +3,7 @@ title: 用 Codex 写了一个 Noctalia 插件 Process Reporter
 subtitle: 扩展了插件开发知识树，也和 Agent 做好了配合
 description: 本文作者分享了将主力机系统环境从 Fedora+KDE 更换为 Arch+Niri+Noctalia 后的使用体验，重点围绕借助 AI 完成 Noctalia 自定义插件开发的实践展开。作者为验证 GPT 5.3-Codex 的 Agent 能力，落地了一款窗口与媒体状态上报插件，该插件托管于其个人 GitHub 仓库，可通过 Noctalia 插件商店添加自定义源完成安装与更新。插件核心功能为实时抓取用户当前聚焦的窗口信息、监听系统媒体播放状态，将数据按规范格式封装后，经 token 鉴权与限流处理上报至云函数，最终实现博客端个人在线状态的实时展示。作者表示自身并不熟悉 QT（QML）开发，依托 AI 辅助顺利完成了功能完整的插件开发，此次实践拓展了个人技术能力，同时提及了开发所用的 Qt 跨平台应用框架与 Rust 系统编程语言，后续还计划尝试更多类型的 Noctalia 插件开发。
 date: 2026-04-01 14:00:00
-image:  https://fastly.jsdelivr.net/gh/PaloMiku/noctalia-plugins@master/process-reporter/screenshot.png
+image:  https://fastly.jsdelivr.net/gh/PaloMiku/PaloMiku-Noctalia-Plugin@master/process-reporter/screenshot.png
 categories: [技术探索]
 tags: [Linux, Noctalia, Niri]
 ---
