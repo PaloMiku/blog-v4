@@ -106,7 +106,6 @@ export default defineNuxtConfig({
 			ci: env.TENCENTCLOUD_RUNENV === 'SCF' ? 'EdgeOne' : ciName || '',
 			nodeVersion,
 			platform,
-			processReporterLatestEndpoint: env.PROCESS_REPORTER_LATEST_ENDPOINT || blogConfig.presence?.latestEndpoint || '',
 		},
 	},
 

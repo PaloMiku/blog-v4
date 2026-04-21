@@ -15,7 +15,7 @@ const column = ref(1)
 
 const layoutStore = useLayoutStore()
 const { panelTranslate } = storeToRefs(layoutStore)
-layoutStore.setAside(['blog-stats', 'blog-presence', 'blog-log'])
+layoutStore.setAside(['blog-stats', 'blog-log'])
 
 const { data: listRaw } = await useAsyncData('index_posts', () => useArticleIndexOptions(), { default: () => [] })
 const { listSorted, isAscending, sortOrder } = useArticleSort(listRaw)

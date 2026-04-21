@@ -38,11 +38,6 @@ export default defineAppConfig({
 			badge: blogConfig.excerpt?.badge ?? 'Kimi·K2-Turbo',
 		},
 
-		presence: {
-			/** 右侧在线状态组件轮询间隔（毫秒） */
-			refreshInterval: 15000,
-		},
-
 		/** 精选文章 Slide */
 		slide: {
 			/** 适合封面图无字时启用 */
