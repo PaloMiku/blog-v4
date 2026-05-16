@@ -3,7 +3,7 @@ import { Temporal } from 'temporal-polyfill'
 import blogConfig from '~~/blog.config'
 import { version } from '~~/package.json'
 
-// 图标查询：https://yesicon.app/ph?s=bold
+// 图标查询：https://yesicon.app/tabler
 // 图标插件：https://marketplace.visualstudio.com/items?itemName=antfu.iconify
 
 // @keep-sorted
@@ -67,7 +67,7 @@ export default defineAppConfig({
 		// },
 		/** 侧边栏底部图标导航 */
 		iconNav: [
-			{ icon: 'tabler:home', text: '个人主页', url: '/' },
+			{ icon: 'tabler:home', text: '个人主页', url: blogConfig.author.homepage },
 			{ icon: 'ri:qq-line', text: '交流群: 767876073', url: 'https://qm.qq.com/q/NH7OS40dY6' },
 			{ icon: 'tabler:brand-github', text: 'GitHub: PaloMiku', url: 'https://github.com/PaloMiku' },
 			{ icon: 'tabler:brand-mastodon', text: 'Fediverse', url: 'https://circle.tkg3.top/@PaloMiku' },

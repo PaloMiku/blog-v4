@@ -1,19 +1,19 @@
 {
   "name": "clarity",
   "type": "module",
-  "version": "3.6.5",
+  "version": "3.7.0-rc.0",
   "private": true,
-  "packageManager": "pnpm@10.32.1",
+  "packageManager": "pnpm@11.0.4",
+  "license": "(MIT OR CC-BY-NC-SA-4.0)",
   "homepage": "https://github.com/L33Z22L11/blog-v3",
   "engines": {
-    "node": ">=22.18 <23 || >=23.6 <24 || >=24",
+    "node": "^22.18 || ^23.6 || >=24",
     "pnpm": ">=10"
   },
   "scripts": {
     "prepare": "pnpm clean && nuxt prepare",
     "clean": "rimraf .data node_modules/.cache",
     "dev": "nuxt dev --open",
-    "dev:lowmem": "NODE_OPTIONS=--max-old-space-size=2048 nuxt dev --open",
     "dev:host": "nuxt dev --host",
     "build": "nuxt build",
     "generate": "nuxt generate",
@@ -50,6 +50,7 @@
     "minisearch": "catalog:util",
     "nuxt": "catalog:framework",
     "parse-domain": "catalog:util",
+    "pinia": "catalog:framework",
     "plain-shiki": "catalog:content",
     "qrcode": "catalog:util",
     "shiki": "catalog:content",
@@ -57,18 +58,16 @@
     "temporal-polyfill": "catalog:util",
     "vue": "catalog:framework",
     "vue-router": "catalog:framework",
-    "vue-tippy": "catalog:ui"
+    "vue-tippy": "catalog:ui",
+    "zod": "catalog:content"
   },
   "devDependencies": {
     "@antfu/eslint-config": "catalog:quality",
-    "@types/qrcode": "catalog:quality",
     "@clack/prompts": "catalog:util",
     "@iconify-json/catppuccin": "catalog:ui",
     "@iconify-json/line-md": "catalog:ui",
-    "@iconify-json/ph": "catalog:ui",
     "@iconify-json/ri": "catalog:ui",
     "@iconify-json/simple-icons": "catalog:ui",
-    "@iconify-json/solar": "catalog:ui",
     "@iconify-json/tabler": "catalog:ui",
     "@nuxt/a11y": "catalog:quality",
     "@nuxt/hints": "catalog:quality",

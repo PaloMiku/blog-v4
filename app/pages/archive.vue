@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { ArticleProps } from '~/types/article'
-import { sumBy } from 'es-toolkit'
 import { groupBy } from 'es-toolkit/array'
+import { sumBy } from 'es-toolkit/math'
+import { mapValues } from 'es-toolkit/object'
 
 const appConfig = useAppConfig()
 useSeoMeta({
@@ -14,10 +15,12 @@ const spacing = ref(0)
 const column = ref(1)
 
 const layoutStore = useLayoutStore()
-const { panelTranslate } = storeToRefs(layoutStore)
 layoutStore.setAside(['blog-stats', 'blog-log'])
 
-const { data: listRaw } = await useAsyncData('index_posts', () => useArticleIndexOptions(), { default: () => [] })
+const tuningRef = useTemplateRef('tuning-panel')
+useAvoidTarget(tuningRef, showTuning)
+
+const { data: listRaw } = await useAsyncData('posts:index', () => getArticleIndexOptions(), { default: () => [] })
 const { listSorted, isAscending, sortOrder } = useArticleSort(listRaw)
 const { category, categories, listCategorized } = useCategory(listSorted)
 
@@ -93,14 +96,6 @@ const yearlyWordCount = computed(() => {
 function getYearArticleCount(seasons: SeasonGroupItem[]) {
 	return seasons.flatMap(item => item.articles).length
 }
-
-watchImmediate(showTuning, (newVal) => {
-	panelTranslate.value.archiveTuning = newVal ? '0, -3em' : undefined
-})
-
-onUnmounted(() => {
-	panelTranslate.value.archiveTuning = undefined
-})
 
 function getArticleYear(article: ArticleProps) {
 	try {
@@ -178,7 +173,7 @@ function getArticleYear(article: ArticleProps) {
 		</div>
 	</section>
 
-	<div v-if="showTuning" class="archive-tuning card">
+	<div v-if="showTuning" ref="tuning-panel" class="archive-tuning card">
 		<ZSlider
 			v-model="spacing"
 			label="间距"

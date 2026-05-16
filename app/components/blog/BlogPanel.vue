@@ -1,14 +1,17 @@
 <script setup lang="ts">
 const layoutStore = useLayoutStore()
-const { asideWidgets, panelTransform } = storeToRefs(layoutStore)
+const { asideWidgets, avoidTargets } = storeToRefs(layoutStore)
+
+const panelRef = useTemplateRef('blog-panel')
+const { transform } = useAvoidTransform(panelRef, avoidTargets)
 </script>
 
 <template>
-<!-- 使用 :style="{ transform: panelTransform }" 可能丢失响应性 -->
 <div
 	id="blog-panel"
+	ref="blog-panel"
 	:class="{ 'has-active': layoutStore.state !== 'none' }"
-	:style="{ '--transform': panelTransform }"
+	:style="{ transform }"
 >
 	<button
 		class="toggle-sidebar mobile-only"
@@ -26,7 +29,17 @@ const { asideWidgets, panelTransform } = storeToRefs(layoutStore)
 		aria-label="切换侧边栏"
 		@click="layoutStore.toggle('aside')"
 	>
-		<Icon class="rtl-flip" name="tabler:layout-sidebar-right-expand" />
+		<Icon class="rtl-flip" name="tabler:align-right" />
+	</button>
+
+	<Icon v-show="false" name="tabler:layout-sidebar-filled" />
+	<button
+		class="toggle-sidebar mobile-only"
+		:class="{ active: layoutStore.state === 'sidebar' }"
+		aria-label="切换菜单"
+		@click="layoutStore.toggle('sidebar')"
+	>
+		<Icon class="rtl-flip" :name="layoutStore.state === 'sidebar' ? 'tabler:layout-sidebar-filled' : 'tabler:layout-sidebar'" />
 	</button>
 </div>
 </template>
@@ -41,7 +54,6 @@ const { asideWidgets, panelTransform } = storeToRefs(layoutStore)
 	background-color: var(--c-bg-a50);
 	backdrop-filter: blur(0.5rem);
 	font-size: 1.4rem;
-	transform: var(--transform);
 	transition: transform 0.1s;
 	z-index: var(--z-index-popover);
 

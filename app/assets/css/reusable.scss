@@ -40,6 +40,9 @@
 }
 
 .scrollbar-hidden.scrollbar-hidden {
+	--scrollbar-height: 0px;
+	--guessed-scrollbar-width: 0px;
+
 	scrollbar-width: none;
 
 	&::-webkit-scrollbar {
@@ -127,18 +130,16 @@
 	}
 }
 
-// 生成响应式可见性类
-$visibility-rules: (
-	only: min-width,
-	hidden: max-width,
-);
-
 @each $name, $size in $breakpoints {
-	@each $suffix, $direction in $visibility-rules {
-		@media (#{$direction}: #{$size}) {
-			.#{$name}-#{$suffix} {
-				display: none !important; /* stylelint-disable-line declaration-no-important */
-			}
+	@media not (max-width: $size) {
+		.#{$name}-only {
+			display: none !important; /* stylelint-disable-line declaration-no-important */
+		}
+	}
+
+	@media (max-width: $size) {
+		.#{$name}-hidden {
+			display: none !important; /* stylelint-disable-line declaration-no-important */
 		}
 	}
 }
@@ -158,6 +159,7 @@ $visibility-rules: (
 .text-creative, .text-tech {
 	font-family: var(--font-creative);
 	font-weight: 550;
+	-webkit-font-smoothing: antialiased; // macOS下"DOUYINSANSBOLD-GB"过粗
 }
 
 .text-story {

@@ -44,7 +44,7 @@ const isKeyboardMode = ref(false)
 const listResult = useTemplateRef('list-result')
 
 const activeIndex = ref(0)
-const activeItem = computed(() => listResult.value?.children[activeIndex.value] as HTMLElement | undefined)
+const activeItem = computed(() => listResult.value?.children[activeIndex.value] as HTMLLinkElement | undefined)
 
 whenever(() => props.open, focusInput)
 
@@ -90,6 +90,7 @@ function openActiveItem() {
 <Transition name="float-in">
 	<div v-if="open" class="blog-search">
 		<form class="input" @submit.prevent>
+			<Icon v-show="false" name="line-md:loading-alt-loop" />
 			<Icon :name="status === 'pending' ? 'line-md:loading-alt-loop' : 'tabler:search'" />
 
 			<!-- 方向键切换搜索结果不应只在搜索框内触发 -->

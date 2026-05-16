@@ -69,6 +69,7 @@ onMounted(async () => {
 		<Icon name="tabler:arrow-back-up" />
 	</button>
 
+	<Icon v-show="false" name="tabler:check" />
 	<button class="operation" aria-label="复制" @click="copy()">
 		<Icon :name="copied ? 'tabler:check' : 'tabler:copy'" />
 	</button>

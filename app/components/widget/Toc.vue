@@ -1,73 +1,15 @@
 <script setup lang="ts">
 import type { TocLink } from '@nuxt/content'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-const [DefineTemplate, ReuseTemplate] = createReusableTemplate<{
-	tocTree: TocLink[]
-}>({ inheritAttrs: false })
-
-const contentStore = useContentStore()
-const layoutStore = useLayoutStore()
-const { toc } = storeToRefs(contentStore)
-const { activeHeadingId } = useToc(toc)
-
-const scrollPercent = ref(0)
-const scrollValue = computed(() => Math.round(scrollPercent.value))
-const isFullwidth = computed(() => layoutStore.state === 'fullwidth')
-
-let scrollRafId: number | null = null
-const radius = 18
-const circumference = 2 * Math.PI * radius
-const offset = computed(() => circumference * (1 - scrollPercent.value / 100))
-
-function updateScrollProgress() {
-	if (!import.meta.client)
-		return
-
-	const scrollTop = window.scrollY || window.pageYOffset
-	const docHeight = document.documentElement.scrollHeight - window.innerHeight
-	scrollPercent.value = docHeight > 0 ? Math.min(100, Math.max(0, (scrollTop / docHeight) * 100)) : 0
-}
-
-function handleScrollProgress() {
-	if (!import.meta.client || scrollRafId !== null)
-		return
-
-	scrollRafId = window.requestAnimationFrame(() => {
-		scrollRafId = null
-		updateScrollProgress()
-	})
-}
-
-function scrollToTop() {
-	if (!import.meta.client)
-		return
-
-	window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-function toggleFullwidth() {
-	layoutStore.toggle('fullwidth')
-}
-
-onMounted(() => {
-	updateScrollProgress()
-	if (!import.meta.client)
-		return
-
-	window.addEventListener('scroll', handleScrollProgress, { passive: true })
-	window.addEventListener('resize', handleScrollProgress, { passive: true })
+const [DefineTemplate, ReuseTemplate] = createReusableTemplate({
+	props: {
+		tocTree: { type: Array as PropType<TocLink[]> },
+	},
 })
 
-onBeforeUnmount(() => {
-	if (!import.meta.client)
-		return
-
-	window.removeEventListener('scroll', handleScrollProgress)
-	window.removeEventListener('resize', handleScrollProgress)
-	if (scrollRafId !== null)
-		window.cancelAnimationFrame(scrollRafId)
-})
+const { toc } = useArticle()
+const scrollableEl = useTemplateRef('toc')
+const { tocOffsets, activeHeadingId } = useToc(toc, computed(() => scrollableEl.value?.body))
 
 function hasHeading(tocTree: TocLink, heading?: string): boolean {
 	return tocTree.id === heading || !!tocTree.children?.some(child => hasHeading(child, heading))
@@ -75,53 +17,21 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 </script>
 
 <template>
-<BlogWidget>
-	<template #title>
-		<span class="title">文章目录</span>
-		<div class="toc-actions">
-			<div
-				class="progress-ring"
-				role="progressbar"
-				aria-label="阅读进度"
-				aria-valuemin="0"
-				aria-valuemax="100"
-				:aria-valuenow="scrollValue"
-				:title="`${scrollValue}%`"
-			>
-				<svg viewBox="0 0 40 40" aria-hidden="true">
-					<circle class="ring-track" cx="20" cy="20" r="18" />
-					<circle
-						class="ring-progress"
-						cx="20"
-						cy="20"
-						r="18"
-						:stroke-dasharray="circumference"
-						:stroke-dashoffset="offset"
-						style="transition: stroke-dashoffset 0.2s ease"
-					/>
-				</svg>
-				<span class="progress-value">{{ scrollValue }}%</span>
-			</div>
+<BlogWidget
+	ref="toc"
+	title="文章目录"
+	shrink
+	:style="{ minHeight: `clamp(4rem, ${tocOffsets.length}rem, 20rem)` }"
+>
+	<template #action>
+		<!-- use <a> for anchor -->
+		<a href="#main-content" aria-label="返回开头">
+			<Icon name="tabler:arrow-bar-to-up" />
+		</a>
 
-			<button class="back-to-top" type="button" aria-label="返回开头" @click="scrollToTop">
-				<Icon name="tabler:arrow-up-circle" />
-			</button>
-
-			<a class="comment-btn" href="#twikoo" aria-label="评论区">
-				<Icon name="tabler:message-circle" />
-			</a>
-
-			<button
-				class="fullscreen-btn widescreen-hidden"
-				:class="{ active: isFullwidth }"
-				type="button"
-				:aria-label="isFullwidth ? '退出全屏阅读' : '进入全屏阅读'"
-				:title="isFullwidth ? '退出全屏阅读' : '进入全屏阅读'"
-				@click="toggleFullwidth"
-			>
-				<Icon :name="isFullwidth ? 'tabler:minimize' : 'tabler:maximize'" />
-			</button>
-		</div>
+		<a href="#twikoo" aria-label="评论区">
+			<Icon name="tabler:message-dots" />
+		</a>
 	</template>
 
 	<!-- 放在顶层会导致 Transition 失效 -->
@@ -142,17 +52,19 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 		</ol>
 	</DefineTemplate>
 
-	<UtilHydrateSafe>
-		<ReuseTemplate v-if="toc?.links.length" :toc-tree="toc.links" />
-		<p v-else class="no-toc">
-			暂无目录信息
-		</p>
-	</UtilHydrateSafe>
+	<ReuseTemplate
+		v-if="toc?.links.length"
+		class="toc"
+		:toc-tree="toc.links"
+	/>
+	<p v-else class="no-toc">
+		暂无目录信息
+	</p>
 </BlogWidget>
 </template>
 
 <style lang="scss" scoped>
-:deep(.widget-body) {
+.toc {
 	position: relative;
 
 	&::before {
@@ -161,143 +73,52 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 		inset: 0.3rem;
 		width: 3px;
 		border-radius: 1rem;
-		background-color: var(--c-bg-3);
+		background-color: var(--c-bg-soft);
+	}
+}
+
+ol {
+	padding-inline-start: 0.8rem;
+}
+
+li {
+	opacity: 0.6;
+	font-size: 0.94em;
+	color: var(--c-text);
+	transition: opacity 0.2s;
+
+	&:hover {
+		opacity: 0.94;
 	}
 
-	ol {
-		padding-inline-start: 0.8rem;
+	&.has-active, &.active {
+		opacity: 1;
+		font-size: 1em;
 	}
 
-	li {
-		opacity: 0.6;
-		font-size: 0.94em;
-		color: var(--c-text);
-		transition: opacity 0.2s;
+	&.active::before {
+		content: "";
+		position: absolute;
+		inset-inline-start: 0.3rem;
+		margin: 0.2rem 0;
+		padding: 0.6rem 1.5px;
+		border-radius: 1rem;
+		background-color: var(--c-primary);
+	}
+
+	> a {
+		display: block;
+		overflow: hidden;
+		padding: 0.2em 0.5em;
+		border-radius: 0.5em;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		transition: all 0.2s;
 
 		&:hover {
-			opacity: 0.94;
-		}
-
-		&.has-active, &.active {
-			opacity: 1;
-			font-size: 1em;
-		}
-
-		&.active::before {
-			content: "";
-			position: absolute;
-			inset-inline-start: 0.3rem;
-			margin: 0.2rem 0;
-			padding: 0.6rem 1.5px;
-			border-radius: 1rem;
-			background-color: var(--c-primary);
-		}
-
-		a {
-			display: block;
-			overflow: hidden;
-			padding: 0.2em 0.5em;
-			border-radius: 0.5em;
-			white-space: nowrap;
-			text-overflow: ellipsis;
-			transition: all 0.2s;
-
-			&:hover {
-				background-color: var(--c-bg-soft);
-			}
+			background-color: var(--c-bg-soft);
 		}
 	}
-}
-
-.title {
-	flex-grow: 1;
-}
-
-.toc-actions {
-	display: flex;
-	flex-direction: row;
-	align-items: center;
-	gap: 0.4rem;
-	margin-left: auto;
-}
-
-.toc-actions button,
-.toc-actions a,
-.progress-ring {
-	position: relative;
-	border: 0;
-	background: transparent;
-	color: var(--c-text);
-	width: 2.2rem;
-	height: 2.2rem;
-	padding: 0;
-	border-radius: 999px;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	cursor: pointer;
-	outline: none;
-	box-shadow: inset 0 0 0 1px var(--c-border);
-	transition: all 0.2s;
-}
-
-.toc-actions button:hover,
-.toc-actions a:hover,
-.progress-ring:hover {
-	color: var(--c-primary);
-	box-shadow: inset 0 0 0 1px var(--c-primary);
-}
-
-.progress-ring svg {
-	position: absolute;
-	inset: 0;
-	width: 100%;
-	height: 100%;
-	transform: rotate(-90deg);
-}
-
-.progress-value {
-	position: relative;
-	z-index: 1;
-	font-size: 0.65rem;
-	font-weight: 700;
-}
-
-.back-to-top,
-.comment-btn {
-	position: relative;
-}
-
-.fullscreen-btn {
-	position: relative;
-}
-
-.back-to-top svg,
-.comment-btn svg,
-.fullscreen-btn svg {
-	position: relative;
-	z-index: 1;
-}
-
-.ring-track,
-.ring-progress {
-	fill: none;
-	stroke-width: 3;
-}
-
-.ring-track {
-	stroke: var(--c-bg-3);
-}
-
-.ring-progress {
-	stroke: var(--c-primary);
-	stroke-linecap: round;
-	transition: stroke-dashoffset 0.2s ease;
-}
-
-.progress-ring > *:not(svg) {
-	position: relative;
-	z-index: 1;
 }
 
 .no-toc {

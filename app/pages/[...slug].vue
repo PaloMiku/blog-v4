@@ -5,21 +5,11 @@ const layoutStore = useLayoutStore()
 layoutStore.setAside(['toc'])
 
 const { data: post } = await useAsyncData(
-	route.path,
+	`content:${route.path}`,
 	() => queryCollection('content').path(route.path).first(),
 )
 
-const contentStore = useContentStore()
-const { toc, meta } = storeToRefs(contentStore)
-
 const excerpt = computed(() => post.value?.description || '')
-
-function setTocAndMeta() {
-	toc.value = post.value?.body.toc
-	meta.value = post.value?.meta
-}
-
-setTocAndMeta()
 
 if (post.value) {
 	useSeoMeta({
@@ -39,7 +29,6 @@ else {
 
 if (import.meta.dev) {
 	watchEffect(() => {
-		setTocAndMeta()
 		layoutStore.setAside(post.value?.meta?.aside as WidgetName[] | undefined)
 	})
 }
