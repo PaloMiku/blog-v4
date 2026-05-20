@@ -33,7 +33,7 @@ const blogConfig = {
 
 	article: {
 		categories: {
-			[basicConfig.defaultCategory]: { icon: 'tabler:folder-dotted' },
+			[basicConfig.defaultCategory]: { icon: 'tabler:circle-dashed' },
 			技术探索: { icon: 'tabler:bulb', color: '#fa3' },
 			联邦宇宙: { icon: 'tabler:planet', color: '#a6f' },
 			旮瘩给木: { icon: 'tabler:device-gamepad-2', color: '#f6a' },
@@ -54,7 +54,6 @@ const blogConfig = {
 			/** 记录叙事：个人经历/校园家庭/日常片段 */
 			生活: { icon: 'tabler:comet', color: '#ff7777' },
 		},
-		defaultCategoryIcon: 'tabler:folder',
 		/** 文章版式，首个为默认版式 */
 		types: {
 			tech: {},
