@@ -18,8 +18,6 @@ tags: [Linux, Noctalia, Niri]
 
 插件位于我个人的插件库 https://github.com/PaloMiku/noctalia-plugins 内，可以在 Noctalia 插件商店里添加自定义插件源来安装和更新。
 
-![插件面板](https://fastly.jsdelivr.net/gh/PaloMiku/noctalia-plugins@master/process-reporter/screenshot.png)
-
 插件功能就是实时获取当前用户正在聚焦的窗口信息，并监听媒体播放状态后合并上报到同一个云函数。
 
 ### 上报格式示例
