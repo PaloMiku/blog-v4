@@ -120,11 +120,10 @@ if (import.meta.dev) {
 .ai-excerpt {
 	margin: 1rem 0.5rem;
 	padding: 0.8rem;
-	border-radius: 1rem;
-	border: 1px solid var(--c-border, rgba(150, 165, 185, 0.3));
-	background: var(--ld-bg-card, var(--c-bg, rgba(255, 255, 255, 0.95)));
-	box-shadow: 0 10px 26px var(--ld-shadow, rgba(5, 12, 27, 0.07));
-	color: var(--c-text, #1b2330);
+	border-radius: 0.5em;
+	background: var(--ld-bg-card);
+	box-shadow: var(--box-shadow-2);
+	color: var(--c-text);
 	transition: box-shadow 0.3s ease, transform 0.2s ease;
 	--excerpt-folded-max-height: 4.8em;
 	--excerpt-unfolded-max-height: 28em;
@@ -142,7 +141,7 @@ if (import.meta.dev) {
 	align-items: center;
 	gap: 0.32rem;
 	font-weight: 700;
-	color: var(--c-primary-base, var(--c-primary, #2f4f7d));
+	color: var(--c-primary);
 }
 
 .ai-icon-gpt {
@@ -151,9 +150,9 @@ if (import.meta.dev) {
 	justify-content: center;
 	width: 1.25rem;
 	height: 1.25rem;
-	border-radius: 0.5rem;
+	border-radius: 0.5em;
 	background: linear-gradient(135deg, var(--c-primary), var(--c-primary-soft));
-	color: var(--c-bg, #fff);
+	color: var(--c-bg);
 }
 
 .ai-gpt-icon {
@@ -170,8 +169,8 @@ if (import.meta.dev) {
 	font-weight: 600;
 	padding: 0.15rem 0.5rem;
 	border-radius: 999px;
-	background: var(--c-primary-soft, rgba(44, 126, 196, 0.14));
-	color: var(--c-primary, #1b577f);
+	background: var(--c-primary-soft);
+	color: var(--c-primary);
 }
 
 .ai-excerpt__content {
@@ -182,10 +181,9 @@ if (import.meta.dev) {
 	word-break: break-word;
 	line-height: 1.6;
 	padding: 0.75rem;
-	border: 1px solid var(--c-border, rgba(180, 190, 205, 0.35));
-	border-radius: 0.8rem;
-	background: var(--c-bg-1, rgba(240, 246, 255, 0.8));
-	color: var(--c-text-2, #44506a);
+	border-radius: 0.5em;
+	background: var(--c-bg-1);
+	color: var(--c-text-2);
 	font-size: 0.88rem;
 	opacity: 1;
 }
@@ -217,9 +215,9 @@ if (import.meta.dev) {
 .ai-excerpt__toggle {
 	padding: 0.3rem 0.75rem;
 	border-radius: 999px;
-	border: 1px solid rgba(91, 121, 161, 0.35);
-	background: rgba(100, 141, 190, 0.12);
-	color: #1f4a79;
+	border: 1px solid var(--c-border);
+	background: var(--c-primary-soft);
+	color: var(--c-primary);
 	font-size: 0.8rem;
 	font-weight: 700;
 	cursor: pointer;
@@ -227,7 +225,7 @@ if (import.meta.dev) {
 }
 
 .ai-excerpt__toggle:hover {
-	background: rgba(50, 101, 164, 0.2);
+	background: var(--c-bg-3);
 }
 
 @media (prefers-reduced-motion: reduce) {

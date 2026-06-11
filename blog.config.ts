@@ -75,7 +75,7 @@ const blogConfig = {
 
 	excerpt: {
 		label: '智能摘要',
-		badge: 'Kimi·K2.5',
+		badge: 'Qwen 3.7 Max',
 	},
 
 	/** 博客 Atom 订阅源 */

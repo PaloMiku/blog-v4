@@ -88,7 +88,7 @@ const {
 	overflow: hidden;
 	margin: 0.5rem;
 	border-radius: 1rem;
-	box-shadow: var(--shadow-elevation-2);
+	box-shadow: var(--box-shadow-2);
 	background-color: var(--c-bg-2);
 	color: var(--c-text);
 	transition: transform 0.2s ease;
