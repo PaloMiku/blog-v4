@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm /home/palomiku/Github/blog-v4/app/components/widget/LatestComments.vue && rm /home/palomiku/Github/blog-v4/server/api/recent-comments.get.ts && echo \"done\")"
+    ]
+  }
+}

@@ -6,7 +6,6 @@ import {
 	LazyWidgetBlogTech,
 	LazyWidgetCommGroup,
 	LazyWidgetEmpty,
-	LazyWidgetLatestComments,
 	LazyWidgetToc,
 } from '#components'
 import { pascalCase } from 'es-toolkit/string'
@@ -18,7 +17,6 @@ const rawWidgets = {
 	LazyWidgetBlogTech,
 	LazyWidgetCommGroup,
 	LazyWidgetEmpty,
-	LazyWidgetLatestComments,
 	LazyWidgetToc,
 }
 
