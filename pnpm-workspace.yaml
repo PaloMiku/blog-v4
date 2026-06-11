@@ -88,4 +88,7 @@ patchedDependencies:
   '@vue/shared': patches/@vue__shared.patch
   plain-shiki: patches/plain-shiki.patch
 
+overrides:
+  '@babel/generator': ^7.29.7
+
 shamefullyHoist: true

@@ -132,7 +132,7 @@ function toggleExpand() {
 	position: relative;
 	width: 100%;
 	aspect-ratio: 16 / 6;
-	background-color: var(--c-bg-mute);
+	background-color: var(--c-bg-3);
 	cursor: pointer;
 }
 
@@ -187,8 +187,8 @@ function toggleExpand() {
 	justify-content: center;
 	width: 100%;
 	height: 100%;
-	background: linear-gradient(135deg, var(--c-bg-mute), var(--c-bg-soft));
-	color: var(--c-text-softer);
+	background: linear-gradient(135deg, var(--c-bg-3), var(--c-bg-soft));
+	color: var(--c-text-3);
 
 	:deep(svg) {
 		opacity: 0.4;
@@ -236,7 +236,7 @@ function toggleExpand() {
 	line-clamp: 1;
 	line-height: 1.4;
 	word-break: break-word;
-	color: var(--c-text-soft);
+	color: var(--c-text-2);
 	-webkit-box-orient: vertical;
 }
 
@@ -255,7 +255,7 @@ function toggleExpand() {
 	gap: 0.3rem;
 	margin-top: 0;
 	font-size: 0.75rem;
-	color: var(--c-text-soft);
+	color: var(--c-text-2);
 
 	:deep(svg) {
 		opacity: 0.7;
@@ -285,13 +285,13 @@ function toggleExpand() {
 	border: 1px solid var(--c-border-light, rgb(0 0 0 / 10%));
 	border-radius: 0.3rem;
 	background-color: var(--c-bg-soft);
-	color: var(--c-text-soft);
+	color: var(--c-text-2);
 	transition: all 0.2s ease;
 	cursor: pointer;
 
 	&:hover {
 		border-color: var(--ld-primary, #4F46E5);
-		background-color: var(--c-bg-mute);
+		background-color: var(--c-bg-3);
 		color: var(--c-text);
 	}
 
@@ -311,7 +311,7 @@ function toggleExpand() {
 	padding: 0.5rem 1rem;
 	font-size: 0.8rem;
 	text-decoration: none;
-	color: var(--c-text-soft);
+	color: var(--c-text-2);
 	transition: color 0.2s ease;
 
 	&:hover {

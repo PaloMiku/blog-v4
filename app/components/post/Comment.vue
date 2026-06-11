@@ -112,7 +112,7 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .z-comment {
-	margin: 3rem 1rem;
+	margin: 3rem 0.5rem;
 
 	> h3 {
 		margin-top: 3rem;
@@ -128,6 +128,9 @@ onMounted(() => {
 	display: flex;
 	align-items: center;
 	overflow-wrap: anywhere;
+	padding: 0.4em;
+	border-radius: 0.5em;
+	background: var(--ld-bg-blur);
 
 	> .input {
 		min-width: 0;
@@ -191,7 +194,7 @@ onMounted(() => {
 	}
 
 	.tk-replies:not(.tk-replies-expand) {
-		mask-image: linear-gradient(to top, transparent, #FFF 4em);
+		mask-image: linear-gradient(to top, transparent, black 4em);
 	}
 
 	.tk-expand {
@@ -210,7 +213,7 @@ onMounted(() => {
 	pre {
 		overflow: auto;
 		border-radius: 0.5em;
-		font-size: 0.85em;
+		font-size: 0.85rem;
 	}
 
 	p {
@@ -242,7 +245,7 @@ onMounted(() => {
 		border-inline-start: 4px solid var(--c-border);
 		border-radius: 4px;
 		background-color: var(--c-bg-2);
-		font-size: 0.9em;
+		font-size: 0.9rem;
 	}
 }
 </style>

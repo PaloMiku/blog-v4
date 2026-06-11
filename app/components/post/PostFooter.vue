@@ -184,13 +184,13 @@ section {
 	margin: 0;
 	font-size: 0.85rem;
 	word-break: break-all;
-	color: var(--c-text-soft);
+	color: var(--c-text-2);
 }
 
 .card-meta {
 	.meta-column { display: flex; flex-direction: column; gap: 0.8rem; }
 	.meta-item { display: flex; flex-direction: column; gap: 0.3rem; }
-	.label { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--c-text-soft); }
+	.label { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--c-text-2); }
 	.value { font-size: 0.9rem; font-weight: 500; color: var(--c-text-1); }
 	.copyright-link { text-decoration: none; color: var(--c-primary); transition: opacity 0.2s; }
 	.copyright-link:hover { opacity: 0.8; }
