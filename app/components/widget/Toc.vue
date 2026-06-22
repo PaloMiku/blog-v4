@@ -1,43 +1,13 @@
 <script setup lang="ts">
 import type { TocLink } from '@nuxt/content'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const [DefineTemplate, ReuseTemplate] = createReusableTemplate<{
 	tocTree: TocLink[]
 }>({ inheritAttrs: false })
 
 const contentStore = useContentStore()
-const layoutStore = useLayoutStore()
 const { toc } = storeToRefs(contentStore)
 const { activeHeadingId } = useToc(toc)
-
-const scrollPercent = ref(0)
-const scrollValue = computed(() => Math.round(scrollPercent.value))
-const isFullwidth = computed(() => layoutStore.state === 'fullwidth')
-
-let scrollRafId: number | null = null
-const radius = 18
-const circumference = 2 * Math.PI * radius
-const offset = computed(() => circumference * (1 - scrollPercent.value / 100))
-
-function updateScrollProgress() {
-	if (!import.meta.client)
-		return
-
-	const scrollTop = window.scrollY || window.pageYOffset
-	const docHeight = document.documentElement.scrollHeight - window.innerHeight
-	scrollPercent.value = docHeight > 0 ? Math.min(100, Math.max(0, (scrollTop / docHeight) * 100)) : 0
-}
-
-function handleScrollProgress() {
-	if (!import.meta.client || scrollRafId !== null)
-		return
-
-	scrollRafId = window.requestAnimationFrame(() => {
-		scrollRafId = null
-		updateScrollProgress()
-	})
-}
 
 function scrollToTop() {
 	if (!import.meta.client)
@@ -45,29 +15,6 @@ function scrollToTop() {
 
 	window.scrollTo({ top: 0, behavior: 'smooth' })
 }
-
-function toggleFullwidth() {
-	layoutStore.toggle('fullwidth')
-}
-
-onMounted(() => {
-	updateScrollProgress()
-	if (!import.meta.client)
-		return
-
-	window.addEventListener('scroll', handleScrollProgress, { passive: true })
-	window.addEventListener('resize', handleScrollProgress, { passive: true })
-})
-
-onBeforeUnmount(() => {
-	if (!import.meta.client)
-		return
-
-	window.removeEventListener('scroll', handleScrollProgress)
-	window.removeEventListener('resize', handleScrollProgress)
-	if (scrollRafId !== null)
-		window.cancelAnimationFrame(scrollRafId)
-})
 
 function hasHeading(tocTree: TocLink, heading?: string): boolean {
 	return tocTree.id === heading || !!tocTree.children?.some(child => hasHeading(child, heading))
@@ -79,30 +26,6 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 	<template #title>
 		<span class="title">文章目录</span>
 		<div class="toc-actions">
-			<div
-				class="progress-ring"
-				role="progressbar"
-				aria-label="阅读进度"
-				aria-valuemin="0"
-				aria-valuemax="100"
-				:aria-valuenow="scrollValue"
-				:title="`${scrollValue}%`"
-			>
-				<svg viewBox="0 0 40 40" aria-hidden="true">
-					<circle class="ring-track" cx="20" cy="20" r="18" />
-					<circle
-						class="ring-progress"
-						cx="20"
-						cy="20"
-						r="18"
-						:stroke-dasharray="circumference"
-						:stroke-dashoffset="offset"
-						style="transition: stroke-dashoffset 0.2s ease"
-					/>
-				</svg>
-				<span class="progress-value">{{ scrollValue }}%</span>
-			</div>
-
 			<button class="back-to-top" type="button" aria-label="返回开头" @click="scrollToTop">
 				<Icon name="tabler:arrow-up-circle" />
 			</button>
@@ -110,17 +33,6 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 			<a class="comment-btn" href="#twikoo" aria-label="评论区">
 				<Icon name="tabler:message-circle" />
 			</a>
-
-			<button
-				class="fullscreen-btn widescreen-hidden"
-				:class="{ active: isFullwidth }"
-				type="button"
-				:aria-label="isFullwidth ? '退出全屏阅读' : '进入全屏阅读'"
-				:title="isFullwidth ? '退出全屏阅读' : '进入全屏阅读'"
-				@click="toggleFullwidth"
-			>
-				<Icon :name="isFullwidth ? 'tabler:minimize' : 'tabler:maximize'" />
-			</button>
 		</div>
 	</template>
 
@@ -222,8 +134,7 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 }
 
 .toc-actions button,
-.toc-actions a,
-.progress-ring {
+.toc-actions a {
 	position: relative;
 	border: 0;
 	background: transparent;
@@ -242,25 +153,9 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 }
 
 .toc-actions button:hover,
-.toc-actions a:hover,
-.progress-ring:hover {
+.toc-actions a:hover {
 	color: var(--c-primary);
 	box-shadow: inset 0 0 0 1px var(--c-primary);
-}
-
-.progress-ring svg {
-	position: absolute;
-	inset: 0;
-	width: 100%;
-	height: 100%;
-	transform: rotate(-90deg);
-}
-
-.progress-value {
-	position: relative;
-	z-index: 1;
-	font-size: 0.65rem;
-	font-weight: 700;
 }
 
 .back-to-top,
@@ -268,34 +163,8 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 	position: relative;
 }
 
-.fullscreen-btn {
-	position: relative;
-}
-
 .back-to-top svg,
-.comment-btn svg,
-.fullscreen-btn svg {
-	position: relative;
-	z-index: 1;
-}
-
-.ring-track,
-.ring-progress {
-	fill: none;
-	stroke-width: 3;
-}
-
-.ring-track {
-	stroke: var(--c-bg-3);
-}
-
-.ring-progress {
-	stroke: var(--c-primary);
-	stroke-linecap: round;
-	transition: stroke-dashoffset 0.2s ease;
-}
-
-.progress-ring > *:not(svg) {
+.comment-btn svg {
 	position: relative;
 	z-index: 1;
 }
