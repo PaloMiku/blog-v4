@@ -36,9 +36,9 @@ export default defineNuxtConfig({
 				// "JetBrains Mono", 思源黑体 "Noto Sans SC", 思源宋体 "Noto Serif SC"
 				{ rel: 'preconnect', href: 'https://fonts.googleapis.com' },
 				{ rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
-				{ rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400..700;1,400..700&family=Noto+Sans+SC:wght@300..700&family=Noto+Serif+SC:wght@300..700&display=swap', media: 'print', onload: 'this.media="all"' },
-			// ponytail: trimmed from 100..900 to common weights
-		],
+				{ rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Ephesis&family=JetBrains+Mono:ital,wght@0,400..700;1,400..700&family=Noto+Sans+SC:wght@300..700&family=Noto+Serif+SC:wght@300..700&display=swap', media: 'print', onload: 'this.media="all"' },
+				// ponytail: trimmed from 100..900 to common weights
+			],
 			templateParams: {
 				separator: '|',
 			},
@@ -157,6 +157,7 @@ export default defineNuxtConfig({
 		'@vueuse/nuxt',
 		'nuxt-llms',
 		'unplugin-yaml/nuxt',
+		'nuxt-studio',
 	],
 
 	colorMode: {

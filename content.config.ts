@@ -1,7 +1,7 @@
 import type { ReadTimeResults } from 'reading-time'
 import { defineCollection } from '@nuxt/content'
 import { asSitemapCollection } from '@nuxtjs/sitemap/content'
-import { z } from 'zod'
+import { z } from 'zod/v4'
 import blogConfig from './blog.config'
 
 type ArticleType = keyof typeof blogConfig.article.types

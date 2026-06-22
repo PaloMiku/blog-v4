@@ -16,6 +16,7 @@ catalogs:
     '@shikijs/transformers': ^4.2.0
     abcjs: ^6.6.3
     nuxt-llms: ^0.2.0
+    nuxt-studio: 1.7.0
     plain-shiki: ^0.3.2
     rehype-katex: ^7.0.1
     remark-math: ^6.0.0
@@ -51,7 +52,7 @@ catalogs:
     '@iconify-json/tabler': ^1.2.35
     '@nuxt/icon': ^2.2.3
     '@nuxt/image': ^2.0.0
-    '@nuxtjs/color-mode': ^4.0.0
+    '@nuxtjs/color-mode': ^4.0.1
     embla-carousel-autoplay: ^8.6.0
     embla-carousel-vue: ^8.6.0
     embla-carousel-wheel-gestures: ^8.1.0
@@ -72,6 +73,8 @@ catalogs:
     site-config-stack: ^3.2.21
     strip-ansi: ^7.2.0
     temporal-polyfill: ^0.3.2
+    pinia: ^3.0.4
+    unhead: ^2.1.15
 
 engineStrict: true
 

@@ -107,6 +107,7 @@ export default [
 				title: 'GTX690战术核显卡导弹的猫窝',
 				desc: '一个过气UP的博客，喜欢计算机技术，希望交个朋友。',
 				link: 'https://nekopara.uk/',
+				feed: 'https://www.nekopara.uk/feed/',
 				icon: 'https://logo.nekopara.uk/logo.jpg',
 				avatar: 'https://logo.nekopara.uk/logo.jpg',
 				archs: ['Typecho', '服务器'],
