@@ -35,7 +35,7 @@ if (props.avoid) {
 	/>
 	<template v-for="i in pageArr" :key="i">
 		<button
-			v-if="Number.isFinite(i)"
+			v-if="i !== -1"
 			class="pagination-num"
 			:class="{ active: i === page }"
 			:aria-label="`第${i}页`"

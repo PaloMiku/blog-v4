@@ -1,4 +1,4 @@
-import { resolve } from 'node:path'
+﻿import { resolve } from 'node:path'
 import { arch, env, version as nodeVersion, platform } from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { name as ciName, CLOUDFLARE_PAGES, GITHUB_ACTIONS, NETLIFY } from 'ci-info'
@@ -36,12 +36,9 @@ export default defineNuxtConfig({
 				// "JetBrains Mono", 思源黑体 "Noto Sans SC", 思源宋体 "Noto Serif SC"
 				{ rel: 'preconnect', href: 'https://fonts.googleapis.com' },
 				{ rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
-				{ rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Noto+Sans+SC:wght@100..900&family=Noto+Serif+SC:wght@200..900&display=swap', media: 'print', onload: 'this.media="all"' },
-				// 小米字体 "MiSans"
-				{ rel: 'stylesheet', href: 'https://cdn-font.hyperos.mi.com/font/css?family=MiSans:100,200,300,400,450,500,600,650,700,900:Chinese_Simplify,Latin&display=swap', media: 'print', onload: 'this.media="all"' },
-				// Ephesis
-				{ rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Ephesis&display=swap', media: 'print', onload: 'this.media="all"' },
-			],
+				{ rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400..700;1,400..700&family=Noto+Sans+SC:wght@300..700&family=Noto+Serif+SC:wght@300..700&display=swap', media: 'print', onload: 'this.media="all"' },
+			// ponytail: trimmed from 100..900 to common weights
+		],
 			templateParams: {
 				separator: '|',
 			},
@@ -53,7 +50,7 @@ export default defineNuxtConfig({
 		},
 	},
 
-	compatibilityDate: '2024-08-03',
+	compatibilityDate: '2025-06-01',
 
 	components: [
 		{ path: '~/components/partial', prefix: 'Z' },
@@ -81,7 +78,7 @@ export default defineNuxtConfig({
 
 	nitro: {
 		prerender: {
-			// 修复部分平台会在文章路径后添加 `/`，导致闪现 404 错误
+			// 修复部分平台会在文章路径后添�?`/`，导致闪�?404 错误
 			// https://github.com/nuxt/content/issues/2378
 			autoSubfolderIndex: CLOUDFLARE_PAGES || GITHUB_ACTIONS || NETLIFY ? false : undefined,
 		},
@@ -108,7 +105,7 @@ export default defineNuxtConfig({
 		},
 	},
 
-	/** 在生产环境启用 sourcemap */
+	/** 在生产环境启�?sourcemap */
 	// sourcemap: true,
 
 	typescript: {
@@ -130,14 +127,14 @@ export default defineNuxtConfig({
 			},
 		},
 		define: {
-			/** 在生产环境启用 Vue DevTools */
+			/** 在生产环境启�?Vue DevTools */
 			// __VUE_PROD_DEVTOOLS__: 'true',
-			/** 在生产环境启用 Vue 水合不匹配详情 */
+			/** 在生产环境启�?Vue 水合不匹配详�?*/
 			// __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'true',
 		},
 		optimizeDeps: {
 			// @keep-sorted
-			include: ['@shikijs/colorized-brackets', '@shikijs/transformers', '@unhead/schema-org/vue', '@vue/devtools-core', '@vue/devtools-kit', 'embla-carousel-autoplay', 'embla-carousel-vue', 'embla-carousel-wheel-gestures', 'es-toolkit/array', 'es-toolkit/promise', 'es-toolkit/string', 'minisearch', 'parse-domain', 'plain-shiki', 'shiki/themes/catppuccin-latte.mjs', 'shiki/themes/one-dark-pro.mjs', 'temporal-polyfill', 'vue-tippy'],
+			include: ['@shikijs/colorized-brackets', '@shikijs/transformers', '@unhead/schema-org/vue', '@vue/devtools-core', '@vue/devtools-kit', 'embla-carousel-autoplay', 'embla-carousel-vue', 'embla-carousel-wheel-gestures', 'es-toolkit/array', 'es-toolkit/object', 'es-toolkit/promise', 'es-toolkit/string', 'minisearch', 'parse-domain', 'plain-shiki', 'shiki/themes/catppuccin-latte.mjs', 'shiki/themes/one-dark-pro.mjs', 'temporal-polyfill', 'vue-tippy'],
 		},
 		server: {
 			allowedHosts: true,
@@ -202,7 +199,7 @@ ${packageJson.homepage}
 		},
 		'content:file:afterParse': (ctx) => {
 			const { permalink, path } = ctx.content as Record<string, string | undefined>
-			// 优先使用自定义链接（permalink/abbrlink），其次隐藏基于文件路由的 URL 中的 /posts 前缀
+			// 优先使用自定义链接（permalink/abbrlink），其次隐藏基于文件路由�?URL 中的 /posts 前缀
 			if (permalink)
 				ctx.content.path = permalink
 			else if (blogConfig.article.hidePostPrefix && path?.startsWith('/posts/'))
@@ -225,7 +222,7 @@ ${packageJson.homepage}
 		// 尽量以这些密度点对点显示
 		densities: [1, 1.5, 2],
 		format: ['avif', 'webp'],
-		// Neylify 下 netlify 处理器无法显示站外图片，ipx 处理器无法显示站内图片，需彻底禁用
+		// Neylify �?netlify 处理器无法显示站外图片，ipx 处理器无法显示站内图片，需彻底禁用
 		// https://github.com/nuxt/image/issues/1353
 		provider: NETLIFY ? 'none' : undefined,
 	},

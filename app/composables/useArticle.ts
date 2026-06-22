@@ -87,11 +87,4 @@ export function getCategoryIcon(category?: string) {
 	return appConfig.article.categories[category!]?.icon ?? 'tabler:folder'
 }
 
-interface GetPostTypeClassNameOptions {
-	prefix?: string
-}
 
-export function getPostTypeClassName(type = 'tech', options?: GetPostTypeClassNameOptions) {
-	const { prefix = 'text' } = options || {}
-	return `${prefix}-${type}`
-}

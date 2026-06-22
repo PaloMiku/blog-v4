@@ -33,7 +33,7 @@ const {
 	<Pic v-if="image" class="post-cover" :src="image" :alt="title" :filter="coverFilter" />
 
 	<div class="post-header-content">
-		<h1 class="post-title" :class="getPostTypeClassName(type)">
+		<h1 class="post-title" :class="'text-' + (type || 'tech')">
 			{{ title }}
 		</h1>
 

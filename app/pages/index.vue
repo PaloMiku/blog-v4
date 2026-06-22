@@ -48,7 +48,7 @@ const { data: previewCount } = useAsyncData(
 		>
 			<ZSecret>
 				<UtilLink v-if="previewCount" to="/preview" class="preview-entrance">
-					<Icon name="tabler:file-lock" />
+					<Icon name="tabler:lock" />
 					查看预览文章
 				</UtilLink>
 			</ZSecret>

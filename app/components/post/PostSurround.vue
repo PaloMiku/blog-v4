@@ -26,7 +26,7 @@ const [DefineTemplate, ReuseTemplate] = createReusableTemplate<{
 	<UtilLink :to="post?.path" class="surround-link" :align-end>
 		<Icon :class="{ 'rtl-flip': post }" :name="post ? icon : fallbackIcon" />
 		<div class="surround-text">
-			<strong class="title" :class="getPostTypeClassName(post?.type)">
+			<strong class="title" :class="'text-' + (post?.type || 'tech')">
 				{{ post?.title || fallbackText }}
 			</strong>
 			<UtilDate v-if="post?.date" class="date" :date="post.date" />

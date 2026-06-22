@@ -56,15 +56,13 @@ export default function usePagination<T>(list: MaybeRefOrGetter<T[]>, options?: 
  * 数组中的 `Number.POSITIVE_INFINITY` 表示向后省略页码符号（...）的位置。
  *
  */
-export function getPaginationIndicator(current: number, total: number, expand: number = 1) {
-	const start = Math.max(2, Math.min(current - expand, total - 2 * expand))
-	const end = Math.min(total, start + 2 * expand)
-	const pageArr = Array.from({ length: end - start + 1 }, (_, i) => start + i)
-	start > 3 && pageArr.unshift(Number.NEGATIVE_INFINITY)
-	start === 3 && pageArr.unshift(2)
-	start > 1 && pageArr.unshift(1)
-	end < total - 2 && pageArr.push(Number.POSITIVE_INFINITY)
-	end === total - 2 && pageArr.push(total - 1)
-	end < total && pageArr.push(total)
-	return pageArr
+export function getPaginationIndicator(current: number, total: number, expand = 2) {
+	const pages: number[] = [1]
+	const start = Math.max(2, current - expand)
+	const end = Math.min(total - 1, current + expand)
+	if (start > 2) pages.push(-1) // ponytail: -1 means ellipsis
+	for (let i = start; i <= end; i++) pages.push(i)
+	if (end < total - 1) pages.push(-1)
+	if (total > 1) pages.push(total)
+	return pages
 }

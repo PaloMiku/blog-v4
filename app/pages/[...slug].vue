@@ -52,7 +52,7 @@ if (import.meta.dev) {
 	<!-- 使用 float-in 动画会导致搜索跳转不准确 -->
 	<ContentRenderer
 		class="article"
-		:class="getPostTypeClassName(post?.type, { prefix: 'md' })"
+		:class="'md-' + (post?.type || 'tech')"
 		:value="post"
 		tag="article"
 	/>

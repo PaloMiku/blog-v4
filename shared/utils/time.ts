@@ -1,15 +1,15 @@
 import { Temporal } from 'temporal-polyfill'
 import blogConfig from '~~/blog.config'
 
-export function isSameUnit(date1: string, date2: string, unit: Temporal.DateTimeUnit) {
+export function isSameUnit(date1: string, date2: string, unit: 'year' | 'month' | 'day') {
 	try {
-		const p1 = toZonedTemporal(date1).toPlainDateTime()
-		const p2 = toZonedTemporal(date2).toPlainDateTime()
-		return p1.until(p2, {
-			largestUnit: unit,
-			smallestUnit: unit,
-			roundingMode: 'trunc',
-		}).blank
+		const d1 = new Date(date1)
+		const d2 = new Date(date2)
+		if (unit === 'year')
+			return d1.getFullYear() === d2.getFullYear()
+		if (unit === 'month')
+			return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth()
+		return d1.toDateString() === d2.toDateString()
 	}
 	catch {
 		return false
@@ -28,9 +28,9 @@ export function isTimeDiffSignificant(
 	if (threshold > 1)
 		return true
 	try {
-		const now = Temporal.Now.instant().epochMilliseconds
-		const diff1 = now - toZonedTemporal(date1).epochMilliseconds
-		const diff2 = now - toZonedTemporal(date2).epochMilliseconds
+		const now = Date.now()
+		const diff1 = now - new Date(date1).getTime()
+		const diff2 = now - new Date(date2).getTime()
 		return diff1 / diff2 < threshold || diff2 / diff1 < threshold
 	}
 	catch {
@@ -38,29 +38,30 @@ export function isTimeDiffSignificant(
 	}
 }
 
-const timeIntervals = [
-	{ label: '世纪', threshold: 60 * 60 * 24 * 365.2422 * 100 },
-	{ label: '年', threshold: 60 * 60 * 24 * 365.2422 },
-	{ label: '个月', threshold: 60 * 60 * 24 * 30.44 },
-	{ label: '天', threshold: 60 * 60 * 24 },
-	{ label: '小时', threshold: 60 * 60 },
-	{ label: '分', threshold: 60 },
-	{ label: '秒', threshold: 1 },
-]
-
-export function timeElapse(date: string | Temporal.PlainDateTime, maxDepth = 2) {
-	let timeString = ''
-	let secRemained = Temporal.Now.plainDateTimeISO().since(date, { largestUnit: 'second' }).seconds
-	for (const interval of timeIntervals) {
-		const count = Math.floor(secRemained / interval.threshold)
-		if (count <= 0)
-			continue
-		timeString += `${count}${interval.label}`
-		secRemained -= count * interval.threshold
-		if (--maxDepth <= 0)
+export function timeElapse(date: string) {
+	const diffMs = Date.now() - new Date(date).getTime()
+	if (diffMs < 0)
+		return '刚刚'
+	const totalSeconds = Math.floor(diffMs / 1000)
+	const intervals: [label: string, seconds: number][] = [
+		['年', 31536000],
+		['个月', 2592000],
+		['天', 86400],
+		['小时', 3600],
+		['分', 60],
+	]
+	let remaining = totalSeconds
+	const parts: string[] = []
+	for (const [label, secs] of intervals) {
+		if (parts.length >= 2)
 			break
+		const count = Math.floor(remaining / secs)
+		if (count > 0) {
+			parts.push(`${count}${label}`)
+			remaining -= count * secs
+		}
 	}
-	return timeString || '刚刚'
+	return parts.join('') || '刚刚'
 }
 
 export function toInstantString(date: string | Temporal.ZonedDateTime) {
