@@ -394,6 +394,16 @@ export default [
 				archs: ['HTML', '国内 CDN'],
 				comment: '一个一言站点，萌言萌句汇聚于此。',
 			},
+			{
+				author: 'Homulilly',
+				title: 'Homulilly',
+				desc: '圆环之外，仍有未尽之愿。',
+				link: 'https://homulilly.com',
+				feed: 'https://homulilly.com/atom.xml',
+				icon: 'https://homulilly.com/images/avatar.jpg',
+				archs: ['Hexo', 'Vercel'],
+				avatar: 'https://homulilly.com/images/avatar.jpg',
+			},
 		],
 	},
 	// #endregion
