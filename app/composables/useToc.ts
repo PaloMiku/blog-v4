@@ -1,20 +1,20 @@
 import type { Toc, TocLink } from '@nuxt/content'
+import type { MaybeComputedElementRef } from '@vueuse/core'
 
 interface TocList {
 	id: string
-	offsetTop: number
+	offsetTop: number | undefined
 }
 
-export function useToc(toc: MaybeRefOrGetter<Toc | undefined>) {
+export function useToc(toc: MaybeRefOrGetter<Toc | undefined>, scrollableEl?: MaybeComputedElementRef) {
 	const { height: bodyHeight } = useElementSize(document?.body)
+	const { y: scrollY } = useWindowScroll()
 
 	function flattenToc(tocTree: TocLink[], tocList: TocList[] = []) {
-		tocTree.forEach((item) => {
-			const headingEl = document.getElementById(item.id)
-			if (headingEl)
-				tocList.push({ id: item.id, offsetTop: headingEl.offsetTop })
-			if (item.children)
-				flattenToc(item.children, tocList)
+		tocTree.forEach(({ id, children }) => {
+			const headingOffset = document?.getElementById(id)?.offsetTop
+			tocList.push({ id, offsetTop: headingOffset })
+			children && flattenToc(children, tocList)
 		})
 		return tocList
 	}
@@ -24,25 +24,28 @@ export function useToc(toc: MaybeRefOrGetter<Toc | undefined>) {
 		() => flattenToc(toValue(toc)?.links || []).reverse(),
 	)
 
-	const { y: windowScrollY } = useWindowScroll()
-
 	function getActiveHeading() {
 		const scrollMargin = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('scroll-margin-top'))
-		const scrollPosition = windowScrollY.value + (scrollMargin || 64)
+		const scrollOffset = scrollY.value + (scrollMargin || 64)
 		// 为兼容性不使用 findLast，而是使用倒序的 tocOffsets
-		return tocOffsets.value.find(item => item.offsetTop <= scrollPosition)?.id
+		return tocOffsets.value.find(item => item.offsetTop && item.offsetTop <= scrollOffset)?.id
 	}
 
 	const activeHeadingId = computedWithControl(
-		refThrottled(windowScrollY, undefined, true),
+		refThrottled(scrollY, undefined, true),
 		() => document && getActiveHeading(),
 	)
 
 	function scrollToActiveTocItem() {
-		const tocContainerEl = document.querySelector('#blog-aside')
-		const activeTocEl = document.querySelector(`#blog-aside a[href="#${activeHeadingId.value}"]`) as HTMLElement | null
-		// scrollIntoView 触发目录滚动时导致文章持续缓慢滚动并打断正常滚动
-		tocContainerEl?.scroll({ top: activeTocEl?.offsetTop || 0 })
+		const el = unrefElement(scrollableEl)
+		const active = el?.querySelector<HTMLLinkElement>(`a[href="#${activeHeadingId.value}"]`)
+
+		if (el && active) {
+			el.scrollTo({
+				top: active.offsetTop - el.clientHeight / 4,
+				behavior: 'smooth',
+			})
+		}
 	}
 
 	watch(activeHeadingId, scrollToActiveTocItem)

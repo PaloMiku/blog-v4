@@ -4,14 +4,15 @@
 	dim
 	title="闲聊/技术社区"
 	bg-img="https://blog-files.101045700.xyz/backgrounds/2b8b5c190c2176b1bc7732f957ce8af8.avif"
-	bg-right
+	bg-aside
 >
 	<div class="title text-creative">
 		次元技术宅
 	</div>
 
 	<Tip copy icon :tip-options="{ placement: 'left' }">
-		<Icon name="ri:qq-fill" />767876073
+		<Icon name="ri:qq-fill" />
+		<span>767876073</span>
 	</Tip>
 </BlogWidget>
 </template>
@@ -23,8 +24,6 @@
 	background-position: 100% 0;
 	background-size: 200%;
 	font-size: 1.8em;
-	font-weight: 800;
-	letter-spacing: 0.05em;
 	color: transparent;
 	transition: background-position 0.2s;
 

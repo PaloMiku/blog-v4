@@ -72,10 +72,6 @@ export default defineNuxtConfig({
 		typescriptPlugin: true,
 	},
 
-	features: {
-		inlineStyles: false,
-	},
-
 	nitro: {
 		prerender: {
 			// 修复部分平台会在文章路径后添�?`/`，导致闪�?404 错误
