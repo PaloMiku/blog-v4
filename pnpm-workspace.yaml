@@ -11,7 +11,7 @@ catalogs:
   content:
     '@bikariya/shiki': ^0.0.8
     '@nuxt/content': ^3.14.0
-    '@nuxtjs/seo': ^3.4.0
+    '@nuxtjs/seo': ^5.3.0
     '@shikijs/colorized-brackets': ^4.2.0
     '@shikijs/transformers': ^4.2.0
     abcjs: ^6.6.3
@@ -45,10 +45,8 @@ catalogs:
     '@bikariya/modals': ^0.0.8
     '@iconify-json/catppuccin': ^1.2.17
     '@iconify-json/line-md': ^1.2.16
-    '@iconify-json/ph': ^1.2.2
     '@iconify-json/ri': ^1.2.10
     '@iconify-json/simple-icons': ^1.2.87
-    '@iconify-json/solar': ^1.2.5
     '@iconify-json/tabler': ^1.2.35
     '@nuxt/icon': ^2.2.3
     '@nuxt/image': ^2.0.0

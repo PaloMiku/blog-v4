@@ -28,16 +28,17 @@ export function getDomainType(mainDomain: string) {
 	return domainTip[mainDomain]
 }
 
+const githubUsernameRegex = /github\.com\/([a-zA-Z0-9-]+)(?:\/[^/]+)?(\/?)$/
+
 export function getGithubUsername(url?: string) {
 	if (!url)
 		return ''
-	const usernameRegex = /github\.com\/([a-zA-Z0-9-]+)(?:\/[^/]+)?(\/?)$/
-	return url.match(usernameRegex)?.[1] ?? ''
+	return url.match(githubUsernameRegex)?.[1] ?? ''
 }
 
 export function isExtLink(url?: string) {
 	return url
-		? url.includes(':') || !!isPathFile(url)
+		? url.includes(':') || url.startsWith('//') || !!isPathFile(url)
 		: false
 }
 
