@@ -3,6 +3,16 @@ const slots = defineSlots<{
 	default: () => VNode[]
 }>()
 
+const chatRegex = /^\{(?<control>\.|:)?(?<caption>.*)\}$/
+
+function getControlClass(control?: string) {
+	if (control === '.')
+		return 'chat-myself'
+	if (control === ':')
+		return 'chat-system'
+	return ''
+}
+
 function render() {
 	const slotContent = slots.default()
 	if (!slotContent)
@@ -11,17 +21,12 @@ function render() {
 	return slotContent.map((node: VNode) => {
 		// WARN: 此处使用了非标准的 v-slot:default
 		const textContent = (node.children as any)?.default?.()[0].children
-		const body = <dd class="chat-body">{node}</dd>
-		if (typeof textContent !== 'string')
-			return body
-
-		const match = textContent.match(/^\{(?<control>\.|:)?(?<caption>.*)\}$/)
-		if (!match)
-			return body
-
-		const { caption, control } = match?.groups || {}
-		const controlClass = control === '.' ? 'chat-myself' : control === ':' ? 'chat-system' : ''
-		return <dt class={`chat-caption ${controlClass}`}>{caption}</dt>
+		const matchGroups = typeof textContent === 'string'
+			? textContent.match(chatRegex)?.groups
+			: undefined
+		return matchGroups
+			? <dt class={`chat-caption ${getControlClass(matchGroups.control)}`}>{matchGroups.caption}</dt>
+			: <dd class="chat-body">{node}</dd>
 	})
 }
 </script>
@@ -39,14 +44,13 @@ function render() {
 }
 
 :deep() {
-	.chat-caption {
+	> .chat-caption {
 		opacity: 0.8;
 		font-size: 0.9em;
 	}
 
-	.chat-body {
-		// BFC
-		overflow: hidden;
+	> .chat-body {
+		overflow: hidden; // BFC
 		width: fit-content;
 		max-width: 90%;
 		margin-bottom: 1em;
@@ -56,12 +60,12 @@ function render() {
 		background-color: var(--c-bg-2);
 	}
 
-	.chat-system {
+	> .chat-system {
 		margin-bottom: 1em;
 		text-align: center;
 	}
 
-	.chat-myself {
+	> .chat-myself {
 		text-align: end;
 
 		& + .chat-body {

@@ -3,7 +3,7 @@ const props = defineProps<{
 	icon?: string
 }>()
 
-const icon = computed(() => props.icon || 'tabler:quote')
+const icon = computed(() => props.icon || 'tabler:message-2')
 </script>
 
 <template>

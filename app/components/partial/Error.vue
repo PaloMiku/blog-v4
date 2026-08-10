@@ -8,7 +8,7 @@ withDefaults(defineProps<{
 	code?: string
 	language?: BundledLanguage
 }>(), {
-	icon: 'line-md:alert-circle-loop',
+	icon: 'line-md:cloud-alt-print-twotone-loop',
 	language: 'log',
 })
 </script>

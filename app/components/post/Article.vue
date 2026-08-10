@@ -2,14 +2,7 @@
 import type { ArticleProps } from '~/types/article'
 
 const props = defineProps<{ useUpdated?: boolean } & ArticleProps>()
-
-const appConfig = useAppConfig()
-
 const showAllDate = isTimeDiffSignificant(props.date, props.updated)
-
-const categoryLabel = computed(() => props.categories?.[0])
-const categoryColor = computed(() => appConfig.article.categories[categoryLabel.value!]?.color)
-const categoryIcon = computed(() => getCategoryIcon(categoryLabel.value))
 </script>
 
 <template>
@@ -28,23 +21,19 @@ const categoryIcon = computed(() => getCategoryIcon(categoryLabel.value))
 			<UtilDate
 				v-if="date && (showAllDate || !useUpdated)"
 				:date
-				icon="tabler:pencil"
+				icon="tabler:pencil-minus"
 			/>
 
 			<UtilDate
 				v-if="updated && (showAllDate || useUpdated)"
 				:class="{ 'use-updated': useUpdated }"
 				:date="updated"
-				icon="tabler:history"
+				icon="tabler:clock-edit"
 			/>
 
-			<span
-				v-if="categoryLabel"
-				class="article-category"
-				:style="{ '--cg-color': categoryColor }"
-			>
-				<Icon :name="categoryIcon" />
-				{{ categoryLabel }}
+			<span v-if="categories" :style="{ color: getCategoryColor(categories[0]) }">
+				<Icon :name="getCategoryIcon(categories[0])" />
+				{{ categories[0] }}
 			</span>
 
 			<span v-if="readingTime?.words" class="article-words">

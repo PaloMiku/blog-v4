@@ -113,6 +113,9 @@ onMounted(() => {
 <style lang="scss" scoped>
 .z-comment {
 	margin: 3rem 0.5rem;
+	padding: 0.4em;
+	border-radius: 0.5em;
+	background: var(--ld-bg-blur);
 
 	> h3 {
 		margin-top: 3rem;
@@ -128,9 +131,6 @@ onMounted(() => {
 	display: flex;
 	align-items: center;
 	overflow-wrap: anywhere;
-	padding: 0.4em;
-	border-radius: 0.5em;
-	background: var(--ld-bg-blur);
 
 	> .input {
 		min-width: 0;
@@ -174,11 +174,13 @@ onMounted(() => {
 		color: var(--c-text-3);
 	}
 
+	// 防止 a 被 overflow hidden
 	.tk-content {
-		margin-top: 0;
+		margin: -0.2em;
+		padding: 0.2em;
 	}
 
-	.tk-comments-title, .tk-nick > strong {
+	.tk-comments-title, .tk-nick {
 		font-family: var(--font-creative);
 	}
 
@@ -213,7 +215,20 @@ onMounted(() => {
 	pre {
 		overflow: auto;
 		border-radius: 0.5em;
-		font-size: 0.85rem;
+		font-size: 0.85em;
+	}
+
+	a {
+		margin: -0.1em -0.2em;
+		padding: 0.1em 0.2em;
+		background: linear-gradient(var(--c-primary-soft), var(--c-primary-soft)) no-repeat center bottom / 100% 0.1em;
+		color: var(--c-primary);
+		transition: all 0.2s;
+
+		&:hover {
+			border-radius: 0.3em;
+			background-size: 100% 100%;
+		}
 	}
 
 	p {
@@ -245,7 +260,7 @@ onMounted(() => {
 		border-inline-start: 4px solid var(--c-border);
 		border-radius: 4px;
 		background-color: var(--c-bg-2);
-		font-size: 0.9rem;
+		font-size: 0.9em;
 	}
 }
 </style>

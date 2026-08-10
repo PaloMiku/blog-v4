@@ -40,6 +40,9 @@
 }
 
 .scrollbar-hidden.scrollbar-hidden {
+	--scrollbar-height: 0px;
+	--guessed-scrollbar-width: 0px;
+
 	scrollbar-width: none;
 
 	&::-webkit-scrollbar {
@@ -156,6 +159,7 @@
 .text-creative, .text-tech {
 	font-family: var(--font-creative);
 	font-weight: 550;
+	-webkit-font-smoothing: antialiased; // macOS下"DOUYINSANSBOLD-GB"过粗
 }
 
 .text-story {

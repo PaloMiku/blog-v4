@@ -1,7 +1,7 @@
 import type { ReadTimeResults } from 'reading-time'
 import { defineCollection } from '@nuxt/content'
-import { asSitemapCollection } from '@nuxtjs/sitemap/content'
-import { z } from 'zod/v4'
+import { defineSitemapSchema } from '@nuxtjs/sitemap/content'
+import { z } from 'zod'
 import blogConfig from './blog.config'
 
 type ArticleType = keyof typeof blogConfig.article.types
@@ -10,7 +10,6 @@ const articleTypes = Object.keys(blogConfig.article.types) as any
 
 export interface ArticleSchema {
 	title?: string
-	subtitle?: string
 	description?: string
 	date?: string
 	updated?: string
@@ -40,7 +39,6 @@ const articleSchema = z.object({
 	type: z.enum(articleTypes).optional().default(articleTypes[0]),
 
 	image: z.string().optional(),
-	subtitle: z.string().optional(),
 	recommend: z.number().optional(),
 	references: z.array(z.object({
 		title: z.string().optional(),
@@ -58,9 +56,19 @@ const articleSchema = z.object({
 }) satisfies z.ZodType<ArticleSchema>
 
 export const collections = {
-	content: defineCollection(asSitemapCollection({
+	content: defineCollection({
 		source: '**',
 		type: 'page',
-		schema: articleSchema,
-	})),
+		schema: articleSchema.extend({
+			sitemap: defineSitemapSchema({
+				name: 'content',
+				onUrl: (url, entry) => {
+					const lastmod = (entry.updated || entry.published || entry.date) as string | undefined
+					if (lastmod)
+						url.lastmod = new Date(lastmod).toLocaleDateString('sv')
+				},
+				z,
+			}),
+		}),
+	}),
 }

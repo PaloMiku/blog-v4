@@ -1,14 +1,14 @@
 import type { AppConfig } from 'nuxt/schema'
-import type { MetaSlotsTree } from 'rehype-meta-slots'
 import type { ArticleSchema } from '~~/content.config'
+import type { MetaSlotsTree } from '~~/remark-plugins/rehype-meta-slots'
 
 export type ArticleOrderType = keyof AppConfig['article']['order']
 
 export interface ArticleProps extends ArticleSchema {
 	path: string
+	subtitle?: string
 
 	meta?: {
-		subtitle?: string
 		coverDim?: boolean
 		coverFilter?: string
 		hideInfo?: boolean
