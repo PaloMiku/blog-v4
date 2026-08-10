@@ -4,8 +4,6 @@ useSeoMeta({
 	title: '预览',
 	description: `${appConfig.title}的文章预览。`,
 })
-const layoutStore = useLayoutStore()
-layoutStore.setAside(['blog-log'])
 
 const { data: listRaw } = await useAsyncData('previews:index', () => getArticleIndexOptions('previews/%'), { default: () => [] })
 const { listSorted, isAscending, sortOrder } = useArticleSort(listRaw)
@@ -13,6 +11,10 @@ const { category, categories, listCategorized } = useCategory(listSorted)
 </script>
 
 <template>
+<template #aside>
+	<WidgetBlogLog />
+</template>
+
 <div class="preview">
 	<div class="preview-header">
 		<h1>

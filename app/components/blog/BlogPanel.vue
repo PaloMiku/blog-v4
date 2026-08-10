@@ -1,6 +1,10 @@
 <script setup lang="ts">
+defineProps<{
+	hasAside?: boolean
+}>()
+
 const layoutStore = useLayoutStore()
-const { asideWidgets, avoidTargets } = storeToRefs(layoutStore)
+const { avoidTargets } = storeToRefs(layoutStore)
 
 const panelRef = useTemplateRef('blog-panel')
 const { transform } = useAvoidTransform(panelRef, avoidTargets)
@@ -11,25 +15,26 @@ const { transform } = useAvoidTransform(panelRef, avoidTargets)
 	id="blog-panel"
 	ref="blog-panel"
 	:class="{ 'has-active': layoutStore.state !== 'none' }"
-	:style="{ '--transform': transform }"
+	:style="{ transform }"
 >
+	<button
+		v-if="hasAside"
+		class="toggle-aside widescreen-only"
+		:class="{ active: layoutStore.state === 'aside' }"
+		aria-label="切换侧边栏"
+		@click="layoutStore.toggle('aside')"
+	>
+		<Icon class="rtl-flip" name="tabler:align-right" />
+	</button>
+
+	<Icon v-show="false" name="tabler:layout-sidebar-filled" />
 	<button
 		class="toggle-sidebar mobile-only"
 		:class="{ active: layoutStore.state === 'sidebar' }"
 		aria-label="切换菜单"
 		@click="layoutStore.toggle('sidebar')"
 	>
-		<Icon class="rtl-flip" name="tabler:layout-sidebar-left-expand" />
-	</button>
-
-	<button
-		v-if="asideWidgets.length"
-		class="toggle-aside widescreen-only"
-		:class="{ active: layoutStore.state === 'aside' }"
-		aria-label="切换侧边栏"
-		@click="layoutStore.toggle('aside')"
-	>
-		<Icon class="rtl-flip" name="tabler:layout-sidebar-right-expand" />
+		<Icon class="rtl-flip" :name="layoutStore.state === 'sidebar' ? 'tabler:layout-sidebar-filled' : 'tabler:layout-sidebar'" />
 	</button>
 </div>
 </template>
@@ -44,7 +49,6 @@ const { transform } = useAvoidTransform(panelRef, avoidTargets)
 	background-color: var(--c-bg-a50);
 	backdrop-filter: blur(0.5rem);
 	font-size: 1.4rem;
-	transform: var(--transform);
 	transition: transform 0.1s;
 	z-index: var(--z-index-popover);
 
