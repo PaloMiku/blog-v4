@@ -259,4 +259,13 @@ ${packageJson.homepage}
 		url: blogConfig.url,
 		defaultLocale: blogConfig.language,
 	},
+
+	studio: {
+		repository: {
+			provider: 'github',
+			owner: 'PaloMiku',
+			repo: 'blog-v4',
+			branch: 'main',
+		},
+	},
 })
