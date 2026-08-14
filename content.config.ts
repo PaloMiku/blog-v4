@@ -21,6 +21,8 @@ export interface ArticleSchema {
 	image?: string
 	recommend?: number
 	references?: { title?: string, link?: string }[]
+	/** 所属文章合集 key，对应 app/collections.ts 中的条目 */
+	collection?: string
 	/** TODO */
 	draft?: boolean
 	permalink?: string
@@ -44,6 +46,7 @@ const articleSchema = z.object({
 		title: z.string().optional(),
 		link: z.string().optional(),
 	})).optional(),
+	collection: z.string().optional(),
 	draft: z.boolean().default(false),
 	permalink: z.string().optional(),
 

@@ -4,6 +4,7 @@ date: 2025-05-19 00:30:00
 description: 本文介绍了作者2025年上半年7部Galgame入坑之旅：以《爱上火车Last Run!!》打开大门，继通关《苍之彼方的四重奏》《魔女的夜宴》《恋爱与选举与巧克力》《拔作岛》后，终被《Summer Pockets REFLECTION BLUE》封神；本文记录了各作剧情亮点、系统特色与角色喜好，并分享了“纯爱、一次性通线、戴耳机追求沉浸”的个人游玩准则，为同好提供参考。
 categories: [旮瘩给木]
 tags: [Galgame]
+collection: galgame-notes
 type: story
 image: https://blog-files.101045700.xyz/Gal2025Up/SPRB/AP2.webp
 recommend: 20

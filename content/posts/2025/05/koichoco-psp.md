@@ -4,6 +4,7 @@ date: 2025-05-24 08:20:00
 description: 本文介绍了《恋爱与选举与巧克力》PSP携带版的试玩亮点：新增可攻略角色枝川希美全程语音、30张新CG及细节演出；记录了PC高清重制版“暴力拉伸”导致的千里眼距崩坏在携带版得到修复，人物表情更丰富；分享了用PPSSPP在Steam Deck流畅运行、获取简体汉化ISO的完整方案，并附配置与资源指引，助你随时品味这部“真·最佳版本”校园恋爱佳作。
 categories: [旮瘩给木]
 tags: [Galgame,Koichoco]
+collection: galgame-notes
 image: https://storage.googleapis.com/studio-design-asset-files/projects/p6aoL8DkWR/s-2400x1522_v-frms_webp_ec50cb5d-345a-4a00-ab32-509e8e36b6a4_regular.webp
 recommend: 2
 ---

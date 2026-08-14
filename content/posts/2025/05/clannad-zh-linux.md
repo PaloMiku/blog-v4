@@ -4,6 +4,7 @@ date: 2025-05-26 17:00:00
 description: 本文介绍了《Clannad》HD官方中文版与Full Voice汉化版在Linux下的运行方案；本文记录了使用Proton 9.0-4即可双版本完美启动的实测过程，并对比引擎差异及存档兼容性；本文分享了老Galgame在Linux平台零补丁畅玩的经验，为同人及正版补票玩家提供一站式兼容层设置指南。
 categories: [旮瘩给木]
 tags: [Galgame,Clannad]
+collection: galgame-notes
 image: https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/324160/ss_820eb3b554040d3829bbf3b511988480ca2ca521.600x338.jpg?t=1711546691
 ---
 

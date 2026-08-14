@@ -4,6 +4,7 @@ date: 2025-05-19 18:30:00
 description: 本文介绍了《爱上火车》Linux Proton 环境视频播放修复方案，记录从黑屏卡死到正常播放的排查过程，分享用 Protontricks 补 DirectShow+WMP9 的完整命令与 Flatseal 权限配置，提供 Arch/Flatpak 双安装路径与镜像加速技巧，一站式解决 Steam 中文版动画无法播放痛点，助力 Linux 玩家零切换畅玩 Galgame。
 categories: [旮瘩给木]
 tags: [Galgame]
+collection: galgame-notes
 image: https://blog-files.101045700.xyz/MaitetsuVideoFix/Home.webp
 recommend: 10
 ---
