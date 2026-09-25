@@ -43,11 +43,13 @@ const appConfigContent = fs.readFileSync(PATH_APP_CONFIG, 'utf8')
 	.replace(/'.?ICP备.*?'/, '\'备案\'')
 fs.writeFileSync(PATH_APP_CONFIG, appConfigContent)
 
+const ZHILU_RE = /zhilu/
+
 // 处理 blog.config.ts
 const PATH_BLOG_CONFIG = './blog.config.ts'
 const blogConfigContent = fs.readFileSync(PATH_BLOG_CONFIG, 'utf8')
 	.replace(/'[^']*纸鹿[^']*'/g, '\'博客\'')
-	.replace(/'[^']*zhilu[^']*'/g, match => match.replace(/zhilu/, 'example'))
+	.replace(/'[^']*zhilu[^']*'/g, match => match.replace(ZHILU_RE, 'example'))
 fs.writeFileSync(PATH_BLOG_CONFIG, blogConfigContent)
 
 // 处理 redirects.json

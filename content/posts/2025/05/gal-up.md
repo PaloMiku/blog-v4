@@ -394,3 +394,12 @@ caption: 呃呃呃呃呃呃呃呃呃呃呃呃呃呃呃——————
 - 主要还是躺在床上用 Steamdeck 玩 Gal 比较多。
 
 个人游玩设备和环境基本是 Arch Linux （Steamdeck+Arch PC），虽然这让我吃了不少苦头（比如 CG 放不出来），但是还是要激流勇进不是（实际上俩设备都额外装了Win双系统）
+
+## 相关条目
+
+::bgm-card
+---
+id: 295957
+compact: true
+---
+::

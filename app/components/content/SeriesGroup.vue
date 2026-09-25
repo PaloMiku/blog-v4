@@ -219,23 +219,23 @@ function toggleExpand() {
 }
 
 .series-title {
+	overflow-wrap: break-word;
 	margin: 0;
 	font-size: 1rem;
 	font-weight: 700;
 	line-height: 1.2;
-	word-break: break-word;
 	color: var(--c-text);
 }
 
 .series-description {
 	display: -webkit-box;
 	overflow: hidden;
+	overflow-wrap: break-word;
 	margin: 0;
 	font-size: 0.8rem;
 	-webkit-line-clamp: 1;
 	line-clamp: 1;
 	line-height: 1.4;
-	word-break: break-word;
 	color: var(--c-text-2);
 	-webkit-box-orient: vertical;
 }

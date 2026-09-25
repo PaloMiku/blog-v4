@@ -30,3 +30,5 @@ content/posts/test.md
 # Agent / tooling session artifacts
 .playwright-mcp
 .zcode
+.mimosa
+.qoder

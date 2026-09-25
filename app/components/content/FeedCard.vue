@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { CSSProperties } from 'vue'
 import type { FeedEntry } from '~/types/feed'
-import { Temporal } from 'temporal-polyfill'
 
 const props = defineProps<FeedEntry>()
 
@@ -43,7 +42,7 @@ function getInspectStyle(src: string): CSSProperties {
 	>
 		<div class="avatar" :title="feed ? undefined : '无订阅源'">
 			<ClientOnly v-if="isInspect">
-				<span style="position: absolute; left: 100%; white-space: nowrap;" v-text="title" />
+				<span class="inspect-info" v-text="title" />
 				<NuxtImg :src="icon" :title="icon" :style="getInspectStyle(icon)" />
 				<NuxtImg :src="avatar" :title="avatar" :style="getInspectStyle(avatar)" />
 			</ClientOnly>
@@ -115,6 +114,12 @@ function getInspectStyle(src: string): CSSProperties {
 	.avatar {
 		position: relative;
 		margin: 0 0.5em 0 0;
+
+		.inspect-info {
+			position: absolute;
+			left: 100%;
+			white-space: nowrap;
+		}
 
 		img {
 			display: block;

@@ -65,6 +65,9 @@ export function joinWith(strings: (string | undefined)[], separator = '\n') {
 	return strings.filter(Boolean).join(separator)
 }
 
+const HTML_TAG_RE = /<[^>]+(>|$)/g
+const NEWLINE_RE = /\n+/g
+
 export function highlightHtml(text: string, words: string | string[] | undefined, className?: string) {
 	const validTerms = toArray(words)
 		.filter((t): t is string => !!t?.trim())
@@ -78,11 +81,11 @@ export function highlightHtml(text: string, words: string | string[] | undefined
 			? `<mark${className ? ` class="${className}"` : ''}>${escape(part)}</mark>`
 			: escape(part))
 		.join('')
-		.replace(/\n+/g, '<br>')
+		.replace(NEWLINE_RE, '<br>')
 }
 
 export function removeHtmlTags(str?: string) {
 	if (typeof str !== 'string')
 		return ''
-	return str.replace(/<[^>]+(>|$)/g, '')
+	return str.replace(HTML_TAG_RE, '')
 }

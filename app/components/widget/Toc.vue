@@ -140,27 +140,27 @@ li {
 
 .toc-actions button,
 .toc-actions a {
-	position: relative;
-	border: 0;
-	background: transparent;
-	color: var(--c-text);
-	width: 2.2rem;
-	height: 2.2rem;
-	padding: 0;
-	border-radius: 999px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	cursor: pointer;
-	outline: none;
+	position: relative;
+	width: 2.2rem;
+	height: 2.2rem;
+	padding: 0;
+	border: 0;
+	border-radius: 999px;
 	box-shadow: inset 0 0 0 1px var(--c-border);
+	outline: none;
+	background: transparent;
+	color: var(--c-text);
 	transition: all 0.2s;
+	cursor: pointer;
 }
 
 .toc-actions button:hover,
 .toc-actions a:hover {
-	color: var(--c-primary);
 	box-shadow: inset 0 0 0 1px var(--c-primary);
+	color: var(--c-primary);
 }
 
 .back-to-top,

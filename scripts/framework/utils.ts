@@ -9,6 +9,8 @@ import feeds from '../../app/feeds'
 
 export const entries = flattenFeedGroups(feeds)
 
+const DNS_PREFIX_RE = /^DNS:/
+
 function flattenFeedGroups(groups: FeedGroup[]): FeedEntry[] {
 	return groups.flatMap(g => g.entries)
 }
@@ -43,7 +45,16 @@ export async function getLinkInfo(e: FeedEntry): Promise<ServerResp> {
 	}
 
 	const start = Date.now()
-	const url = new URL(e.link)
+	let url: URL
+	try {
+		url = new URL(e.link)
+	}
+	catch {
+		return { ...basicResp, error: '无效的链接' }
+	}
+	// 友链来自仓库内的静态配置，仍限定 http(s)，避免其它协议被请求
+	if (url.protocol !== 'http:' && url.protocol !== 'https:')
+		return { ...basicResp, error: `不支持的协议 ${url.protocol}` }
 	const lib = url.protocol === 'https:' ? https : http
 
 	return new Promise<ServerResp>((resolve) => {
@@ -80,7 +91,7 @@ export async function getCertDomains(options: tls.ConnectionOptions): Promise<st
 			const cert = socket.getPeerCertificate(true)
 			const san: string[] = cert.subjectaltname
 				?.split(', ')
-				.map(s => s.replace(/^DNS:/, '')) ?? []
+				.map(s => s.replace(DNS_PREFIX_RE, '')) ?? []
 			const domains = san.length ? san : [cert.subject.CN] as string[]
 			resolve(domains)
 			socket.end()

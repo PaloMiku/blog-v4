@@ -147,16 +147,16 @@ section {
 	flex-direction: column;
 	gap: 1rem;
 	position: relative;
-	padding: 1.5rem !important;
+	padding: 1.5rem;
 }
 
 .copyright-badge {
 	position: absolute;
+	opacity: 0.5;
 	top: 1.5rem;
 	right: 1.5rem;
 	font-size: 2rem;
 	color: var(--c-border);
-	opacity: 0.5;
 }
 
 .card-left {
@@ -176,7 +176,11 @@ section {
 	line-height: 1.4;
 }
 
-.url-wrapper { display: flex; align-items: center; gap: -0.05rem; }
+.url-wrapper {
+	display: flex;
+	align-items: center;
+	gap: -0.05rem;
+}
 
 .url {
 	flex: 1;
@@ -188,54 +192,87 @@ section {
 }
 
 .card-meta {
-	.meta-column { display: flex; flex-direction: column; gap: 0.8rem; }
-	.meta-item { display: flex; flex-direction: column; gap: 0.3rem; }
-	.label { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--c-text-2); }
-	.value { font-size: 0.9rem; font-weight: 500; color: var(--c-text-1); }
-	.copyright-link { text-decoration: none; color: var(--c-primary); transition: opacity 0.2s; }
-	.copyright-link:hover { opacity: 0.8; }
+	.meta-column {
+		display: flex;
+		flex-direction: column;
+		gap: 0.8rem;
+	}
+
+	.meta-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+
+	.label {
+		font-size: 0.75rem;
+		font-weight: 500;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--c-text-2);
+	}
+
+	.value {
+		font-size: 0.9rem;
+		font-weight: 500;
+		color: var(--c-text-1);
+	}
+
+	.copyright-link {
+		text-decoration: none;
+		color: var(--c-primary);
+		transition: opacity 0.2s;
+	}
+
+	.copyright-link:hover {
+		opacity: 0.8;
+	}
 }
 
 .card-signature-text {
 	position: absolute;
+	opacity: 0.95;
 	right: 1.5rem;
 	bottom: 1.5rem;
-	font-family: 'Ephesis', var(--font-creative), sans-serif;
+	padding: 0.25rem 0.4rem;
+	border-radius: 0.35rem;
+	background-color: transparent;
+	font-family: Ephesis, var(--font-creative), sans-serif;
 	font-size: 2rem;
 	font-weight: 700;
+	text-shadow: 0 0 4px rgb(255 255 255 / 25%);
 	color: var(--c-text);
-	opacity: 0.95;
-	text-shadow: 0 0 4px rgba(255, 255, 255, 0.25);
 	z-index: 2;
-	padding: 0.25rem 0.4rem;
-	background-color: transparent;
-	border-radius: 0.35rem;
 }
 
 @media (max-width: 768px) {
 	.card-signature-text {
+		align-self: flex-end;
 		position: relative;
 		right: auto;
 		bottom: auto;
-		align-self: flex-end;
 		margin-top: 0.7rem;
-		text-align: right;
 		background-color: transparent;
+		text-align: right;
 	}
 }
 
 @media (prefers-color-scheme: dark) {
 	.card-signature-text {
 		background-color: transparent;
-		text-shadow: 0 0 3px rgba(0, 0, 0, 0.35);
+		text-shadow: 0 0 3px rgb(0 0 0 / 35%);
 	}
 }
 
 .dark .card-signature-text {
 	background-color: transparent;
-	text-shadow: 0 0 3px rgba(0, 0, 0, 0.35);
+	text-shadow: 0 0 3px rgb(0 0 0 / 35%);
 }
 
-.reference .content ul { margin: 0; padding: 0; list-style: none; }
+.reference .content ul {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
 .reference .content li { margin: 0.6rem 0; }
 </style>

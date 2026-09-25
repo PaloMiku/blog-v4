@@ -152,8 +152,8 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 .sidebar-nav {
 	flex-grow: 1;
 	padding: 0 5%;
-	font-size: 0.9em;
 	font-family: var(--font-basic);
+	font-size: 0.9em;
 
 	h3 {
 		margin: 2em 0 1em 1em;
@@ -170,13 +170,13 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 
 .sidebar-nav-item,
 .sidebar-nav-item-parent {
-	font-family: var(--font-basic);
 	display: flex;
 	align-items: center;
 	gap: 0.5em;
 	padding: 0.5em 1em;
-	border-radius: 0.5em;
 	border: 1px solid transparent;
+	border-radius: 0.5em;
+	font-family: var(--font-basic);
 	transition: all 0.2s;
 }
 
@@ -184,9 +184,9 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 .sidebar-nav-item.router-link-active,
 .sidebar-nav-item-parent.active,
 .sidebar-nav-item-parent:hover {
+	border-color: var(--c-primary);
 	background-color: var(--c-bg-soft);
 	color: var(--c-text);
-	border-color: var(--c-primary);
 }
 
 .sidebar-nav-item > .iconify {
@@ -208,16 +208,16 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 .sidebar-nav-item-parent {
 	justify-content: space-between;
 	width: 100%;
+	font-weight: 500;
 	text-align: left;
 	cursor: pointer;
-	font-weight: 500;
 }
 
 .sidebar-nav-item-parent .nav-text-wrap {
 	display: flex;
+	flex-grow: 1;
 	align-items: center;
 	gap: 0.5em;
-	flex-grow: 1;
 	overflow: hidden;
 	white-space: nowrap;
 	text-overflow: ellipsis;
@@ -258,9 +258,9 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 }
 
 .submenu-item {
-	font-family: var(--font-basic);
 	padding-left: 0.5em;
 	background: transparent;
+	font-family: var(--font-basic);
 	font-size: 0.9em;
 }
 
@@ -285,9 +285,10 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 
 .sidebar-footer {
 	--gap: clamp(0.5rem, 3vh, 1rem);
-	position: relative;
+
 	display: grid;
 	gap: var(--gap);
+	position: relative;
 	padding: var(--gap);
 	font-size: 0.8em;
 	text-align: center;

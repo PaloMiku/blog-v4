@@ -60,9 +60,12 @@ export function getPaginationIndicator(current: number, total: number, expand = 
 	const pages: number[] = [1]
 	const start = Math.max(2, current - expand)
 	const end = Math.min(total - 1, current + expand)
-	if (start > 2) pages.push(-1) // ponytail: -1 means ellipsis
+	if (start > 2)
+		pages.push(-1) // ponytail: -1 means ellipsis
 	for (let i = start; i <= end; i++) pages.push(i)
-	if (end < total - 1) pages.push(-1)
-	if (total > 1) pages.push(total)
+	if (end < total - 1)
+		pages.push(-1)
+	if (total > 1)
+		pages.push(total)
 	return pages
 }

@@ -38,56 +38,58 @@ const style = computed(() => {
 
 <style scoped lang="scss">
 .sidebar-decor {
-  width: 100%;
-  border-radius: 0.5rem;
-  overflow: hidden;
-  background-color: transparent;
-  background-origin: border-box;
-  background-clip: border-box;
-  pointer-events: none;
-  position: relative;
-  z-index: 0;
+	position: relative;
+	overflow: hidden;
+	width: 100%;
+	border-radius: 0.5rem;
+	background-clip: border-box;
+	background-color: transparent;
+	background-origin: border-box;
+	pointer-events: none;
+	z-index: 0;
 
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 1.5rem;
-    pointer-events: none;
-    z-index: 1;
-    background: linear-gradient(
-      to bottom,
-      rgba(255, 255, 255, 0.8) 0%,
-      rgba(255, 255, 255, 0) 100%
-    );
-  }
+	&::before,
+	&::after {
+		content: "";
+		position: absolute;
+		right: 0;
+		left: 0;
+		height: 1.5rem;
+		background:
+			linear-gradient(
+				to bottom,
+				rgb(255 255 255 / 80%) 0%,
+				rgb(255 255 255 / 0%) 100%
+			);
+		pointer-events: none;
+		z-index: 1;
+	}
 
-  :global(.dark) &::before,
-  :global(.dark) &::after {
-    background: linear-gradient(
-      to bottom,
-      rgba(0, 0, 0, 0.55) 0%,
-      rgba(0, 0, 0, 0) 100%
-    );
-  }
+	:global(.dark) &::before,
+	:global(.dark) &::after {
+		background:
+			linear-gradient(
+				to bottom,
+				rgb(0 0 0 / 55%) 0%,
+				rgb(0 0 0 / 0%) 100%
+			);
+	}
 
-  &::before {
-    top: 0;
-  }
+	&::before {
+		top: 0;
+	}
 
-  &::after {
-    bottom: 0;
-    transform: rotate(180deg);
-  }
+	&::after {
+		bottom: 0;
+		transform: rotate(180deg);
+	}
 }
 
 :global(.dark) .sidebar-decor {
-  filter: brightness(1.1) saturate(1.1);
+	filter: brightness(1.1) saturate(1.1);
 }
 
 :global(.light) .sidebar-decor {
-  filter: brightness(1) saturate(1);
+	filter: brightness(1) saturate(1);
 }
 </style>

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { exec } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -179,7 +179,8 @@ if (permalink)
 // #region 打开 VS Code
 const s = spinner()
 s.start('正在打开 VS Code...')
-exec(`code "${mdPath}"`, (error) => {
+// 传绝对路径：既让 VS Code 稳定打开，也确保参数不会被解析成选项
+execFile('code', [resolve(mdPath)], (error) => {
 	if (!error)
 		return
 	s.stop('⚠️ 无法打开 VS Code，请确认已通过命令面板注册 code 命令到 PATH')

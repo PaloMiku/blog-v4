@@ -1,4 +1,4 @@
-﻿import { resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { arch, env, version as nodeVersion, platform } from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { name as ciName, CLOUDFLARE_PAGES, GITHUB_ACTIONS, NETLIFY } from 'ci-info'
@@ -74,7 +74,7 @@ export default defineNuxtConfig({
 
 	nitro: {
 		prerender: {
-			// 修复部分平台会在文章路径后添�?`/`，导致闪�?404 错误
+			// 修复部分平台会在文章路径后添加 `/`，导致闪现 404 错误
 			// https://github.com/nuxt/content/issues/2378
 			autoSubfolderIndex: CLOUDFLARE_PAGES || GITHUB_ACTIONS || NETLIFY ? false : undefined,
 		},
@@ -101,7 +101,7 @@ export default defineNuxtConfig({
 		},
 	},
 
-	/** 在生产环境启�?sourcemap */
+	/** 在生产环境启用 sourcemap */
 	// sourcemap: true,
 
 	typescript: {
@@ -123,9 +123,9 @@ export default defineNuxtConfig({
 			},
 		},
 		define: {
-			/** 在生产环境启�?Vue DevTools */
+			/** 在生产环境启用 Vue DevTools */
 			// __VUE_PROD_DEVTOOLS__: 'true',
-			/** 在生产环境启�?Vue 水合不匹配详�?*/
+			/** 在生产环境启用 Vue 水合不匹配详情 */
 			// __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'true',
 		},
 		optimizeDeps: {
@@ -139,6 +139,7 @@ export default defineNuxtConfig({
 
 	// @keep-sorted
 	modules: [
+		'./modules/anti-mirror',
 		'@bikariya/image-viewer',
 		'@bikariya/modals',
 		'@bikariya/shiki',
@@ -152,8 +153,8 @@ export default defineNuxtConfig({
 		'@pinia/nuxt',
 		'@vueuse/nuxt',
 		'nuxt-llms',
-		'unplugin-yaml/nuxt',
 		'nuxt-studio',
+		'unplugin-yaml/nuxt',
 	],
 
 	colorMode: {
@@ -202,7 +203,7 @@ ${packageJson.homepage}
 		},
 		'content:file:afterParse': (ctx) => {
 			const { permalink, path } = ctx.content as Record<string, string | undefined>
-			// 优先使用自定义链接（permalink/abbrlink），其次隐藏基于文件路由�?URL 中的 /posts 前缀
+			// 优先使用自定义链接（permalink/abbrlink），其次隐藏基于文件路由的 URL 中的 /posts 前缀
 			if (permalink)
 				ctx.content.path = permalink
 			else if (blogConfig.article.hidePostPrefix && path?.startsWith('/posts/'))
@@ -225,7 +226,7 @@ ${packageJson.homepage}
 		// 尽量以这些密度点对点显示
 		densities: [1, 1.5, 2],
 		format: ['avif', 'webp'],
-		// Neylify �?netlify 处理器无法显示站外图片，ipx 处理器无法显示站内图片，需彻底禁用
+		// Neylify 下 netlify 处理器无法显示站外图片，ipx 处理器无法显示站内图片，需彻底禁用
 		// https://github.com/nuxt/image/issues/1353
 		provider: NETLIFY ? 'none' : undefined,
 	},

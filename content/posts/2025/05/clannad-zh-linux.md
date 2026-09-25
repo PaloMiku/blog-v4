@@ -54,3 +54,12 @@ src: https://blog-files.101045700.xyz/Galgame/Clannad-Proton-9.webp
 caption: 调整兼容层版本为 Proton 9.0-4
 ---
 ::
+
+## 相关条目
+
+::bgm-card
+---
+id: 13
+compact: true
+---
+::

@@ -63,19 +63,19 @@ onMounted(() => {
 	}
 
 	>.paragraph-quote-btn {
-		position: absolute;
-		top: 0.15em;
-		right: 0.15em;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
+		position: absolute;
+		opacity: 0;
+		top: 0.15em;
+		right: 0.15em;
 		padding: 0.16em;
 		border-radius: 0.35em;
 		line-height: 1;
 		color: var(--c-text-2);
-		opacity: 0;
-		pointer-events: auto;
 		transition: 0.2s;
+		pointer-events: auto;
 	}
 
 	@media (hover: hover) and (pointer: fine) {
@@ -91,6 +91,7 @@ onMounted(() => {
 			opacity: 0;
 			transition: opacity 0.2s;
 		}
+
 		&.has-quote-button > .paragraph-quote-btn {
 			opacity: 1;
 		}
@@ -98,8 +99,8 @@ onMounted(() => {
 
 	>.paragraph-quote-btn:hover,
 	>.paragraph-quote-btn:focus-visible {
-		color: var(--c-primary);
 		opacity: 1;
+		color: var(--c-primary);
 	}
 }
 </style>

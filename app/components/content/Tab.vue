@@ -150,8 +150,8 @@ function toggleDropdown() {
 		&::before, &::after {
 			display: block;
 			position: absolute;
-			bottom: -0.5em;
 			inset-inline: 0.8em;
+			bottom: -0.5em;
 			height: 2px;
 			border-radius: 1em;
 			pointer-events: none;
