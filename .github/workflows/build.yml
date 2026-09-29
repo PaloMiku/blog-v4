@@ -76,7 +76,7 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: main
-          folder: dist
+          folder: .output/public
           repository-name: PaloMiku/blog-public
           ssh-key: ${{ secrets.DEPLOY_KEY }}
           commit-message: Deploy to GitHub Public Repository
