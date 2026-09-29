@@ -8,7 +8,6 @@ image: https://imgheybox1.max-c.com/web/bbs/2025/06/07/ce8c92b3c8eb1c750f02a1ef2
 ---
 
 ::alert
-::alert
 [本文类似版本](https://www.xiaoheihe.cn/app/bbs/link/156323352)个人首发于小黑盒，你在此看到的版本为基于小黑盒发布版本的二次修订版。
 
 本次修订版本发布于个人博客，目前仅在小黑盒和个人博客发布过本文。
