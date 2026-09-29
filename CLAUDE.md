@@ -24,6 +24,7 @@ pnpm new        # 新建文章
 
 - ESLint 统一 tab 缩进、无 Prettier；带 `// @keep-sorted` 标记的配置数组必须保持排序
 - 文章可用 frontmatter `permalink` 自定义 URL；`hidePostPrefix` 开启时 /posts/xxx 显示为 /xxx
+- dev 服务器（pnpm dev 等）的启停由用户自行管理，代理不得擅自启动或杀掉；`pnpm generate` 若因 .data 被 dev 占用而失败，先请用户暂停 dev 再继续
 
 ## 部署
 
