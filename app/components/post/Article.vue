@@ -84,8 +84,15 @@ const showAllDate = isTimeDiffSignificant(props.date, props.updated)
 }
 
 .article-description {
+	display: -webkit-box;
+	overflow: hidden;
+	overflow-wrap: break-word;
 	font-size: 0.9em;
+	-webkit-line-clamp: 4; /* 最多展示 4 行 */
+	line-clamp: 4;
+	text-overflow: ellipsis;
 	color: var(--c-text-2);
+	-webkit-box-orient: vertical;
 }
 
 .article-cover {
