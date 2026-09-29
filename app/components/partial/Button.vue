@@ -2,17 +2,26 @@
 import { UtilLink } from '#components'
 
 export interface ButtonProps {
+	variant?: 'button' | 'text'
 	icon?: string
 	text?: string
 	to?: string
 	desc?: string
 	primary?: boolean
 }
-defineProps<ButtonProps>()
+
+withDefaults(defineProps<ButtonProps>(), {
+	variant: 'button',
+})
 </script>
 
 <template>
-<component :is="to ? UtilLink : 'button'" :to class="button" :class="{ primary }">
+<component
+	:is="to ? UtilLink : 'button'"
+	:to
+	class="z-button"
+	:class="[variant, { primary }]"
+>
 	<div class="button-main">
 		<Icon v-if="icon" :name="icon" />
 		<slot>{{ text }}</slot>
@@ -23,9 +32,28 @@ defineProps<ButtonProps>()
 </component>
 </template>
 
-<style lang="scss" scoped>
-.button {
+<style scoped>
+.z-button {
 	display: inline-block;
+	transition: color 0.1s, background-color 0.2s;
+
+	&.text {
+		&:hover {
+			color: var(--c-primary);
+		}
+	}
+
+	&:disabled {
+		color: var(--c-text-3);
+		cursor: not-allowed;
+	}
+
+	& + .button {
+		margin-inline-start: 0.8em;
+	}
+}
+
+.button {
 	padding: 0.4em 0.6em;
 	border: 1px solid var(--c-bg-soft);
 	border-radius: 0.5em;
@@ -33,7 +61,6 @@ defineProps<ButtonProps>()
 	background-color: var(--ld-bg-card);
 	line-height: 1.2;
 	vertical-align: middle;
-	transition: color 0.1s, background-color 0.2s;
 	cursor: pointer;
 
 	&.primary {
@@ -53,15 +80,8 @@ defineProps<ButtonProps>()
 
 	&:disabled {
 		background-color: var(--c-bg-1);
-		color: var(--c-text-3);
-		cursor: not-allowed;
-	}
-
-	& + .button {
-		margin-inline-start: 0.8em;
 	}
 }
-
 .button-main {
 	display: flex;
 	align-items: center;

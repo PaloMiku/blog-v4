@@ -1,4 +1,6 @@
 import antfu from '@antfu/eslint-config'
+import css from '@zinkawaii/eslint-config-css'
+import { defineConfig } from 'eslint/config'
 
 export default antfu({
 	ignores: ['*.yaml', '.mimosa', '.qoder', '.zcode', '.playwright-mcp'],
@@ -6,23 +8,22 @@ export default antfu({
 		indent: 'tab',
 	},
 	pnpm: true,
-	// @keep-sorted
-	rules: {
-		'yaml/indent': ['error', 2],
+	jsonc: {
+		overrides: {
+			'jsonc/indent': ['error', 2],
+		},
 	},
-}, {
-	// vue/* 规则假设 Vue SFC AST，只能作用于 .vue，放进全局配置会令 markdown 等文件崩溃
-	files: ['**/*.vue'],
 	// @keep-sorted
 	rules: {
 		'vue/block-lang': ['warn', {
 			script: { lang: ['ts', 'tsx'] },
-			style: { lang: ['scss'] },
+			style: { lang: ['css'], allowNoLang: true },
 		}],
 		'vue/enforce-style-attribute': ['warn', {
 			allow: ['scoped'],
 		}],
 		'vue/html-indent': ['error', 'tab', { baseIndent: 0 }],
+		'yaml/indent': ['error', 2],
 	},
 }, {
 	files: ['app/pages/**/*.vue'],
@@ -33,7 +34,6 @@ export default antfu({
 	files: ['**/*.json'],
 	ignores: ['content/**'],
 	rules: {
-		'jsonc/indent': ['error', 2],
 		'style/eol-last': ['warn', 'never'],
 	},
 }, {
@@ -41,11 +41,17 @@ export default antfu({
 	// @keep-sorted
 	rules: {
 		'antfu/consistent-list-newline': 'off',
+		'e18e/prefer-includes': 'off',
 		'eqeqeq': 'off',
-		// 围栏代码块是文章内容而非项目源码，--fix 不得改写读者看到的示例
-		'jsonc/indent': 'off',
-		// MDC 以无空格的 #slot 行定义命名 slot（如 #default/#tab1），与本规则冲突
+		// MDC 的 YAML 参数和注释会被当成标题，文章也允许多个一级标题
+		'markdown/heading-increment': 'off',
+		// 保留文章中的占位链接、页内跳转和装饰性图标
+		'markdown/no-empty-links': 'off',
+		// MDC 的具名插槽（如 #tab1）会被误判为缺空格的 ATX 标题
 		'markdown/no-missing-atx-heading-space': 'off',
+		'markdown/no-missing-link-fragments': 'off',
+		'markdown/no-multiple-h1': 'off',
+		'markdown/require-alt-text': 'off',
 		'no-irregular-whitespace': 'off',
 		'no-sequences': 'off',
 		'prefer-arrow-callback': 'off',
@@ -55,5 +61,22 @@ export default antfu({
 		'style/quotes': 'off',
 		'style/semi': 'off',
 		'unicorn/prefer-includes': 'off',
+		'vue/block-lang': 'off',
 	},
-})
+}, {
+	// 文章中的 JSON 示例允许尾随逗号
+	files: ['content/**/*.json'],
+	rules: {
+		'jsonc/comma-dangle': ['warn', 'always'],
+	},
+}).append({
+	files: ['app/**/*.css'],
+	extends: defineConfig(css),
+	rules: {
+		'css/no-important': 'off',
+		'css-stylistic/indentation': ['error', 'tab'],
+	},
+}).setDefaultIgnores(prevs => [
+	...prevs,
+	'**/*.css',
+])

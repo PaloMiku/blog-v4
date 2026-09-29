@@ -110,12 +110,9 @@ onMounted(() => {
 </section>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .z-comment {
-	margin: 3rem 0.5rem;
-	padding: 0.4em;
-	border-radius: 0.5em;
-	background: var(--ld-bg-blur);
+	margin: 3rem 1rem;
 
 	> h3 {
 		margin-top: 3rem;
@@ -164,17 +161,17 @@ onMounted(() => {
 		@supports (corner-shape: squircle) {
 			corner-shape: superellipse(1.2);
 		}
+	}
 
-		&.tk-clickable {
-			cursor: auto;
-		}
+	.tk-avatar.tk-clickable {
+		cursor: auto;
 	}
 
 	.tk-time {
 		color: var(--c-text-3);
 	}
 
-	// 防止 a 被 overflow hidden
+	/* 防止 a 被 overflow hidden */
 	.tk-content {
 		margin: -0.2em;
 		padding: 0.2em;
@@ -196,7 +193,7 @@ onMounted(() => {
 	}
 
 	.tk-replies:not(.tk-replies-expand) {
-		mask-image: linear-gradient(to top, transparent, black 4em);
+		mask-image: linear-gradient(to top, transparent, #FFF 4em);
 	}
 
 	.tk-expand {

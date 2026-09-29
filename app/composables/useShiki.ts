@@ -1,4 +1,4 @@
-import type { BundledLanguage, CodeToHastOptions, ShikiTransformer } from 'shiki'
+import type { BundledLanguage, CodeToHastOptions, HighlighterCore, ShikiTransformer } from 'shiki'
 import { transformerColorizedBrackets } from '@shikijs/colorized-brackets'
 import { transformerNotationDiff, transformerNotationErrorLevel, transformerNotationFocus, transformerNotationHighlight, transformerNotationWordHighlight, transformerRenderIndentGuides, transformerRenderWhitespace } from '@shikijs/transformers'
 
@@ -10,10 +10,6 @@ type TransformerOptions = Array<
 type ShikiOptions = CodeToHastOptions<BundledLanguage, string>
 
 const plainTextLanguages = new Set(['ansi', 'log', 'text'])
-
-// 处理 Markdown 高亮内代码块中的语言
-// 加载 TeX 语言有概率导致 LaTeX 语言高亮炸掉
-const mdLangRegex = /^\s*`{3,}(\S+)/gm
 
 interface ShikiCodeOptions {
 	language: string
@@ -29,8 +25,14 @@ function getEmbeddedMarkdownLanguages(code: string, language: string) {
 	if (language !== 'markdown' && !language.startsWith('md'))
 		return []
 
-	const matches = Array.from(code.matchAll(mdLangRegex), match => match[1])
-	return [...new Set(matches.filter(lang => lang !== undefined))]
+	// 处理 Markdown 高亮内代码块中的语言
+	// 加载 TeX 语言有概率导致 LaTeX 语言高亮炸掉
+	const mdLangRegex = /^\s*`{3,}(\S+)/gm
+	return [...new Set(
+		Array
+			.from(code.matchAll(mdLangRegex), match => match[1])
+			.filter(lang => lang !== undefined),
+	)]
 }
 
 function transformerUnwrap(): ShikiTransformer {
@@ -69,12 +71,17 @@ function getTransformers(options: ShikiCodeOptions): ShikiTransformer[] {
 
 export default function useShiki() {
 	const shikiStore = useShikiStore()
+	let shiki: HighlighterCore
 
 	function getOptions(options: ShikiCodeOptions): ShikiOptions {
+		// Shiki 未收录的语言会在高亮时抛错，回退为纯文本
+		// ansi 是内置特殊语言，不在已加载语法列表中
+		const language = options.language === 'ansi' || shiki.getLoadedLanguages().includes(options.language) ? options.language : 'text'
+
 		return {
 			...shikiStore.options,
-			lang: options.language,
-			transformers: getTransformers(options),
+			lang: language,
+			transformers: getTransformers({ ...options, language }),
 			...options.shikiOptions,
 		}
 	}
@@ -83,7 +90,7 @@ export default function useShiki() {
 	async function codeToHtml(code: string, options: ShikiHtmlOptions): Promise<string>
 	async function codeToHtml(code: string, languageOrOptions: string | ShikiHtmlOptions): Promise<string> {
 		const options = typeof languageOrOptions === 'string' ? { language: languageOrOptions } : languageOrOptions
-		const shiki = await shikiStore.load()
+		shiki = await shikiStore.load()
 		await shikiStore.loadLang(options.language)
 
 		if (typeof languageOrOptions !== 'string' && languageOrOptions.embeddedLanguages)
@@ -96,7 +103,7 @@ export default function useShiki() {
 	async function mountPlain(target: HTMLElement, options: ShikiCodeOptions): Promise<void>
 	async function mountPlain(target: HTMLElement, languageOrOptions: string | ShikiCodeOptions): Promise<void> {
 		const options = typeof languageOrOptions === 'string' ? { language: languageOrOptions } : languageOrOptions
-		const shiki = await shikiStore.load()
+		shiki = await shikiStore.load()
 		const { createPlainShiki } = await import('plain-shiki')
 
 		await shikiStore.loadLang(options.language)

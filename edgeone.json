@@ -16,7 +16,7 @@
           "value": "application/xml"
         }
       ],
-      "source": "/subscriptions.opml"
+      "source": "*.opml"
     }
   ]
 }

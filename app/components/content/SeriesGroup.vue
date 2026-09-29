@@ -18,7 +18,7 @@ const props = withDefaults(defineProps<Props>(), {
 	openInNewTab: true,
 })
 
-// 规范化封面图为数组
+/* 规范化封面图为数组 */
 const covers = computed(() => {
 	if (!props.cover)
 		return []
@@ -109,7 +109,7 @@ function toggleExpand() {
 </div>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .series-group {
 	display: flex;
 	flex-direction: column;
@@ -121,7 +121,7 @@ function toggleExpand() {
 	transition: all 0.2s ease;
 }
 
-// 封面图部分
+/* 封面图部分 */
 .cover-section {
 	flex-shrink: 0;
 	position: relative;
@@ -142,7 +142,7 @@ function toggleExpand() {
 	height: 100%;
 }
 
-// 堆叠图片容器
+/* 堆叠图片容器 */
 .cover-stack {
 	display: flex;
 	align-items: center;
@@ -197,7 +197,7 @@ function toggleExpand() {
 	}
 }
 
-// 信息部分
+/* 信息部分 */
 .info-section {
 	display: flex;
 	flex-direction: column;
@@ -240,7 +240,7 @@ function toggleExpand() {
 	-webkit-box-orient: vertical;
 }
 
-// 统计和操作区域
+/* 统计和操作区域 */
 .meta-actions {
 	display: flex;
 	align-items: center;
@@ -248,7 +248,7 @@ function toggleExpand() {
 	gap: 0.5rem;
 }
 
-// 统计信息
+/* 统计信息 */
 .series-count {
 	display: flex;
 	align-items: center;
@@ -264,7 +264,7 @@ function toggleExpand() {
 	}
 }
 
-// 操作区域
+/* 操作区域 */
 .action-area {
 	display: flex;
 	flex-shrink: 0;
@@ -273,7 +273,7 @@ function toggleExpand() {
 	gap: 0.5rem;
 }
 
-// 展开/收起按钮
+/* 展开/收起按钮 */
 .expand-btn {
 	display: none;
 	flex-shrink: 0;
@@ -301,7 +301,7 @@ function toggleExpand() {
 	}
 }
 
-// 查看详情按钮
+/* 查看详情按钮 */
 .detail-link {
 	display: inline-flex;
 	flex-shrink: 0;
@@ -324,7 +324,7 @@ function toggleExpand() {
 	}
 }
 
-// 展开动画
+/* 展开动画 */
 .expand-enter-active,
 .expand-leave-active {
 	transition: all 0.3s ease;

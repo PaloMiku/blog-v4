@@ -6,7 +6,8 @@ const archIcons = {
 	'Deno Deploy': 'simple-icons:deno',
 	'EdgeOne': 'simple-icons:cloudnativebuild', // 不准确
 	'Express': 'simple-icons:express',
-	'Fly': 'tabler:balloon',
+	'Fly': 'tabler:air-balloon',
+	'Framer': 'simple-icons:framer',
 	'Ghost': 'simple-icons:ghost',
 	'GitHub Pages': 'simple-icons:github',
 	'Golang': 'simple-icons:go',
@@ -19,6 +20,7 @@ const archIcons = {
 	'Material for MkDocs': 'simple-icons:materialformkdocs',
 	'Netlify': 'simple-icons:netlify',
 	'Next.js': 'simple-icons:nextdotjs',
+	'Notion': 'simple-icons:notion',
 	'NotionNext': 'simple-icons:notion',
 	'Nuxt': 'simple-icons:nuxt',
 	'PHP': 'simple-icons:php',
@@ -32,9 +34,9 @@ const archIcons = {
 	'VuePress': 'uim:vuejs',
 	'WordPress': 'simple-icons:wordpress',
 	'Zeabur': 'tabler:square-letter-z-filled', // 不准确
-	'国内 CDN': 'tabler:cloud-check',
+	'国内 CDN': 'tabler:cloud-data-connection',
 	'服务器': 'tabler:server',
-	'虚拟主机': 'tabler:file-cloud',
+	'虚拟主机': 'tabler:cloud-upload',
 }
 
 export type Arch = keyof typeof archIcons
@@ -46,8 +48,8 @@ export function getArchIcon(arch: Arch) {
 /** BlogTech Widget 构建平台图标映射 */
 // @keep-sorted
 export const ciIcons: Record<string, string> = {
-	'Cloudflare Pages': 'simple-icons:cloudflarepages',
-	'Cloudflare Workers': 'simple-icons:cloudflareworkers',
+	'Cloudflare Pages': 'devicon:cloudflare',
+	'Cloudflare Workers': 'devicon:cloudflareworkers',
 	'EdgeOne': 'https://edgeone.ai/favicon.ico',
 	'GitHub Actions': 'ri:github-fill',
 	'Netlify CI': 'catppuccin:netlify',
@@ -71,7 +73,7 @@ const mainDomainIcons: Record<string, string> = {
 	'pages.dev': 'simple-icons:cloudflare',
 	'qq.com': 'ri:qq-fill',
 	'taobao.com': 'ri:taobao-fill',
-	'thisis.host': 'tabler:stars',
+	'thisis.host': 'tabler:star-filled',
 	'tmall.com': 'ri:taobao-fill',
 	'v2ex.com': 'simple-icons:v2ex',
 	'vercel.app': 'simple-icons:vercel',
@@ -83,6 +85,7 @@ const mainDomainIcons: Record<string, string> = {
 // @keep-sorted
 export const domainIcons: Record<string, string> = {
 	'developer.mozilla.org': 'simple-icons:mdnwebdocs',
+	'h5.qzone.qq.com': 'simple-icons:qzone',
 	'mp.weixin.qq.com': 'ri:wechat-fill',
 }
 
@@ -184,6 +187,7 @@ const ext2lang: Record<string, string> = {
 	'md': 'catppuccin:markdown',
 	'mdc': 'catppuccin:markdown',
 	'mdx': 'catppuccin:markdown',
+	'mermaid': 'catppuccin:mermaid',
 	'mmd': 'catppuccin:mermaid',
 	'powershell': 'catppuccin:powershell',
 	'ps': 'catppuccin:powershell',

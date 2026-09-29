@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import type { ArticleProps } from '~/types/article'
 
-const route = useRoute()
+const contentPath = useContentPath().value
 
 const { data: surrounds } = await useAsyncData(
-	`surround:${route.path}`,
-	() => queryCollectionItemSurroundings('content', route.path, { fields: ['date', 'title', 'type'] })
+	`surround:${contentPath}`,
+	() => queryCollectionItemSurroundings('content', contentPath, { fields: ['date', 'title', 'type'] })
 		.order('date', 'ASC')
 		.where('stem', 'LIKE', `posts/%`),
 )
@@ -23,7 +23,7 @@ const [DefineTemplate, ReuseTemplate] = createReusableTemplate<{
 
 <template>
 <DefineTemplate v-slot="{ post, icon, fallbackIcon, fallbackText, alignEnd }">
-	<UtilLink :to="post?.path" class="surround-link" :align-end>
+	<UtilLink :to="post?.path" class="surround-link" :data-transition-key="post?.path" :align-end>
 		<Icon :class="{ 'rtl-flip': post }" :name="post ? icon : fallbackIcon" />
 		<div class="surround-text">
 			<strong class="title" :class="`text-${post?.type || 'tech'}`">
@@ -47,11 +47,11 @@ const [DefineTemplate, ReuseTemplate] = createReusableTemplate<{
 </div>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .surround-post {
 	contain: layout;
 	display: flex;
-	justify-content: space-between;
+	flex-wrap: wrap;
 	gap: 1rem;
 	margin: 3rem 1rem;
 }
@@ -68,12 +68,14 @@ const [DefineTemplate, ReuseTemplate] = createReusableTemplate<{
 	}
 
 	&[align-end] {
-		// direction: rtl 会导致末尾标点居左
+		/* direction: rtl 会导致末尾标点居左 */
 		flex-direction: row-reverse;
+		margin-inline-start: auto;
 		text-align: end;
 	}
 
 	> .surround-text {
+		text-wrap: balance;
 		transition: transform 0.2s;
 
 		> .date {

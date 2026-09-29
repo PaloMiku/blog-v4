@@ -36,7 +36,7 @@ const style = computed(() => {
 <div v-if="props.image?.url" class="sidebar-decor" :style="style" />
 </template>
 
-<style scoped lang="scss">
+<style scoped>
 .sidebar-decor {
 	position: relative;
 	overflow: hidden;

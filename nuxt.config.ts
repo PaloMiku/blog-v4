@@ -28,15 +28,17 @@ export default defineNuxtConfig({
 				{ rel: 'icon', href: blogConfig.favicon },
 				{ rel: 'alternate', type: 'application/atom+xml', href: '/atom.xml' },
 				{ rel: 'preconnect', href: blogConfig.twikoo.preload },
-				{ rel: 'stylesheet', href: 'https://lib.baomitu.com/KaTeX/0.16.9/katex.min.css', media: 'print', onload: 'this.media="all"' },
-				// "InterVariable", "Inter", "InterDisplay"
-				{ rel: 'stylesheet', href: 'https://rsms.me/inter/inter.css', media: 'print', onload: 'this.media="all"' },
+				{ rel: 'stylesheet', href: 'https://s4.zstatic.net/npm/katex@0.16.44/dist/katex.min.css' },
+				// "InterVariable", "Inter"
+				{ rel: 'stylesheet', href: 'https://s4.zstatic.net/npm/inter-ui@4.1.1/inter-variable.css' },
+				{ rel: 'stylesheet', href: 'https://s4.zstatic.net/npm/inter-ui@4.1.1/inter.css' },
 				// LXGW WenKai 屏幕优化版
 				{ rel: 'stylesheet', href: 'https://s4.zstatic.net/ajax/libs/lxgw-wenkai-screen-webfont/1.7.0/style.min.css', media: 'print', onload: 'this.media="all"' },
-				// "JetBrains Mono", 思源黑体 "Noto Sans SC", 思源宋体 "Noto Serif SC"
-				{ rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-				{ rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
-				{ rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Ephesis&family=JetBrains+Mono:ital,wght@0,400..700;1,400..700&family=Noto+Sans+SC:wght@300..700&family=Noto+Serif+SC:wght@300..700&display=swap', media: 'print', onload: 'this.media="all"' },
+				// "Ephesis" 页脚签名, "JetBrains Mono", 思源黑体 "Noto Sans SC", 思源宋体 "Noto Serif SC"
+				{ rel: 'preconnect', href: 'https://fonts.gstatic.cn', crossorigin: '' },
+				{ rel: 'stylesheet', href: 'https://fonts.googleapis.cn/css2?family=Ephesis&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Noto+Sans+SC:wght@200..900&family=Noto+Serif+SC:wght@200..900&display=swap' },
+				// 抖音美好体 "DOUYINSANSBOLD-GB"
+				{ rel: 'stylesheet', href: 'https://fonts.bytedance.com/dfd/api/v1/css?family=DOUYINSANSBOLD-GB&display=swap' },
 				// ponytail: trimmed from 100..900 to common weights
 			],
 			templateParams: {
@@ -58,12 +60,12 @@ export default defineNuxtConfig({
 	],
 
 	css: [
-		'@/assets/css/animation.scss',
-		'@/assets/css/article.scss',
-		'@/assets/css/color.scss',
-		'@/assets/css/font.scss',
-		'@/assets/css/main.scss',
-		'@/assets/css/reusable.scss',
+		'@/assets/css/animation.css',
+		'@/assets/css/article.css',
+		'@/assets/css/color.css',
+		'@/assets/css/font.css',
+		'@/assets/css/main.css',
+		'@/assets/css/reusable.css',
 	],
 
 	// @keep-sorted
@@ -114,14 +116,13 @@ export default defineNuxtConfig({
 		},
 	},
 
-	vite: {
-		css: {
-			preprocessorOptions: {
-				scss: {
-					additionalData: '@use "@/assets/css/_variable.scss" as *;',
-				},
-			},
+	postcss: {
+		plugins: {
+			'postcss-nesting': {},
 		},
+	},
+
+	vite: {
 		define: {
 			/** 在生产环境启用 Vue DevTools */
 			// __VUE_PROD_DEVTOOLS__: 'true',
@@ -130,7 +131,7 @@ export default defineNuxtConfig({
 		},
 		optimizeDeps: {
 			// @keep-sorted
-			include: ['@shikijs/colorized-brackets', '@shikijs/transformers', '@unhead/schema-org/vue', '@vue/devtools-core', '@vue/devtools-kit', 'embla-carousel-autoplay', 'embla-carousel-vue', 'embla-carousel-wheel-gestures', 'es-toolkit/array', 'es-toolkit/object', 'es-toolkit/promise', 'es-toolkit/string', 'minisearch', 'parse-domain', 'plain-shiki', 'shiki/themes/catppuccin-latte.mjs', 'shiki/themes/one-dark-pro.mjs', 'temporal-polyfill', 'vue-tippy'],
+			include: ['@shikijs/colorized-brackets', '@shikijs/transformers', '@unhead/schema-org/vue', '@vue/devtools-core', '@vue/devtools-kit', 'embla-carousel-autoplay', 'embla-carousel-vue', 'embla-carousel-wheel-gestures', 'es-toolkit/array', 'es-toolkit/math', 'es-toolkit/object', 'es-toolkit/promise', 'es-toolkit/string', 'minisearch', 'parse-domain', 'plain-shiki', 'shiki/themes/catppuccin-latte.mjs', 'shiki/themes/one-dark-pro.mjs', 'temporal-polyfill', 'vue-tippy'],
 		},
 		server: {
 			allowedHosts: true,
@@ -143,7 +144,6 @@ export default defineNuxtConfig({
 		'@bikariya/image-viewer',
 		'@bikariya/modals',
 		'@bikariya/shiki',
-		'@nuxt/a11y',
 		'@nuxt/content',
 		'@nuxt/hints',
 		'@nuxt/icon',
@@ -169,7 +169,12 @@ export default defineNuxtConfig({
 				highlight: false,
 				// @keep-sorted
 				remarkPlugins: {
-					[pluginPath('remark-music')]: {},
+					[pluginPath('remark-code-component')]: {
+						options: {
+							'mermaid': { component: 'mermaid', prop: 'code' },
+							'music-abc': { component: 'music-score', prop: 'abc' },
+						},
+					},
 					'remark-math': {},
 					'remark-reading-time': {},
 				},

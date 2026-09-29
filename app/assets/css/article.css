@@ -1,32 +1,25 @@
 .article {
 	margin: 1rem;
-	font-family: var(--font-basic);
 	line-height: 1.8;
 
 	p {
 		margin: 0.5em 0;
 	}
 
-	>*,
-	>p {
+	> *, > p {
 		margin: 1rem 0;
 	}
 
 	:target {
 		border-radius: 0.2rem;
 		animation: highlight 3s;
-
-		@keyframes highlight {
-			50% {
-				background-color: var(--c-primary-soft);
-			}
-		}
 	}
 
-	>:where(h1, h2, h3, h4, h5, h6) {
+	> :where(h1, h2, h3, h4, h5, h6) {
 		margin: 1.6em 0 0.8em;
-		font-family: var(--font-basic);
+		font-family: var(--font-creative);
 		font-weight: 550;
+		-webkit-font-smoothing: antialiased;
 		color: var(--c-text);
 	}
 
@@ -35,27 +28,23 @@
 		padding-inline-start: 1.5em;
 		font-size: 0.9rem;
 
-		&,
-		ol ol ol {
+		&, ol ol ol {
 			list-style: revert;
 		}
 
-		ol,
-		ol ol ol ol {
+		ol, ol ol ol ol {
 			list-style-type: lower-alpha;
 		}
 
-		ol ol,
-		ol ol ol ol ol {
+		ol ol, ol ol ol ol ol {
 			list-style-type: lower-roman;
 		}
 
-		ol,
-		ul {
+		ol, ul {
 			margin-top: 0;
 		}
 
-		>li {
+		> li {
 			margin: 0.2em 0;
 
 			&::marker {
@@ -71,7 +60,7 @@
 		background-color: var(--c-bg-2);
 		font-size: 0.9rem;
 
-		>.z-codeblock {
+		> .z-codeblock {
 			margin: 0 -0.8rem;
 		}
 	}
@@ -86,8 +75,7 @@
 			transform: translateY(-0.1em);
 		}
 
-		&:not([class]),
-		&.image {
+		&:not([class]), &.image {
 			display: block;
 			margin: 1rem auto;
 			border-radius: 0.5rem;
@@ -122,13 +110,7 @@
 	}
 
 	&.md-story {
-		h1,
-		h2,
-		h3,
-		h4,
-		h5,
-		h6,
-		.title-like {
+		h1, h2, h3, h4, h5, h6, .title-like {
 			position: relative;
 			font-family: var(--font-serif);
 			font-weight: bolder;
@@ -136,7 +118,7 @@
 			text-wrap: balance;
 		}
 
-		>h2::before {
+		> h2::before {
 			content: "";
 			position: absolute;
 			width: 2.5em;
@@ -147,7 +129,7 @@
 			z-index: -1;
 		}
 
-		>h3::after {
+		> h3::after {
 			content: "";
 			position: absolute;
 			bottom: 0;
@@ -156,13 +138,18 @@
 			background-color: var(--c-primary-soft);
 		}
 
-		>p,
-		:not([class]) > p {
+		> p, :not([class]) > p {
 			text-indent: 2em;
 
-			>[class] {
+			> [class] {
 				text-indent: 0;
 			}
 		}
+	}
+}
+
+@keyframes highlight {
+	50% {
+		background-color: var(--c-primary-soft);
 	}
 }

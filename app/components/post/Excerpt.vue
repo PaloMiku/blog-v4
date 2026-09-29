@@ -116,7 +116,7 @@ if (import.meta.dev) {
 </div>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .ai-excerpt {
 	--excerpt-folded-max-height: 4.8em;
 	--excerpt-unfolded-max-height: 28em;

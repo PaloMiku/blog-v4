@@ -2,13 +2,13 @@
 const appConfig = useAppConfig()
 const colorMode = useColorMode()
 
-// 主题色相关
+/* 主题色相关 */
 const primaryColor = useLocalStorage('blog-primary-color', '#f38e8c') as Ref<string | undefined>
 const colorPickerRef = ref<HTMLInputElement>()
 const isMounted = ref(false)
 const currentColor = computed(() => (isMounted.value ? primaryColor.value : undefined))
 
-// 将 hex 转换为 hsl
+/* 将 hex 转换为 hsl */
 const HEX_TO_HSL_RE = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i
 
 function hexToHsl(hex: string): { h: number, s: number, l: number } | null {
@@ -59,7 +59,7 @@ function hexToHsl(hex: string): { h: number, s: number, l: number } | null {
 	}
 }
 
-// 更新 CSS 变量
+/* 更新 CSS 变量 */
 function updatePrimaryColor(color: string | undefined) {
 	if (!color)
 		return
@@ -75,7 +75,7 @@ function updatePrimaryColor(color: string | undefined) {
 	root.style.setProperty('--c-primary-base', color)
 }
 
-// 处理颜色选择
+/* 处理颜色选择 */
 function handleColorChange(event: Event) {
 	const target = event.target as HTMLInputElement
 	const color = target.value
@@ -83,18 +83,18 @@ function handleColorChange(event: Event) {
 	updatePrimaryColor(color)
 }
 
-// 打开颜色选择器
+/* 打开颜色选择器 */
 function openColorPicker() {
 	colorPickerRef.value?.click()
 }
 
-// 初始化主题色
+/* 初始化主题色 */
 onMounted(() => {
 	isMounted.value = true
 	updatePrimaryColor(primaryColor.value)
 })
 
-// 监听主题色变化
+/* 监听主题色变化 */
 watch(primaryColor, (newColor) => {
 	if (!isMounted.value)
 		return
@@ -137,7 +137,7 @@ watch(primaryColor, (newColor) => {
 </div>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .theme-toggle-wrapper {
 	display: flex;
 	align-items: center;
@@ -196,7 +196,7 @@ watch(primaryColor, (newColor) => {
 	background-color: var(--current-color, var(--c-primary-base));
 	transition: transform 0.2s;
 
-	// 外层黑白圆圈 - 跟随日夜主题
+	/* 外层黑白圆圈 - 跟随日夜主题 */
 	&::before {
 		content: "";
 		position: absolute;
@@ -206,7 +206,7 @@ watch(primaryColor, (newColor) => {
 		transition: all 0.2s;
 	}
 
-	// 内层高亮边框
+	/* 内层高亮边框 */
 	&::after {
 		content: "";
 		position: absolute;

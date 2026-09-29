@@ -124,7 +124,7 @@ const rating = computed(() => {
 </section>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .info-card {
 	margin: 1em 0;
 	font-size: 0.9em;

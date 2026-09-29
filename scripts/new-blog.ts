@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { intro, log, outro, select, spinner, text } from '@clack/prompts'
 import { Temporal } from 'temporal-polyfill'
-import blogConfig from '../blog.config.ts'
+import blogConfig from '../blog.config'
 
 function normalize(val: string | symbol | undefined): string | undefined {
 	return typeof val === 'symbol' ? undefined : val?.trim()
@@ -49,7 +49,7 @@ do {
 		process.exit(0)
 
 	if (fs.existsSync(join(dir, `${fileName}.md`))) {
-		log.error('❌ 文件已存在')
+		log.error('文件已存在')
 		fileName = undefined
 	}
 } while (!fileName)
@@ -85,7 +85,7 @@ if (!process.argv[2])
 	log.info(`文件名: ${mdPath}`)
 
 if (fs.existsSync(mdPath)) {
-	log.error('❌ 文件已存在')
+	log.error('文件已存在')
 	process.exit(1)
 }
 
@@ -141,7 +141,7 @@ if (type === 'custom') {
 	if (!customType)
 		process.exit(0)
 
-	log.warn('⚠️ 新建分类后，建议在 blog.config.ts 中添加对应配置')
+	log.warn('新建分类后，建议在 blog.config.ts 中添加对应配置')
 	type = customType
 }
 // #endregion
@@ -170,17 +170,26 @@ fs.writeFileSync(mdPath, `---\n${Object.entries(frontmatter)
 
 ## 从${title}说起
 
+\`\`\`md wrap
+<!-- 你可以在此处书写大纲，并在上方完成文章 -->
+\`\`\`
 `, 'utf8')
 
-log.info(`✅ 已创建: ${resolve(mdPath)}`)
+log.success(`已创建: ${resolve(mdPath)}`)
 if (permalink)
 	log.info(`🔗 文章链接: ${new URL(permalink, blogConfig.url)}`)
 
 // #region 打开 VS Code
 const s = spinner()
 s.start('正在打开 VS Code...')
-// 传绝对路径：既让 VS Code 稳定打开，也确保参数不会被解析成选项
-execFile('code', [resolve(mdPath)], (error) => {
+// 传绝对路径；"--" 终止选项解析，确保路径不会被目标程序解释成额外选项
+const absolutePath = resolve(mdPath)
+if (absolutePath.startsWith('-')) {
+	s.stop('⚠️ 路径异常')
+	log.error(`路径以 "-" 开头: ${absolutePath}`)
+	process.exit(1)
+}
+execFile('code', ['--', absolutePath], (error) => {
 	if (!error)
 		return
 	s.stop('⚠️ 无法打开 VS Code，请确认已通过命令面板注册 code 命令到 PATH')

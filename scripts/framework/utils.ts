@@ -1,15 +1,31 @@
 import type { FeedEntry, FeedGroup } from '../../app/types/feed'
 import { Console } from 'node:console'
+import dns from 'node:dns'
 import http from 'node:http'
 import https from 'node:https'
 import { Writable } from 'node:stream'
 import tls from 'node:tls'
+import { promisify } from 'node:util'
 import stripAnsi from 'strip-ansi'
 import feeds from '../../app/feeds'
 
 export const entries = flattenFeedGroups(feeds)
 
 const DNS_PREFIX_RE = /^DNS:/
+const dnsLookup = promisify(dns.lookup) as (hostname: string) => Promise<{ address: string, family: number }>
+
+/** 私网/环回/链路本地地址段，SSRF 防护：友链检测不得探测内网 */
+const PRIVATE_IP_RE = /^(127\.|10\.|192\.168\.|169\.254\.|0\.|::1$|f[cd][0-9a-f]{2}:)/i
+
+function isPrivateIp(ip: string): boolean {
+	if (PRIVATE_IP_RE.test(ip))
+		return true
+	// 172.16.0.0/12
+	const v4 = ip.match(/^(\d+)\.(\d+)\./)
+	if (v4 && Number(v4[1]) === 172 && Number(v4[2]) >= 16 && Number(v4[2]) <= 31)
+		return true
+	return false
+}
 
 function flattenFeedGroups(groups: FeedGroup[]): FeedEntry[] {
 	return groups.flatMap(g => g.entries)
@@ -55,6 +71,10 @@ export async function getLinkInfo(e: FeedEntry): Promise<ServerResp> {
 	// 友链来自仓库内的静态配置，仍限定 http(s)，避免其它协议被请求
 	if (url.protocol !== 'http:' && url.protocol !== 'https:')
 		return { ...basicResp, error: `不支持的协议 ${url.protocol}` }
+	// 解析目标主机，私网/环回地址一律拒绝，防止 CLI 探测内网
+	const { address: resolvedIp } = await dnsLookup(url.hostname)
+	if (isPrivateIp(resolvedIp))
+		return { ...basicResp, error: `目标解析到内网地址 ${resolvedIp}，已拒绝` }
 	const lib = url.protocol === 'https:' ? https : http
 
 	return new Promise<ServerResp>((resolve) => {

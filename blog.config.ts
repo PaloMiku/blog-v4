@@ -93,13 +93,18 @@ const blogConfig = {
 		// Cloudflare Insights 统计服务
 		{ 'src': 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': '{"token": "b5c89be9025a4b1ba8750f8fd8850904"}', 'defer': true },
 		// Twikoo 评论系统
-		{ src: 'https://s4.zstatic.net/npm/twikoo@1.7.13/dist/twikoo.min.js', defer: true, crossorigin: 'anonymous' },
-	] satisfies Array<{
-		src: string
-		defer?: boolean
-		crossorigin?: '' | 'anonymous' | 'use-credentials'
-		[key: `data-${string}`]: string | undefined
-	}>,
+		{ src: 'https://s4.zstatic.net/npm/twikoo@1.7.20/dist/twikoo.min.js', defer: true },
+	],
+
+	/** 文章统计配置 */
+	stats: {
+		/**
+		 * 统计范围，匹配 content 下不含扩展名的路径（stem）；空数组统计全部内容
+		 * 使用 SQL LIKE 语法：% 匹配任意长度字符，_ 匹配单个字符
+		 * 多个范围取并集，如 ['posts/%', 'book/%']
+		 */
+		includePaths: [] as string[],
+	},
 
 	/** 自己部署的 Twikoo 服务 */
 	twikoo: {

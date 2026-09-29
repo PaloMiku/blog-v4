@@ -111,7 +111,7 @@ function toggleCollapse() {
 </div>
 </template>
 
-<style scoped lang="scss">
+<style scoped>
 .home-hero-bar {
 	display: flex;
 	align-items: center;

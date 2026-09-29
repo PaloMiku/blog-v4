@@ -54,7 +54,7 @@ onMounted(() => {
 </p>
 </template>
 
-<style scoped lang="scss">
+<style scoped>
 .prose-paragraph {
 	position: relative;
 

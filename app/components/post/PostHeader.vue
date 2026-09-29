@@ -83,7 +83,7 @@ const {
 </div>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .post-header {
 	overflow: hidden;
 	margin: 0.5rem;
@@ -93,7 +93,7 @@ const {
 	color: var(--c-text);
 	transition: transform 0.2s ease;
 
-	@media (max-width: $breakpoint-mobile) {
+	@media (max-width: 768px) {
 		margin: 0;
 		border-radius: 0;
 	}

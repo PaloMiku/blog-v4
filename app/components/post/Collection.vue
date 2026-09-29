@@ -65,7 +65,7 @@ const { data: items } = await useAsyncData(
 </section>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .post-collection {
 	margin: 2rem 0.5rem 0;
 	border: 1px solid var(--c-border);
@@ -90,7 +90,7 @@ const { data: items } = await useAsyncData(
 	color: var(--c-text-2);
 	transition: background-color 0.2s;
 
-	// 隐藏原生 details 标记符，使用自绘 chevron
+	/* 隐藏原生 details 标记符，使用自绘 chevron */
 	list-style: none;
 	cursor: pointer;
 
@@ -142,7 +142,7 @@ const { data: items } = await useAsyncData(
 		font-size: 1.2em;
 		transition: transform 0.2s;
 
-		// 展开时箭头朝上
+		/* 展开时箭头朝上 */
 		.collection[open] & {
 			transform: rotate(180deg);
 		}
@@ -160,7 +160,7 @@ const { data: items } = await useAsyncData(
 	padding: 0 1.25rem 1rem;
 }
 
-// 显式声明折叠，不依赖浏览器对 <details> 内容的 UA 隐式隐藏
+/* 显式声明折叠，不依赖浏览器对 <details> 内容的 UA 隐式隐藏 */
 .collection[open] .collection-body {
 	display: block;
 }

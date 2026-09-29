@@ -10,8 +10,23 @@
 	}
 }
 
+/* eslint-disable css/no-invalid-at-rules -- CSS Fonts 的 @styleset 暂未被检查器识别 */
+@font-feature-values "InterVariable", "Inter" {
+	@styleset {
+		open-digits: 1;
+		disambiguation: 2;
+		round-quotes-and-commas: 3;
+		disambiguation-except-zero: 4;
+		circled-characters: 5;
+		squared-characters: 6;
+		square-punctuation: 7;
+		square-quotes: 8;
+	}
+}
+
+/* eslint-enable css/no-invalid-at-rules */
+/* 仅在 Chrome 130+ 启用本地可变字体 */
 /* autoprefixer: ignore next */
-// 仅在 Chrome 130+ 启用本地可变字体
 @supports (box-decoration-break: clone) {
 	@font-face {
 		font-family: "Noto Serif SC-Local";

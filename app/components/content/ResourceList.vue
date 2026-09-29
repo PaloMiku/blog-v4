@@ -67,14 +67,14 @@ defineProps<{
 </ol>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .resource-list {
 	display: grid;
 	gap: 1em;
 	margin: 0;
 	padding: 0;
 
-	@media (max-width: $breakpoint-phone) {
+	@media (max-width: 528px) {
 		gap: 0.75em;
 	}
 }
@@ -85,7 +85,7 @@ defineProps<{
 	gap: 1em;
 	padding: 1em;
 
-	@media (max-width: $breakpoint-phone) {
+	@media (max-width: 528px) {
 		flex-direction: column;
 		align-items: flex-start;
 		gap: 0.5em;
@@ -133,7 +133,7 @@ defineProps<{
 	gap: 0.5em;
 	font-size: 0.8em;
 
-	@media (max-width: $breakpoint-phone) {
+	@media (max-width: 528px) {
 		flex-direction: column;
 		align-items: flex-start;
 	}
@@ -182,7 +182,7 @@ defineProps<{
 		opacity: 0.5;
 	}
 
-	@media (max-width: $breakpoint-phone) {
+	@media (max-width: 528px) {
 		width: 2.2em;
 		height: 2.2em;
 		font-size: 1em;

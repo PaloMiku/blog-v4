@@ -1,20 +1,15 @@
 <script setup lang="ts">
 import type { TocLink } from '@nuxt/content'
 
-const [DefineTemplate, ReuseTemplate] = createReusableTemplate<{
-	tocTree: TocLink[]
-}>({ inheritAttrs: false })
+const [DefineTemplate, ReuseTemplate] = createReusableTemplate({
+	props: {
+		tocTree: { type: Array as PropType<TocLink[]> },
+	},
+})
 
 const { toc } = useArticle()
 const scrollableEl = useTemplateRef('toc')
 const { tocOffsets, activeHeadingId } = useToc(toc, computed(() => scrollableEl.value?.body))
-
-function scrollToTop() {
-	if (!import.meta.client)
-		return
-
-	window.scrollTo({ top: 0, behavior: 'smooth' })
-}
 
 function hasHeading(tocTree: TocLink, heading?: string): boolean {
 	return tocTree.id === heading || !!tocTree.children?.some(child => hasHeading(child, heading))
@@ -28,17 +23,15 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 	shrink
 	:style="{ minHeight: `clamp(4rem, ${tocOffsets.length}rem, 20rem)` }"
 >
-	<template #title>
-		<span class="title">文章目录</span>
-		<div class="toc-actions">
-			<button class="back-to-top" type="button" aria-label="返回开头" @click="scrollToTop">
-				<Icon name="tabler:arrow-up-circle" />
-			</button>
+	<template #action>
+		<!-- use <a> for anchor -->
+		<a href="#main-content" aria-label="返回开头">
+			<Icon name="tabler:arrow-bar-to-up" />
+		</a>
 
-			<a class="comment-btn" href="#twikoo" aria-label="评论区">
-				<Icon name="tabler:message-circle" />
-			</a>
-		</div>
+		<a href="#twikoo" aria-label="评论区">
+			<Icon name="tabler:message-dots" />
+		</a>
 	</template>
 
 	<!-- 放在顶层会导致 Transition 失效 -->
@@ -59,16 +52,18 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 		</ol>
 	</DefineTemplate>
 
-	<UtilHydrateSafe>
-		<ReuseTemplate v-if="toc?.links.length" class="toc" :toc-tree="toc.links" />
-		<p v-else class="no-toc">
-			暂无目录信息
-		</p>
-	</UtilHydrateSafe>
+	<ReuseTemplate
+		v-if="toc?.links.length"
+		class="toc"
+		:toc-tree="toc.links"
+	/>
+	<p v-else class="no-toc">
+		暂无目录信息
+	</p>
 </BlogWidget>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .toc {
 	position: relative;
 
@@ -78,7 +73,7 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 		inset: 0.3rem;
 		width: 3px;
 		border-radius: 1rem;
-		background-color: var(--c-bg-3);
+		background-color: var(--c-bg-soft);
 	}
 }
 
@@ -124,54 +119,6 @@ li {
 			background-color: var(--c-bg-soft);
 		}
 	}
-}
-
-.title {
-	flex-grow: 1;
-}
-
-.toc-actions {
-	display: flex;
-	flex-direction: row;
-	align-items: center;
-	gap: 0.4rem;
-	margin-left: auto;
-}
-
-.toc-actions button,
-.toc-actions a {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	position: relative;
-	width: 2.2rem;
-	height: 2.2rem;
-	padding: 0;
-	border: 0;
-	border-radius: 999px;
-	box-shadow: inset 0 0 0 1px var(--c-border);
-	outline: none;
-	background: transparent;
-	color: var(--c-text);
-	transition: all 0.2s;
-	cursor: pointer;
-}
-
-.toc-actions button:hover,
-.toc-actions a:hover {
-	box-shadow: inset 0 0 0 1px var(--c-primary);
-	color: var(--c-primary);
-}
-
-.back-to-top,
-.comment-btn {
-	position: relative;
-}
-
-.back-to-top svg,
-.comment-btn svg {
-	position: relative;
-	z-index: 1;
 }
 
 .no-toc {

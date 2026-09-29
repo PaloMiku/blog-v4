@@ -135,7 +135,7 @@ function resolveIcon(icon?: string) {
 </section>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .project-group {
 	margin: 1.5rem 0;
 	padding: 1rem;
@@ -156,12 +156,12 @@ function resolveIcon(icon?: string) {
 	grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
 	gap: 0.6rem;
 
-	@media (max-width: $breakpoint-mobile) {
+	@media (max-width: 768px) {
 		grid-template-columns: repeat(3, 1fr);
 		gap: 0.5rem;
 	}
 
-	@media (max-width: $breakpoint-phone) {
+	@media (max-width: 528px) {
 		grid-template-columns: 1fr;
 		gap: 0.5rem;
 	}

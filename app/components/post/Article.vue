@@ -2,11 +2,12 @@
 import type { ArticleProps } from '~/types/article'
 
 const props = defineProps<{ useUpdated?: boolean } & ArticleProps>()
+
 const showAllDate = isTimeDiffSignificant(props.date, props.updated)
 </script>
 
 <template>
-<UtilLink class="article-card card upraise">
+<UtilLink class="article-card card upraise" :data-transition-key="path" data-transition-enter>
 	<NuxtImg v-if="image" class="article-cover" :src="image" :alt="title" />
 	<article>
 		<h2 class="article-title text-creative">
@@ -45,14 +46,14 @@ const showAllDate = isTimeDiffSignificant(props.date, props.updated)
 </UtilLink>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .article-card {
 	container-type: inline-size;
 	position: relative;
 	margin: 1em 0;
 	border-radius: 0.8em;
 	color: var(--c-text);
-	animation: float-in 0.2s var(--delay) backwards;
+	animation: float-in var(--motion-duration) var(--motion-easing) var(--delay, 0s) backwards;
 
 	> article {
 		display: grid;
@@ -83,15 +84,8 @@ const showAllDate = isTimeDiffSignificant(props.date, props.updated)
 }
 
 .article-description {
-	display: -webkit-box;
-	overflow: hidden;
-	overflow-wrap: break-word;
 	font-size: 0.9em;
-	-webkit-line-clamp: 4; /* 最多展示 4 行 */
-	line-clamp: 4;
-	text-overflow: ellipsis;
 	color: var(--c-text-2);
-	-webkit-box-orient: vertical;
 }
 
 .article-cover {
@@ -115,7 +109,7 @@ const showAllDate = isTimeDiffSignificant(props.date, props.updated)
 		width: 60%;
 	}
 
-	@mixin cover-narrow {
+	@media (max-width: 528px) {
 		position: revert;
 		width: 100%;
 		height: auto;
@@ -133,13 +127,26 @@ const showAllDate = isTimeDiffSignificant(props.date, props.updated)
 			}
 		}
 	}
+}
 
-	@media (max-width: $breakpoint-phone) {
-		@include cover-narrow;
-	}
+@container (max-width: 528px) {
+	.article-cover {
+		position: revert;
+		width: 100%;
+		height: auto;
+		max-width: none;
+		max-height: 256px;
+		aspect-ratio: 2.4;
+		margin-bottom: -10%;
+		mask-image: linear-gradient(#FFF 50%, transparent);
 
-	@container (max-width: #{$breakpoint-phone}) {
-		@include cover-narrow;
+		& + article {
+			width: auto;
+
+			> .article-title {
+				text-shadow: 0 0 0.2em var(--ld-bg-card), 0 0 0.5em var(--ld-bg-card), 0 0 1em var(--ld-bg-card);
+			}
+		}
 	}
 }
 </style>

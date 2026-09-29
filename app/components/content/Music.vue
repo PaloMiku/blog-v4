@@ -151,7 +151,7 @@ const subtitleText = computed(() => {
 </div>
 </template>
 
-<style scoped lang="scss">
+<style scoped>
 .music-embed {
 	display: flex;
 	align-items: center;

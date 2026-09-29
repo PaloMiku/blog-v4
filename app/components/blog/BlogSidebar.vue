@@ -50,7 +50,7 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 <template>
 <BlogMask
 	:show="layoutStore.state === 'sidebar'"
-	class="mobile-only"
+	class="hide-above-mobile"
 	@click="layoutStore.close()"
 />
 
@@ -120,7 +120,7 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 </aside>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 #blog-sidebar {
 	display: flex;
 	flex-direction: column;
@@ -130,7 +130,7 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 		color: currentcolor;
 	}
 
-	@media (max-width: $breakpoint-mobile) {
+	@media (max-width: 768px) {
 		position: fixed;
 		inset-inline-start: 0;
 		width: 320px;

@@ -100,7 +100,7 @@ function openShareTarget(type: 'weibo' | 'qq' | 'mail') {
 </Transition>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .blog-share {
 	--float-distance: 20vh;
 
@@ -204,7 +204,7 @@ function openShareTarget(type: 'weibo' | 'qq' | 'mail') {
 	}
 }
 
-@media (max-width: $breakpoint-mobile) {
+@media (max-width: 768px) {
 	.blog-share {
 		width: calc(100% - 1rem);
 		border-radius: 0.8rem;

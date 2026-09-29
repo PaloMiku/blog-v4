@@ -22,7 +22,7 @@ onMounted(() => {
 		<ZError
 			:code="errorStack"
 			:message="error.url"
-			:title="`[${error.statusCode}] ${error.message}`"
+			:title="`[${error.status}] ${error.message}`"
 		>
 			<template #operation>
 				<ZButton text="返回主页" @click="clearError({ redirect: '/' })" />
@@ -33,17 +33,8 @@ onMounted(() => {
 </NuxtLayout>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .app-error {
 	margin: 1rem;
-
-	pre {
-		text-align: start;
-	}
-
-	.error-stack {
-		font-size: 0.9em;
-		white-space: pre-wrap;
-	}
 }
 </style>

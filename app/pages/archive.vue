@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ArticleProps } from '~/types/article'
-import { sumBy } from 'es-toolkit'
 import { groupBy } from 'es-toolkit/array'
+import { sumBy } from 'es-toolkit/math'
 
 const appConfig = useAppConfig()
 useSeoMeta({
@@ -16,82 +16,14 @@ const column = ref(1)
 const tuningRef = useTemplateRef('tuning-panel')
 useAvoidTarget(tuningRef, showTuning)
 
-const { data: listRaw } = await useAsyncData('posts:index', () => getArticleIndexOptions(), { default: () => [] })
+const { data: listRaw } = await useAsyncData('posts:index', () => queryArticleIndex(), { default: () => [] })
 const { listSorted, isAscending, sortOrder } = useArticleSort(listRaw)
-const { category, categories, listCategorized } = useCategory(listSorted)
-
-const seasonOrder = ['winter', 'autumn', 'summer', 'spring'] as const
-type Season = (typeof seasonOrder)[number]
-
-const seasonLabels: Record<Season, string> = {
-	spring: '春季',
-	summer: '夏季',
-	autumn: '秋季',
-	winter: '冬季',
-}
-
-function monthToSeason(month: number): Season {
-	if (month >= 3 && month <= 5)
-		return 'spring'
-	if (month >= 6 && month <= 8)
-		return 'summer'
-	if (month >= 9 && month <= 11)
-		return 'autumn'
-	return 'winter'
-}
-
-function getArticleSeason(article: ArticleProps): Season {
-	try {
-		const month = toZonedTemporal(article[sortOrder.value] as string).month
-		return monthToSeason(month)
-	}
-	catch {
-		return 'spring'
-	}
-}
-
-interface SeasonGroupItem {
-	season: Season
-	label: string
-	articles: ArticleProps[]
-}
+const { category, categories, listCategorized } = useArticleCategory(listSorted)
 
 const listGrouped = computed(() => {
-	const yearGroupMap = groupBy(listCategorized.value, getArticleYear)
-	const yearEntries = Object.entries(yearGroupMap)
-	const sortedYearEntries = isAscending.value ? yearEntries : yearEntries.reverse()
-
-	return sortedYearEntries.map(([year, articles]) => {
-		const seasonGroup = groupBy(articles, getArticleSeason) as Record<Season, ArticleProps[]>
-		const seasonRecord: Record<Season, ArticleProps[]> = {
-			spring: seasonGroup.spring ?? [],
-			summer: seasonGroup.summer ?? [],
-			autumn: seasonGroup.autumn ?? [],
-			winter: seasonGroup.winter ?? [],
-		}
-
-		const seasons = seasonOrder
-			.map(season => ({ season, label: seasonLabels[season], articles: seasonRecord[season] }))
-			.filter(item => item.articles.length > 0)
-
-		return { year, seasons }
-	})
+	const groupList = Object.entries(groupBy(listCategorized.value, getArticleYear))
+	return isAscending.value ? groupList : groupList.reverse()
 })
-
-// 不能使用 /api/stats，因为可能切换分组方式
-const yearlyWordCount = computed(() => {
-	const stats: Record<string, string> = {}
-	for (const { year, seasons } of listGrouped.value) {
-		const articles = seasons.flatMap(item => item.articles)
-		const total = sumBy(articles, a => a.readingTime?.words ?? 0)
-		stats[year] = formatNumber(total)
-	}
-	return stats
-})
-
-function getYearArticleCount(seasons: SeasonGroupItem[]) {
-	return seasons.flatMap(item => item.articles).length
-}
 
 function getArticleYear(article: ArticleProps) {
 	try {
@@ -124,56 +56,47 @@ function getArticleYear(article: ArticleProps) {
 		</ZSecret>
 	</PostOrderToggle>
 
-	<section
-		v-for="yearGroup in listGrouped"
-		:key="yearGroup.year"
-		class="archive-group"
-		:class="{ 'hide-info': column > 1 }"
-		:style="{
-			'--archive-item-gap': `${spacing}em`,
-			'--archive-item-column': column,
-		}"
-	>
-		<div class="archive-title">
-			<h2 class="archive-year">
-				{{ yearGroup.year }}
-			</h2>
+	<UtilListTransition v-slot="{ items, state }" :items="listGrouped" :state="sortOrder">
+		<section
+			v-for="[year, yearGroup] in items"
+			:key="year"
+			class="archive-group"
+			:class="{ 'hide-info': column > 1 }"
+			:style="{
+				'--archive-item-gap': `${spacing}em`,
+				'--archive-item-column': column,
+			}"
+		>
+			<div class="archive-title" :data-list-key="`year:${year}`">
+				<h2 class="archive-year">
+					{{ year }}
+				</h2>
 
-			<div class="archive-age">
-				<span>{{ Number(yearGroup.year) - birthYear }}</span>
-				<span class="age-label">岁</span>
+				<div v-if="birthYear" class="archive-age">
+					<span>{{ Number(year) - birthYear }}</span>
+					<span class="age-label">岁</span>
+				</div>
+
+				<div class="archive-info">
+					<span>{{ formatNumber(sumBy(yearGroup, article => article.readingTime?.words ?? 0)) }}字</span>
+					<span>{{ yearGroup?.length }}篇</span>
+				</div>
 			</div>
 
-			<div class="archive-info">
-				<span>{{ yearlyWordCount[yearGroup.year] }}字</span>
-				<span>{{ getYearArticleCount(yearGroup.seasons) }}篇</span>
-			</div>
-		</div>
-
-		<div class="archive-season-list">
-			<section
-				v-for="seasonItem in yearGroup.seasons"
-				:key="seasonItem.season"
-				class="archive-season"
-			>
-				<h3 class="archive-season-title">
-					{{ seasonItem.label }}
-				</h3>
-
-				<TransitionGroup tag="menu" class="archive-list" name="float-in">
-					<PostArchive
-						v-for="(article, index) in seasonItem.articles"
-						:key="article.path"
-						v-bind="article"
-						:to="article.path"
-						:show-category="column < 3"
-						:use-updated="sortOrder === 'updated'"
-						:style="getFixedDelay(index * 0.03)"
-					/>
-				</TransitionGroup>
-			</section>
-		</div>
-	</section>
+			<menu class="archive-list">
+				<PostArchive
+					v-for="article, index in yearGroup"
+					:key="article.path"
+					:data-list-key="article.path"
+					v-bind="article"
+					:to="article.path"
+					:show-category="column < 3"
+					:use-updated="state === 'updated'"
+					:style="getFixedDelay(index * 0.03)"
+				/>
+			</menu>
+		</section>
+	</UtilListTransition>
 
 	<div v-if="showTuning" ref="tuning-panel" class="archive-tuning card">
 		<ZSlider
@@ -197,9 +120,9 @@ function getArticleYear(article: ArticleProps) {
 </div>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .archive {
-	padding: 1rem; // 防止内部 outline 被 mask
+	padding: 1rem; /* 防止内部 outline 被 mask */
 	mask-image: linear-gradient(#FFF 50%, #FFF7);
 }
 
@@ -215,21 +138,6 @@ function getArticleYear(article: ArticleProps) {
 	&.hide-info :deep(.dim-hover) {
 		display: none;
 	}
-}
-
-.archive-season-list {
-	margin-top: 1rem;
-}
-
-.archive-season {
-	margin-bottom: 1.4rem;
-}
-
-.archive-season-title {
-	margin: 0.4rem 0 0.6rem;
-	font-size: 1.05rem;
-	font-weight: 600;
-	color: var(--c-text-2);
 }
 
 .archive-tuning {

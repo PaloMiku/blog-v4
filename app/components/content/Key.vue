@@ -24,9 +24,8 @@ const emit = defineEmits<{
 	press: []
 }>()
 
-const MAC_OS_RE = /mac ?os/i
-
-const isMac = computed(() => MAC_OS_RE.test(navigator?.userAgent))
+const mounted = useMounted()
+const isMac = computed(() => mounted.value && /mac ?os/i.test(navigator?.userAgent))
 const useSymbol = computed(() => isMac.value ? props.icon !== false : props.icon)
 const keyJoiner = computed(() => useSymbol.value ? '' : '+')
 
@@ -40,7 +39,7 @@ const displayMap = {
 	'Control': 'Ctrl',
 	'Delete': 'Del',
 	'Escape': 'Esc',
-	'Meta': isMac.value ? 'Cmd' : 'Win',
+	get 'Meta'() { return isMac.value ? 'Cmd' : 'Win' },
 }
 
 // @keep-sorted
@@ -52,7 +51,7 @@ const symbolMap = {
 	'Delete': '⌦',
 	'Enter': '↵',
 	'Escape': '⎋',
-	'Meta': isMac.value ? '⌘' : '⊞',
+	get 'Meta'() { return isMac.value ? '⌘' : '⊞' },
 	'Shift': '⇧',
 	'Tab': '⇥',
 	'Win': '⊞',
@@ -133,14 +132,12 @@ useEventListener('blur', () => {
 </script>
 
 <template>
-<UtilHydrateSafe>
-	<kbd :class="{ active }" @click.stop="emit('press')">
-		<slot>{{ codeDisplay }}</slot>
-	</kbd>
-</UtilHydrateSafe>
+<kbd :class="{ active }" @click.stop="emit('press')">
+	<slot>{{ codeDisplay }}</slot>
+</kbd>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 kbd {
 	display: inline-block;
 	margin: 0.1em;
