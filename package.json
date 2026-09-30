@@ -80,7 +80,6 @@
     "eslint": "catalog:quality",
     "fast-xml-builder": "catalog:util",
     "nuxt-llms": "catalog:content",
-    "oxc-minify": "catalog:util",
     "p-limit": "catalog:util",
     "postcss-nesting": "catalog:framework",
     "rehype-katex": "catalog:content",

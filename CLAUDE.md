@@ -33,5 +33,5 @@ GitHub Actions（push main 触发）：`pnpm generate` 后把 `.output/public` �
 ## 当前状态（2026-09-30）
 
 - 包版本 3.8.0，已完全同步上游 v3.8.0；已完成 SCSS→纯 CSS 迁移
-- 已知问题：`app/pages/bangumi.vue` 引用的 `BgmBangumiPage` 组件不存在（bangumi-clarity 模块未安装，模块源码在仓库外 D:/Projects/Bangumi-Clarity）；页面未进导航，仅直链可达，待决定恢复依赖或下线页面
+- Bangumi 功能已于 2026-09-30 移除：bangumi-clarity 模块暂不引入（源码在仓库外 D:/Projects/Bangumi-Clarity）；`app/pages/bangumi.vue` 与无引用的 `HomeHeroBar.vue` 已删、可从 git 历史找回；自包含的 `InfoCard.vue` 与 `content/previews/bangumi-components.md` 保留，作为恢复时的展示资产
 - 分支 `feat/sync-upstream-v3.7.1` 已完全合并进 main，可删
