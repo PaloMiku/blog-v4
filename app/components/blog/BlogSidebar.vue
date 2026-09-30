@@ -1,32 +1,54 @@
 <script setup lang="ts">
+import type { NavItem } from '~/types/nav'
 import { watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-// TODO: 暂时移除 SidebarDecorImage，保留实现以备恢复
 const appConfig = useAppConfig()
 const layoutStore = useLayoutStore()
 const searchStore = useSearchStore()
-
-// Sidebar 底部装饰图由 SidebarDecorImage 组件实现
-
-const { text } = useTextSelection()
-const debouncedSelection = refDebounced(text)
 
 const route = useRoute()
 const openMenuKeys = ref<Record<string, boolean>>({})
 
 const itemKey = (groupIndex: number, itemIndex: number) => `g${groupIndex}-i${itemIndex}`
 
-const hasSubItems = (item: any) => Boolean(item.children && item.children.length)
+const subnavId = (key: string) => `sidebar-subnav-${key}`
 
-function isActive(item: any): boolean {
-	if (item.url && item.url !== '#' && !isExtLink(item.url) && route.path === item.url)
+const hasSubItems = (item: NavItem) => Boolean(item.children?.length)
+
+function collectUrls(items: NavItem[]): string[] {
+	return items.flatMap((item) => {
+		const self = item.url && item.url !== '#' && !isExtLink(item.url) ? [item.url] : []
+		return [...self, ...collectUrls(item.children ?? [])]
+	})
+}
+
+/** 除根路径外的栏目，用于判断当前页面是否属于某个具体栏目 */
+const sectionPaths = computed(() =>
+	collectUrls(appConfig.nav.flatMap(group => group.items))
+		.filter(url => url !== '/'),
+)
+
+const inSection = computed(() =>
+	sectionPaths.value.some(url => route.path === url || route.path.startsWith(`${url}/`)),
+)
+
+function isActive(item: NavItem): boolean {
+	if (matchesRoute(item.url))
 		return true
 
-	if (item.children?.length)
-		return item.children.some(isActive)
+	return Boolean(item.children?.some(isActive))
+}
 
-	return false
+function matchesRoute(url: string) {
+	if (!url || url === '#' || isExtLink(url))
+		return false
+
+	// 根路径会前缀匹配所有路由，指向 `/` 的「文章」只在没有栏目命中时高亮
+	if (url === '/')
+		return !inSection.value
+
+	return route.path === url || route.path.startsWith(`${url}/`)
 }
 
 const isOpen = (key: string) => Boolean(openMenuKeys.value[key])
@@ -56,14 +78,18 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 
 <!-- 不能用 Transition 实现弹出收起动画，因为半宽屏状态始终显示 -->
 <aside id="blog-sidebar" :class="{ show: layoutStore.state === 'sidebar' }">
-	<BlogHeader class="sidebar-header" to="/" />
+	<BlogHeader to="/" />
 
-	<nav class="sidebar-nav scrollcheck-y">
-		<div class="search-btn sidebar-nav-item gradient-card" @click="layoutStore.toggle('search')">
+	<nav class="sidebar-nav scrollcheck-y" aria-label="主导航">
+		<button
+			class="search-btn sidebar-nav-item gradient-card"
+			type="button"
+			@click="layoutStore.toggle('search')"
+		>
 			<Icon name="tabler:search" />
-			<span class="nav-text">{{ debouncedSelection || searchStore.word || '搜索' }}</span>
-			<Key class="keycut" code="K" cmd prevent @press="layoutStore.toggle('search')" />
-		</div>
+			<span class="nav-text">{{ searchStore.label }}</span>
+			<Key code="K" cmd prevent @press="layoutStore.toggle('search')" />
+		</button>
 
 		<template v-for="(group, groupIndex) in appConfig.nav" :key="groupIndex">
 			<h3 v-if="group.title">
@@ -77,6 +103,8 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 							class="sidebar-nav-item sidebar-nav-item-parent"
 							:class="{ open: isOpen(itemKey(groupIndex, itemIndex)), active: isActive(item) }"
 							type="button"
+							:aria-expanded="isOpen(itemKey(groupIndex, itemIndex))"
+							:aria-controls="subnavId(itemKey(groupIndex, itemIndex))"
 							@click="toggleSubMenu(itemKey(groupIndex, itemIndex))"
 						>
 							<span class="nav-text-wrap">
@@ -86,12 +114,12 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 							<Icon :name="isOpen(itemKey(groupIndex, itemIndex)) ? 'tabler:chevron-up' : 'tabler:chevron-down'" />
 						</button>
 
-						<ul v-show="isOpen(itemKey(groupIndex, itemIndex))" class="sidebar-subnav">
+						<ul v-show="isOpen(itemKey(groupIndex, itemIndex))" :id="subnavId(itemKey(groupIndex, itemIndex))" class="sidebar-subnav">
 							<li v-for="(subItem, subIndex) in item.children" :key="subIndex">
 								<UtilLink
 									:to="subItem.url"
 									class="sidebar-nav-item submenu-item"
-									:class="{ 'router-link-active': isActive(subItem) }"
+									:class="{ active: isActive(subItem) }"
 								>
 									<Icon :name="subItem.icon" />
 									<span class="nav-text">{{ subItem.text }}</span>
@@ -102,7 +130,7 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 					</div>
 
 					<template v-else>
-						<UtilLink :to="item.url" class="sidebar-nav-item" :class="{ 'router-link-active': isActive(item) }">
+						<UtilLink :to="item.url" class="sidebar-nav-item" :class="{ active: isActive(item) }">
 							<Icon :name="item.icon" />
 							<span class="nav-text">{{ item.text }}</span>
 							<Icon v-if="isExtLink(item.url)" class="external-tip" name="tabler:arrow-up-right" />
@@ -132,6 +160,8 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 
 	@media (max-width: 768px) {
 		position: fixed;
+		/* 位移到屏幕外不会退出焦点顺序，收起时必须隐藏，否则 Tab 会进入不可见的导航。 */
+		visibility: hidden;
 		inset-inline-start: 0;
 		width: 320px;
 		max-width: 100%;
@@ -139,10 +169,11 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 		backdrop-filter: blur(0.5rem);
 		color: currentcolor;
 		transform: var(--transform-start-far);
-		transition: transform 0.2s;
+		transition: transform 0.2s, visibility 0.2s;
 		z-index: var(--z-index-popover);
 
 		&.show {
+			visibility: visible;
 			box-shadow: var(--box-shadow-1), var(--box-shadow-3);
 			transform: none;
 		}
@@ -181,28 +212,12 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 }
 
 .sidebar-nav-item:not(.search-btn):hover,
-.sidebar-nav-item.router-link-active,
+.sidebar-nav-item.active,
 .sidebar-nav-item-parent.active,
 .sidebar-nav-item-parent:hover {
 	border-color: var(--c-primary);
 	background-color: var(--c-bg-soft);
 	color: var(--c-text);
-}
-
-.sidebar-nav-item > .iconify {
-	font-size: 1.5em;
-}
-
-.sidebar-nav-item > .nav-text {
-	flex-grow: 1;
-	overflow: hidden;
-	white-space: nowrap;
-	text-overflow: ellipsis;
-}
-
-.sidebar-nav-item > .external-tip {
-	opacity: 0.5;
-	font-size: 1em;
 }
 
 .sidebar-nav-item-parent {
@@ -270,13 +285,15 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 
 .search-btn {
 	opacity: 0.5;
+	width: 100%;
 	margin: 1rem 0;
 	outline: 2px solid var(--c-border);
 	outline-offset: -2px;
 	cursor: text;
 	user-select: none;
 
-	&:hover {
+	&:hover,
+	&:focus-visible {
 		opacity: 1;
 		outline-color: transparent;
 		background-color: transparent;

@@ -7,7 +7,8 @@ export const useSearchStore = defineStore('search', () => {
 
 	const word = ref('')
 	const { text } = useTextSelection()
-	const label = computed(() => text.value.trim() || word.value || '搜索')
+	const debouncedText = refDebounced(text)
+	const label = computed(() => debouncedText.value.trim() || word.value || '搜索')
 
 	const { open, close } = modalStore.use(() => h(LazyPopoverSearch, {
 		onClose: layoutStore.close,

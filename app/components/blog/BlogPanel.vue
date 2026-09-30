@@ -23,6 +23,7 @@ const { transform } = useAvoidTransform(panelRef, avoidTargets)
 			class="toggle-aside hide-above-tablet"
 			:class="{ active: layoutStore.state === 'aside' }"
 			aria-label="切换侧边栏"
+			:aria-expanded="layoutStore.state === 'aside'"
 			@click="layoutStore.toggle('aside')"
 		>
 			<Icon class="rtl-flip" name="tabler:align-right" />
@@ -33,6 +34,7 @@ const { transform } = useAvoidTransform(panelRef, avoidTargets)
 			class="toggle-sidebar hide-above-mobile"
 			:class="{ active: layoutStore.state === 'sidebar' }"
 			aria-label="切换菜单"
+			:aria-expanded="layoutStore.state === 'sidebar'"
 			@click="layoutStore.toggle('sidebar')"
 		>
 			<Icon class="rtl-flip" :name="layoutStore.state === 'sidebar' ? 'tabler:layout-sidebar-filled' : 'tabler:layout-sidebar'" />
