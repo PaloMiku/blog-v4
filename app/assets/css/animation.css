@@ -181,6 +181,8 @@
 	.article,
 	.post-header,
 	#blog-aside > .blog-widget,
+	.collapse-enter-active,
+	.collapse-leave-active,
 	.float-in-enter-active,
 	.float-in-leave-active,
 	.float-in-move {

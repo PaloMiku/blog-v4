@@ -14,7 +14,12 @@ const itemKey = (groupIndex: number, itemIndex: number) => `g${groupIndex}-i${it
 
 const subnavId = (key: string) => `sidebar-subnav-${key}`
 
-const hasSubItems = (item: NavItem) => Boolean(item.children?.length)
+const hasChildren = (item: NavItem) => Boolean(item.children?.length)
+
+/** 叶子项自己也占一行列表，模板才能只保留一份链接标记 */
+function linkItems(item: NavItem): NavItem[] {
+	return item.children?.length ? item.children : [item]
+}
 
 function collectUrls(items: NavItem[]): string[] {
 	return items.flatMap((item) => {
@@ -51,7 +56,45 @@ function matchesRoute(url: string) {
 	return route.path === url || route.path.startsWith(`${url}/`)
 }
 
-const isOpen = (key: string) => Boolean(openMenuKeys.value[key])
+/** 精确命中当前页才用 page，仅属于某个栏目时用通用的 true */
+function currentMark(item: NavItem) {
+	if (route.path === item.url)
+		return 'page'
+
+	return isActive(item) ? 'true' : undefined
+}
+
+function toLink(item: NavItem) {
+	return {
+		url: item.url,
+		icon: item.icon,
+		text: item.text,
+		active: isActive(item),
+		current: currentMark(item),
+	}
+}
+
+/** 把配置预处理成模板直接可用的行模型，省掉模板里反复计算的 key 与状态 */
+const navGroups = computed(() => appConfig.nav.map((group, groupIndex) => ({
+	title: group.title,
+	rows: group.items.map((item, itemIndex) => {
+		const key = itemKey(groupIndex, itemIndex)
+		const collapsible = hasChildren(item)
+
+		return {
+			key,
+			icon: item.icon,
+			text: item.text,
+			collapsible,
+			active: isActive(item),
+			// 叶子项的列表恒为展开，只有折叠列表参与动画和 aria-controls
+			open: collapsible ? Boolean(openMenuKeys.value[key]) : true,
+			listId: collapsible ? subnavId(key) : undefined,
+			listClass: collapsible ? 'sidebar-subnav' : 'sidebar-nav-leaf',
+			links: linkItems(item).map(toLink),
+		}
+	}),
+})))
 
 function toggleSubMenu(key: string) {
 	openMenuKeys.value[key] = !openMenuKeys.value[key]
@@ -60,7 +103,7 @@ function toggleSubMenu(key: string) {
 function openActiveMenus() {
 	appConfig.nav.forEach((group, groupIndex) => {
 		group.items.forEach((item, itemIndex) => {
-			if (hasSubItems(item) && isActive(item))
+			if (hasChildren(item) && isActive(item))
 				openMenuKeys.value[itemKey(groupIndex, itemIndex)] = true
 		})
 	})
@@ -91,51 +134,45 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 			<Key code="K" cmd prevent @press="layoutStore.toggle('search')" />
 		</button>
 
-		<template v-for="(group, groupIndex) in appConfig.nav" :key="groupIndex">
+		<template v-for="(group, groupIndex) in navGroups" :key="groupIndex">
 			<h3 v-if="group.title">
 				{{ group.title }}
 			</h3>
 
 			<menu>
-				<li v-for="(item, itemIndex) in group.items" :key="itemIndex">
-					<div v-if="hasSubItems(item)">
-						<button
-							class="sidebar-nav-item sidebar-nav-item-parent"
-							:class="{ open: isOpen(itemKey(groupIndex, itemIndex)), active: isActive(item) }"
-							type="button"
-							:aria-expanded="isOpen(itemKey(groupIndex, itemIndex))"
-							:aria-controls="subnavId(itemKey(groupIndex, itemIndex))"
-							@click="toggleSubMenu(itemKey(groupIndex, itemIndex))"
-						>
-							<span class="nav-text-wrap">
-								<Icon :name="item.icon" />
-								<span class="nav-text">{{ item.text }}</span>
-							</span>
-							<Icon :name="isOpen(itemKey(groupIndex, itemIndex)) ? 'tabler:chevron-up' : 'tabler:chevron-down'" />
-						</button>
+				<li v-for="entry in group.rows" :key="entry.key">
+					<button
+						v-if="entry.collapsible"
+						class="sidebar-nav-item sidebar-nav-item-parent"
+						:class="{ open: entry.open, active: entry.active }"
+						type="button"
+						:aria-expanded="entry.open"
+						:aria-controls="entry.listId"
+						@click="toggleSubMenu(entry.key)"
+					>
+						<span class="nav-text-wrap">
+							<Icon :name="entry.icon" />
+							<span class="nav-text">{{ entry.text }}</span>
+						</span>
+						<Icon class="nav-toggle-icon" :class="{ open: entry.open }" name="tabler:chevron-down" />
+					</button>
 
-						<ul v-show="isOpen(itemKey(groupIndex, itemIndex))" :id="subnavId(itemKey(groupIndex, itemIndex))" class="sidebar-subnav">
-							<li v-for="(subItem, subIndex) in item.children" :key="subIndex">
+					<Transition name="collapse">
+						<ul v-show="entry.open" :id="entry.listId" :class="entry.listClass">
+							<li v-for="link in entry.links" :key="link.url">
 								<UtilLink
-									:to="subItem.url"
-									class="sidebar-nav-item submenu-item"
-									:class="{ active: isActive(subItem) }"
+									:to="link.url"
+									class="sidebar-nav-item"
+									:class="{ active: link.active }"
+									:aria-current="link.current"
 								>
-									<Icon :name="subItem.icon" />
-									<span class="nav-text">{{ subItem.text }}</span>
-									<Icon v-if="isExtLink(subItem.url)" class="external-tip" name="tabler:arrow-up-right" />
+									<Icon :name="link.icon" />
+									<span class="nav-text">{{ link.text }}</span>
+									<Icon v-if="isExtLink(link.url)" class="external-tip" name="tabler:arrow-up-right" />
 								</UtilLink>
 							</li>
 						</ul>
-					</div>
-
-					<template v-else>
-						<UtilLink :to="item.url" class="sidebar-nav-item" :class="{ active: isActive(item) }">
-							<Icon :name="item.icon" />
-							<span class="nav-text">{{ item.text }}</span>
-							<Icon v-if="isExtLink(item.url)" class="external-tip" name="tabler:arrow-up-right" />
-						</UtilLink>
-					</template>
+					</Transition>
 				</li>
 			</menu>
 		</template>
@@ -262,25 +299,38 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 	color: var(--c-text);
 }
 
+/* 折叠列表和叶子列表共用同一份链接标记，层级差别只由容器规则给出 */
+.sidebar-nav-leaf,
 .sidebar-subnav {
-	margin: 0.2em 0 0 1.2rem;
+	margin: 0;
 	padding: 0;
-	list-style: none;
+}
+
+.sidebar-subnav {
+	margin-block: 0.2em 0;
+	margin-inline-start: 1.2rem;
 }
 
 .sidebar-subnav li {
 	margin: 0.25em 0;
 }
 
-.submenu-item {
-	padding-left: 0.5em;
-	background: transparent;
-	font-family: var(--font-basic);
+/* 子项比顶层项更紧凑；用后代选择器压过 .sidebar-nav-item，不依赖书写顺序 */
+.sidebar-subnav .sidebar-nav-item {
+	padding-inline-start: 0.5em;
 	font-size: 0.9em;
 }
 
-.submenu-item .iconify {
+.sidebar-subnav .sidebar-nav-item > .iconify {
 	font-size: 1.1em;
+}
+
+.nav-toggle-icon {
+	transition: transform 0.2s;
+
+	&.open {
+		transform: scaleY(-1);
+	}
 }
 
 .search-btn {
@@ -289,6 +339,8 @@ watch(() => route.path, openActiveMenus, { immediate: true })
 	margin: 1rem 0;
 	outline: 2px solid var(--c-border);
 	outline-offset: -2px;
+	/* button 的 UA 样式是 text-align: center，会被内部文字继承 */
+	text-align: start;
 	cursor: text;
 	user-select: none;
 

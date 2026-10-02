@@ -1,3 +1,5 @@
+import { getDomain, getMainDomain } from './link'
+
 /** 友链架构图标映射 */
 // @keep-sorted
 const archIcons = {
