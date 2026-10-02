@@ -265,6 +265,25 @@ node scripts/check-scope-anchors.mjs      # 顶层 :global() 丢了 scope 锚点
    第三层更阴：新增的 MDX 属性对象**必须带 `type: 'mdxJsxAttribute'`**，
    裸 `{name,value}` 会被 hast→estree 静默丢弃——症状是「图标渲染了、`icon` 也清掉了，
    唯独 `class` 没加」，看起来像 `addClass` 没被调用。
+24. **巧合正确的路径会掩盖整类缺陷；探针的失败模式不止一种。** §80：
+   ① `BlogSidebar` 的 `currentMark` 写 `path === item.url`，而
+   `build.format: 'directory'` 让 `Astro.url.pathname` **带尾斜杠**，
+   于是精确命中恒不成立、该给 `page` 的退化成 `true`。
+   **首页之所以「看起来是对的」，只因为 `item.url` 恰好也是 `/`**——
+   一个巧合让这条缺陷在最容易测的那一页隐形，却在 `/link` `/archive` `/games`
+   `/drive` `/about` 五页同时发作。**一个断言在某个输入上通过，
+   必须问「它是因为正确而通过，还是因为巧合」。**
+   ② 同一个探针的失败模式我先后猜错了两次：以为产物错（实际是 EdgeOne 的
+   `?cb=` 命中了**另一个 cache key**、父层还没刷新，而真实用户走的普通 URL 早就是新的），
+   以为正则慢（逐阶段计时全是 48ms/9ms 的正常值，实际是 `indexOf` 返回 **-1**、
+   `i = -1 + 1 = 0` 把指针送回开头**死循环**，白烧 99s CPU）。
+   **仪器卡住时先分段计时再猜原因；`indexOf` 一类会返回哨兵值的 API，
+   指针运算必须显式处理哨兵。**
+   ③ 顺带两条 HTML 事实：双引号属性值里**允许**裸 `>`（禁的只有 `"` `<` `&`），
+   所以 `<a\b([^>]*)>` 这类匹配会在属性值中间截断，产出「引号未闭合」的假象；
+   而 `riddle-joker` 的 `title` 里真有 `式部茉优 > 在原七海`，线上序列化成 `&gt;`
+   而本地是裸 `>`——**这不是缺陷**，`getAttribute` 拿到的字符串逐字相同，
+   页高与计算样式两道门禁都看不见它。
 
 
 > 观测手段本身也要证伪。§67.3 里我因为 glob 只覆盖了 `dist/*.html`、
@@ -287,18 +306,57 @@ node scripts/check-scope-anchors.mjs      # 顶层 :global() 丢了 scope 锚点
 > `tagName`，于是整棵树一次都没被遍历，工具报「线上 0 个 `<button>`」。
 > 我差点据此得出「线上根本没有按钮」。
 
-> **`live:ui-parity` 现在是红的，这是对的。** 它 exit 1 的 7 条差异全部是
-> 「本地内容比线上多」（用户已删掉 `## 相关条目`，线上还留着）加上 2 条
-> 0.4% 以内的有界残差。**不要为了让它变绿而把这些页加进门禁的 `known` 列表**——
-> 那会把「内容还没部署」这个信号永久静音。该做的动作是部署内容；
-> 部署完这 5 页自然归零，红灯自己会灭。详见 findings §69.1。
+25. **「量了外框」可以连续错三次；列测量清单的依据必须是遍历出来的普查表。**
+    §82：用户报侧栏差异，先查出 `STYLE_SELECTORS` 里侧栏只有 2 条**外框**。
+    按组件结构补到 17 条后**仍然全绿**——第二次失败的原因是 `#blog-sidebar` 两侧
+    都是 `visibility:hidden`，`visible()` 判不可见，所有后代在**「可见吗」这一层就出局**，
+    `nv.visible === 0` 直接 `continue`，**补多少选择器都没用**。
+    修好可见性后第三次全绿：补的 17 条里页脚只有两个外框，
+    真正承载样式的 `<menu>` 里的 `<a>` 不在表里，而反向测试注入正好写在那个 `<a>` 上。
+    **应用**：测量清单不能靠「读一遍组件结构时的理解」来列，要遍历整棵子树、
+    按 `tag.class` 汇总两侧签名、拿一张普查表当依据；清单里每一条都要能指着普查表
+    说「这条两侧同名」。**判据在更上游的环节出局时，往下游补清单是白费力气——
+    先确认判据那一层本身成立，再谈覆盖面。**
+26. **`X.check()` 这类便利谓词往往不是你以为的那个问题，而且答案可能是反的。**
+    §82：`span.split-char` 高 35（线上）/ 32（Astro），两侧 CSS 逐字相同，
+    `fontSize`/`lineHeight`/`fontWeight`/`fontVariationSettings`/动画 `currentTime` 全部一致。
+    读 `document.fonts.check('600 24px "LXGW WenKai Screen"', …)` 得**线上 `true` / 本地 `false`**，
+    据此写下「本地字体没加载、回退到 Noto」——**这个结论正好反了**。
+    改查 `document.fonts` 的 face 列表与那条 `<link>` 的 **`media` 运行时实际值**：
+    线上 `media` 停在 `print`（`onload` 未执行，样式表下载了却**永不应用**，静默无错）、
+    `LXGW WenKai Screen` 一个 face 都没有；本地 `media=all`、3 个 face `loaded`。
+    **应用**：判断「某个资源到底用上没有」，必须用与该问题**定义相符**的字段——
+    `fonts.check()` 判的是「该文本能否无回退渲染」且把整条 fallback 链算进去，
+    `getComputedStyle().fontFamily` 则原样回显声明值，两个都不是。
+    **同一个探针里两个字段互相打架时，挑定义与被测问题相符的那个，
+    而不是先读到的、或看起来更权威的那个。** 顺带一条：基线的成立条件要显式写下来——
+    本项目「两侧字体环境一致」是靠**断网隔离**碰上的，不是任何检查保证的，
+    切到 online 模式就必须重取基线。
+
+> **`live:ui-parity` 的红灯理由已经变了。** 它此前 exit 1 的 7 条差异里，
+> 5 条是「本地内容比线上多」（用户删了 `## 相关条目`、移除了 Bangumi，线上还留着）。
+> **2026-10-02 已把这批部署上线**（`89136cb` → CI `37029853527` 全绿 → `blog-public` `91291045`），
+> 这一类理由随之消失。**仍然不要为了让门禁变绿而把任何页加进 `known` 列表**——
+> 要先分清剩下的每一条属于「迁移缺陷 / 部署滞后漂移 / 内容漂移」哪一类，
+> 后两者的正确动作是部署，绝不豁免。详见 findings §80.1–§80.2。
 
 ## 部署
 
 GitHub Actions（push main 触发）：`pnpm generate` 后把 `.output/public` 推送到 PaloMiku/blog-public（GitHub Pages），站点经 EdgeOne CDN 对外服务（edgeone.json 只管 /api 与 OPML 的 Content-Type）。CI 是否绿是部署是否成功的唯一事实源。
 
-## 当前状态（2026-09-30）
+**两处验证部署的注意点**（§80.2）：
+
+- `gh` 在本仓库会**优先解析 `upstream` remote**（`L33Z22L11/blog-v3`），
+  所有 `gh run list` / `gh workflow list` 都必须显式 `-R PaloMiku/blog-v4`。
+- 站点在 EdgeOne 后面，**带 query 的 URL 是独立的 cache key**：
+  `?cb=<时间戳>` 这种 cache-buster 会命中尚未刷新的父层，拿到**旧内容**，
+  而同一时刻普通 URL 已经是新的。**验证部署一律用普通 URL**；
+  要绕过 CDN 就查 `blog-public` 的部署产物本身。
+
+## 当前状态（2026-10-03）
 
 - 包版本 3.8.0，已完全同步上游 v3.8.0；已完成 SCSS→纯 CSS 迁移
 - Bangumi 功能已于 2026-09-30 移除：bangumi-clarity 模块暂不引入（源码在仓库外 D:/Projects/Bangumi-Clarity）；`app/pages/bangumi.vue` 与无引用的 `HomeHeroBar.vue` 已删、可从 git 历史找回；自包含的 `InfoCard.vue` 与 `content/previews/bangumi-components.md` 保留，作为恢复时的展示资产
 - 分支 `feat/sync-upstream-v3.7.1` 已完全合并进 main，可删
+- Nuxt 侧工作区已清空，`89136cb` 已部署（见上方「部署」小节）；此后所有迁移工作只发生在 `astro-site/`
+- `astro-site/scripts/acceptance.ps1` 的产品门禁 **10 道**（新增 `check-heading-ids`、`check-text-literal`、`check-mdc-eval`、`check-aria-current`）
