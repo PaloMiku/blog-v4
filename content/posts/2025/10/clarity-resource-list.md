@@ -242,7 +242,7 @@ items:
 ---
 ::
 
-# tab2
+#tab2
 ```mdc wrap expand
 ::resource-list
 ---
