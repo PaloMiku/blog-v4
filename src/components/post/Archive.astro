@@ -1,0 +1,206 @@
+---
+/**
+ * Archive 组件（Astro 版）：归档页的单行文章条目。
+ *
+ * ═══ composable 依赖已内联为构建期计算（不重建 composable 体系）═══
+ * 原组件直接用 Nuxt auto-import 的工具函数，全部改为构建期求值：
+ * - `getCategoryIcon` / `getCategoryColor` 来自 `app/utils/article.ts`，
+ *   它们只是读 `appConfig.article.categories`，这里内联同样的查表逻辑，
+ *   数据直接取自根 `blog.config.ts`。
+ * - `isTimeDiffSignificant` / `isSameUnit` 走 `src/lib/shared.ts`（已有转出）。
+ *
+ * ═══ UtilDate 的处理 ═══
+ * 原组件用 `<UtilDate>` 渲染日期，现已收敛到 `util/Date.astro`。
+ * 归档页两处都显式传了 `format`（`monthDay` / `date`），走的是
+ * `toZdtLocaleString` 那条与 Nuxt 一致的分支，不受默认形态影响。
+ *
+ * ═══ 其他 API 变化 ═══
+ * - `NuxtLink`（UtilLink）→ `<a>`，外链判断用 `isExtLink`。
+ * - `--delay` 原本由调用方用 `getFixedDelay(index * 0.03)` 以 style 对象传入；
+ *   `getFixedDelay` 所在的 `app/utils/anim.ts` 顶部 import 了 @vueuse/core，
+ *   无法跨项目引用，故改为显式 `delay` prop（单位秒）。
+ * - 其余原本靠 attribute fallthrough 的属性（`class` / `style` / `data-list-key`）
+ *   在 Astro 里会被丢弃，故显式声明。
+ */
+import Icon from '../Icon.astro'
+import UtilDate from '../util/Date.astro'
+import blogConfig from '../../config/blog'
+import { isExtLink, isSameUnit, isTimeDiffSignificant } from '../../lib/shared'
+
+interface Props {
+	title?: string
+	description?: string
+	date?: string
+	updated?: string
+	categories?: string[]
+	tags?: string[]
+	path: string
+	readingTime?: { words?: number }
+
+	/** 覆盖跳转地址，默认取 path */
+	to?: string
+	/** 用更新日期作为主日期 */
+	useUpdated?: boolean
+	/** 标题前显示分类图标 */
+	showCategory?: boolean
+
+	/* 以下为原组件靠 fallthrough 接收 */
+	class?: string
+	style?: string | Record<string, string | number>
+	/** 入场动画延迟（秒），对应 Nuxt 侧的 getFixedDelay(index * 0.03) */
+	delay?: number
+	'data-list-key'?: string
+
+	/**
+	 * 其余属性原样透传到根 `<li>`。
+	 *
+	 * Astro 不做 Vue 的 attribute fallthrough，归档页的 `data-archive-item`
+	 * 一类数据属性只能靠这个落到真实列表项上。
+	 *
+	 * 曾经在 `pages/archive.astro` 里用外层 `<li>` 包一层来承接这些属性，
+	 * 结果被 HTML 解析器的「嵌套 `<li>` 自动闭合」规则拆成两个兄弟节点：
+	 * 外层成了空壳，`--delay` 也没能继承下来，筛选脚本拿到的全是空节点。
+	 */
+	[key: string]: unknown
+}
+
+const {
+	title = '',
+	description,
+	date,
+	updated,
+	categories,
+	tags,
+	path,
+	to,
+	useUpdated = false,
+	showCategory = false,
+	class: className,
+	style: styleProp,
+	delay,
+	'data-list-key': listKey,
+	...rest
+} = Astro.props
+
+/* —— 内联自 app/utils/article.ts —— */
+function getCategoryIcon(category?: string) {
+	return blogConfig.article.categories[category ?? '']?.icon ?? 'tabler:folder'
+}
+
+function getCategoryColor(category?: string) {
+	return blogConfig.article.categories[category ?? '']?.color
+}
+
+const mainDate = useUpdated ? updated : date
+const href = to ?? path
+const accent = getCategoryColor(categories?.[0])
+const showExtraDate = Boolean(date && useUpdated && isTimeDiffSignificant(date, updated))
+
+const extraFormat = updated && isSameUnit(date!, updated, 'year') ? 'monthDay' : 'date'
+const style = { '--delay': delay === undefined ? undefined : `${delay.toFixed(2)}s`, ...(typeof styleProp === 'object' ? styleProp : {}) }
+---
+
+<li
+	{...rest}
+	class:list={['article-item', className]}
+	style={style}
+	data-transition-enter
+	data-list-key={listKey}
+>
+	{mainDate && (
+		<UtilDate class="dim-hover" date={mainDate} format="monthDay" />
+	)}
+
+	<div class="gradient-card" style={{ '--c-accent': accent }}>
+		<a
+			class="article-link scrollbar-hidden scrollcheck-x"
+			href={href}
+			title={description}
+			target={!href.startsWith('#') && isExtLink(href) ? '_blank' : undefined}
+			rel={!href.startsWith('#') && isExtLink(href) ? 'noopener noreferrer' : undefined}
+			data-transition-key={href}
+		>
+			<span class="article-title">
+				{showCategory && <Icon name={getCategoryIcon(categories?.[0])} />}
+				{title}
+			</span>
+
+			{showExtraDate && (
+				<UtilDate class="dim-hover info" date={date} format={extraFormat} />
+			)}
+
+			{tags && tags.length > 0 && (
+				<ul class="dim-hover info tag-list">
+					{tags.map(tag => <li>{tag}</li>)}
+				</ul>
+			)}
+		</a>
+	</div>
+</li>
+
+<style>
+.article-item {
+	display: flex;
+	align-items: center;
+	column-gap: 0.5em;
+	min-width: 0;
+	margin: var(--archive-item-gap, 0.2em) 0;
+	animation: float-in 0.2s var(--delay) backwards;
+
+	@media (max-width: 768px) {
+		font-size: 0.9em;
+	}
+
+	.dim-hover {
+		opacity: 0.4;
+		transition: opacity 0.2s;
+	}
+
+	/* date 由本组件渲染，直接用本地选择器即可 */
+	time {
+		font-variant-numeric: tabular-nums;
+	}
+
+	.info {
+		font-size: 0.8em;
+	}
+
+	&:hover,
+	&:focus-within {
+		.article-title {
+			color: var(--c-text);
+		}
+
+		.dim-hover {
+			opacity: 1;
+		}
+	}
+}
+
+.gradient-card {
+	flex-grow: 1;
+	min-width: 0;
+}
+
+.article-link {
+	--scrollbar-height: 0px;
+
+	display: flex;
+	align-items: baseline;
+	gap: 1em;
+	padding: 0.3em 0.6em;
+	white-space: nowrap;
+
+	> .tag-list {
+		display: flex;
+		flex-wrap: nowrap;
+		gap: 0.5em;
+		margin-left: auto;
+
+		&::before {
+			content: "#";
+			opacity: 0.5;
+		}
+	}
+}
+</style>

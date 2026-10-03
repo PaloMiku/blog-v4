@@ -1,0 +1,146 @@
+---
+/**
+ * VideoEmbed 组件（Astro 版）。
+ *
+ * 与 Nuxt 版的差异：抖音系列的 zoom 计算（原 `useResizeObserver` + `ref`）
+ * 改为一段按 `data-zoom-factor` 自我初始化的原生脚本，行为一致但不需要 Vue 运行时。
+ */
+interface Props {
+	/** 视频类型，数字过长时需通过双引号传入字符串 */
+	type?: 'raw' | 'bilibili' | 'bilibili-nano' | 'youtube' | 'douyin' | 'douyin-wide' | 'tiktok'
+	id: string
+	autoplay?: boolean
+	/** 视频宽高比，如 `16 / 9` `1.6` */
+	ratio?: string | number
+	/** 仅 type 为 `raw` 时可用 */
+	poster?: string
+	/** 视频宽度 */
+	width?: string
+	/** 视频高度 */
+	height?: string
+}
+
+const {
+	type = 'raw',
+	id,
+	autoplay = false,
+	ratio: ratioProp,
+	poster,
+	width,
+	height = '80vh',
+} = Astro.props
+
+function resolveRatio() {
+	if (ratioProp)
+		return ratioProp
+	switch (type) {
+		case 'raw': return undefined
+		case 'douyin': return '27 / 56'
+		case 'douyin-wide': return '1198 / 731'
+		default: return '16 / 9'
+	}
+}
+
+function resolveSrc() {
+	switch (type) {
+		case 'bilibili':
+			return `https://player.bilibili.com/player.html?bvid=${id}&autoplay=${autoplay}`
+		case 'bilibili-nano':
+			return `https://www.bilibili.com/blackboard/newplayer.html?bvid=${id}&autoplay=${autoplay}`
+		case 'youtube':
+			return `https://www.youtube.com/embed/${id}?rel=0&disablekb=1&playsinline=1&autoplay=${autoplay}`
+		case 'douyin':
+		case 'douyin-wide':
+			return `https://open.douyin.com/player/video?vid=${id}`
+		case 'tiktok':
+			return `https://www.tiktok.com/embed/v3/${id}`
+		default:
+			return id
+	}
+}
+
+const ratio = resolveRatio()
+const src = resolveSrc()
+
+// 抖音会预检测宽度是否小于 730px 再返回竖屏或横屏模式，
+// 需要按容器宽度反推 zoom 才能触发横屏模式。
+const zoomFactor = type === 'douyin'
+	? 0.0031
+	: type === 'douyin-wide'
+		? 0.00134
+		: undefined
+---
+
+<div
+	class="video"
+	data-video-player={zoomFactor ? '' : undefined}
+	data-zoom-factor={zoomFactor}
+	style={{
+		aspectRatio: ratio,
+		maxWidth: width,
+		maxHeight: height,
+	}}
+>
+	{type === 'raw'
+		? <video poster={poster} src={src} controls />
+		: (
+			<iframe
+				src={src}
+				scrolling="no"
+				loading="lazy"
+				allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture"
+			/>
+		)}
+</div>
+
+<script>
+	// 抖音系列：按容器宽度反推 zoom，阻塞加载以触发横屏模式
+	function initZoom(player) {
+		if (!(player instanceof HTMLElement) || player.dataset.zoomReady)
+			return
+		const factor = Number(player.dataset.zoomFactor)
+		if (!factor)
+			return
+		player.dataset.zoomReady = '1'
+
+		const frame = player.querySelector('iframe')
+		if (!frame)
+			return
+
+		const apply = () => frame.style.zoom = String(player.clientWidth * factor)
+		new ResizeObserver(apply).observe(player)
+		apply()
+	}
+
+	function initAll() {
+		for (const player of document.querySelectorAll('[data-video-player]'))
+			initZoom(player)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.video {
+	contain: paint;
+	border-radius: 0.8rem;
+	box-shadow: var(--box-shadow-2);
+
+	/* `<article>` 来自父页面，拿不到本组件的 scope 属性，
+	   必须 :global() 否则这条规则永远不匹配（见 docs/astro-phase1-findings.md 陷阱 2） */
+	:global(article) & {
+		margin: 2rem auto;
+	}
+}
+
+.video iframe,
+.video video {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+</style>

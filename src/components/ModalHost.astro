@@ -1,0 +1,96 @@
+---
+/**
+ * ModalHost —— 模态栈的唯一宿主，被 `Blog.astro` 引用一次。
+ *
+ * ## 职责边界
+ * - 构建期：把每种弹窗（`MODAL_KEYS`）对应的内容与遮罩**全部静态渲染**。
+ *   Astro 无法在运行期按 key 动态渲染另一个组件，所以「有哪些弹窗」是构建期常量。
+ * - 运行期：只做两件事——按 `src/lib/modal.ts` 的栈决定每块遮罩
+ *   「显不显 / z-index 是多少」，以及把 `z-index` 写给弹窗根元素。
+ *   弹窗内容与 props 的更新由各弹窗组件自己订阅完成。
+ *
+ * ## 遮罩层级
+ * 与 `BikariyaModals` 同规则：每个栈项配一块遮罩，放在该项的 `zIndex - 1`，
+ * 于是叠开多层时上层遮罩正好压住下层弹窗。类名从 `.bikariya-overlay` 改为
+ * `.modal-scrim`，因为本项目已不再依赖该库，保留旧名会让人误以为还有这层封装。
+ *
+ * ## 挂载位置
+ * 放进 `Blog.astro` 现有的 `<div id="modal-root" />` 里。所有子元素都是
+ * `position: fixed`，因此宿主在文档里的嵌套深度不影响定位。
+ */
+import LightboxModal from './popover/LightboxModal.astro'
+import SearchModal from './popover/SearchModal.astro'
+import { MODAL_KEYS } from '../lib/modal'
+---
+
+<div data-modal-host>
+	{MODAL_KEYS.map(key => (
+		<div class="modal-scrim" data-modal-scrim={key} />
+	))}
+
+	<SearchModal />
+	<LightboxModal />
+</div>
+
+<script>
+	import { bindModalGlobals, getModalByKey, subscribeModals } from '../lib/modal'
+
+	function initHost(host) {
+		if (!(host instanceof HTMLElement) || host.dataset.modalHostReady)
+			return
+		host.dataset.modalHostReady = '1'
+
+		subscribeModals(() => {
+			for (const scrim of host.querySelectorAll('[data-modal-scrim]')) {
+				const entry = getModalByKey(scrim.dataset.modalScrim)
+				// 退场期间（status 为 closing）仍要留着遮罩，否则弹窗淡出时会“掉到页面里”
+				const on = Boolean(entry)
+				scrim.toggleAttribute('data-show', on)
+				if (on) {
+					scrim.style.setProperty('--modal-duration', `${entry.duration}ms`)
+					scrim.style.zIndex = String(entry.zIndex - 1)
+				}
+			}
+		})
+	}
+
+	function initAll() {
+		for (const host of document.querySelectorAll('[data-modal-host]'))
+			initHost(host)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+
+	bindModalGlobals()
+</script>
+
+<style>
+	/*
+	 * 与 `Mask.astro` 同一套显隐手法：隐藏态用 `visibility` 而非 `display: none`，
+	 * 保留进出场过渡；三条属性都可过渡，因此显隐各有淡入淡出。
+	 */
+	.modal-scrim {
+		position: fixed;
+		inset: 0;
+		background-color: #0003;
+		/* 模糊值沿用 Nuxt 侧 `.bikariya-overlay` 的 4px */
+		backdrop-filter: blur(4px);
+		z-index: 510;
+		opacity: 0;
+		visibility: hidden;
+		pointer-events: none;
+		transition:
+			opacity var(--modal-duration, 200ms) var(--motion-easing, ease-out),
+			visibility var(--modal-duration, 200ms) var(--motion-easing, ease-out);
+	}
+
+	.modal-scrim[data-show] {
+		opacity: 1;
+		visibility: visible;
+		pointer-events: auto;
+	}
+</style>

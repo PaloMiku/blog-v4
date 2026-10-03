@@ -1,63 +1,111 @@
 # CLAUDE.md
 
-个人博客「Mikuの极光星」（https://blog.sotkg.com），基于上游 L33Z22L11/blog-v3（Clarity 主题）深度定制的 Nuxt 4 纯静态站。upstream 仅做选择性批次同步，不直接 merge。
+个人博客「Mikuの极光星」（https://blog.sotkg.com）。**2026-10-03 起 Astro 7 直接接管仓库根**，
+Nuxt 4 源码树（`app/` `content/` `server/` `shared/` `modules/` `patches/` `remark-plugins/`
+`nuxt.config.ts` `blog.config.ts` …）已整体删除，`astro-site/` 这个过渡目录也不再存在。
+上游 L33Z22L11/blog-v3（Clarity 主题）的选择性批次同步随 Nuxt 侧一起冻结。
 
 ## 常用命令
 
 ```sh
-pnpm dev        # 开发
-pnpm generate   # SSG 构建，产物在 .output/public（新版工具链不再生成根目录 dist）
-pnpm preview    # 预览构建产物
-pnpm lint       # ESLint（含 CSS 规则，本机 pnpm 可能 EBUSY，可改用 npx eslint）
-pnpm new        # 新建文章
+pnpm dev                     # 开发
+pnpm build                   # SSG 构建，68 页，产物在 dist
+pnpm preview                 # 预览产物
+pnpm typecheck               # tsc -p tsconfig.check.json
+pnpm lint                    # ESLint（含 CSS 规则；本机 pnpm 可能 EBUSY，可改用 npx eslint）
+pnpm new                     # 新建文章（写 src/content/posts/<年>/<名>.mdx）
+pnpm accept                  # 单一验收入口，等价于 scripts/acceptance.ps1
+pnpm freeze-baseline         # 重新冻结 Nuxt 基线（见「冻结基线」一节）
+
+powershell -File scripts/acceptance.ps1   # 完整验收（需先自行确保 dev server 已停）
+                                         #   -Styles   再加 1600 浅色计算样式对比
+                                         #   -Mobile   再加 390×844 的页高 + 计算样式对比
+                                         #   -Dark     再加深色下的计算样式对比
+node scripts/interaction-check.mjs        # 交互门禁，**单独跑**，不要塞进流水线
+node scripts/probe-subtree.mjs --sel='<css>'        # 逐节点几何对比
+node scripts/probe-subtree.mjs --sel='<css>' --mode=profile   # 垂直剖面：空隙、垂直带、对账
+node scripts/freeze-baseline.mjs --help   # 重新冻结 Nuxt 基线的用法
 ```
 
 ## 技术栈与结构
 
-- Nuxt 4（app/ 目录）+ Vue 3.5 + @nuxt/content v3（sqlite native）；pnpm 11 + catalogs 集中管版本（package.json 全是 `catalog:` 引用，加依赖改 pnpm-workspace.yaml）
-- 样式纯 CSS（无 Tailwind、无预处理器）：令牌在 `app/assets/css/` 全局文件，组件内 `<style scoped>` 用原生 CSS 嵌套，CSS 检查走 ESLint（@zinkawaii/eslint-config-css）
-- UI 组件全自研（app/components 下 blog/content/post/partial/popup/util/widget），第三方仅 vue-tippy、embla-carousel、@bikariya/*
-- 三层配置分工：内容/分类/友链 → `blog.config.ts`；导航/页脚/交互默认值 → `app/app.config.ts`；构建/module → `nuxt.config.ts`
-- 内容在 content/（posts 正式文章、previews 草稿、games 游戏库）；server/ 仅 3 个预渲染端点（/api/stats、/atom.xml、/subscriptions.opml）
-
-## 约定
-
-- ESLint 统一 tab 缩进、无 Prettier；带 `// @keep-sorted` 标记的配置数组必须保持排序
+- Astro 7（站点根即仓库根，`src/pages` 文件路由）+ Vue 3.5 运行时（当前 **0 个 Vue 岛**，
+  `@astrojs/vue` 只服务于 `astro.config.mjs` 里那一行 `vue()`，是可摘的死重量）
+  + `@astrojs/mdx` v8 + `remark-mdc`（frontmatter 解析）；pnpm 12 + **catalogs 集中管版本**
+  （`package.json` 全是 `catalog:` 引用，版本只在 `pnpm-workspace.yaml` 出现一次，5 组 45 条）
+- 样式纯 CSS（无 Tailwind、无预处理器）：令牌在 `src/styles/*.css`，组件内 `<style>` 用原生 CSS 嵌套，
+  CSS 检查走 ESLint（@zinkawaii/eslint-config-css）
+- UI 组件全自研（`src/components/` 下 `blog/` `content/` `post/` `partial/` `popup/` `util/` `widget/`），
+  第三方仅 `astro-icon`、vue-tippy、embla-carousel、@bikariya/*
+- **内容唯一真相源是 `src/content/**/*.mdx`**（63 个文件）。接管前的 `content/**/*.md` 原文树
+  与 `mdc-to-mdx` codemod 已退役（转换报告存档在 `docs/mdc-to-mdx-report.md`）。
+- 三层配置分工：内容/分类/友链 → `src/config/blog.ts`；导航/页脚/交互默认值 → `src/lib/app-config.ts`；
+  内容 schema 与 loader → `src/content.config.ts`；构建/module → `astro.config.mjs`
+- 端点（`src/pages/`）：`/api/stats`、`/atom.xml`、`/subscriptions.opml`、`/llms.txt`、
+  `/search-index.json`、`/raw/*.md`（63 篇原文）
 - 文章可用 frontmatter `permalink` 自定义 URL；`hidePostPrefix` 开启时 /posts/xxx 显示为 /xxx
-- dev 服务器（pnpm dev 等）的启停由用户自行管理，代理不得擅自启动或杀掉；`pnpm generate` 若因 .data 被 dev 占用而失败，先请用户暂停 dev 再继续
-- **Windows PowerShell 5.1 下不要用 `Set-Content -Encoding UTF8` 回写源码**：它会写 BOM，`audit-css-blocks.mjs` 会报 `WARN: N 个文件带 BOM`。用文件工具直接写，或 `[System.IO.File]::WriteAllBytes` 剥掉前三字节。`.ps1` 同理必须是 ASCII-only（无 BOM 的 .ps1 会被当成 ANSI 读，非 ASCII 字节会吞掉换行）
+- `build.format: 'directory'` ⇒ **`Astro.url.pathname` 带尾斜杠**。`BlogSidebar` 的
+  `currentMark` 写成 `path === item.url` 时必须用 `pathname === '/'` 之类的归一化，
+  否则首页因为 `item.url` 恰好是 `/` 而**巧合正确**（见坑位 27）
+- dev / preview 服务器的启停由用户自行管理，代理不得擅自启动或杀掉
 
-## Astro 迁移（`astro-site/`，进行中）
+## 冻结基线（`baseline/nuxt/`）
 
-Nuxt 4 → Astro 7 的重写，**目标与线上 Nuxt 站逐项对齐**。进度与踩坑记录见
-`docs/astro-migration-plan.md`（计划）与 `docs/astro-phase1-findings.md`（实测，71 节，最新在 §71）。
+接管后 Nuxt 源码树没了，`pnpm generate` 不再存在，而 7 道离线门禁仍需要一个
+「Nuxt 侧长什么样」的锚点。锚点是一次**冻结的本地快照**，由 `scripts/freeze-baseline.mjs` 生成：
 
-```sh
-cd astro-site
-pnpm build                              # 68 页，产物在 astro-site/dist
-powershell -File scripts/acceptance.ps1   # 单一验收入口
-                                         #   -Styles 再加 1600 浅色计算样式对比
-                                         #   -Mobile 再加 390×844 的页高 + 计算样式对比
-                                         #   -Dark   再加深色下的计算样式对比
-node scripts/interaction-check.mjs        # 交互门禁，**单独跑**，不要塞进流水线
-node scripts/probe-subtree.mjs --sel='<css>'        # 逐节点几何对比，定位「这个块差 N px」
-node scripts/probe-subtree.mjs --sel='<css>' --mode=profile   # 垂直剖面：空隙、垂直带、**对账**
-node scripts/check-scope-anchors.mjs      # 顶层 :global() 丢了 scope 锚点就红
-```
+- 2026-10-03 冻结自提交 `fa9f2b3`（当时工作区干净），67 路由 / 120 文件 / 6.65 MB
+- 只收 `*.html` `*.css` `*.xml`——完整产物 38 MB 里 28.9 MB 是 589 个 JS chunk，没有门禁读它
+- **本目录不入库**（根 `.gitignore` 有 `baseline/`）。换机器或 CI 上这 7 道门禁会报
+  「基线缺失」，那是**有意的信号**，不是 bug
+- 重新冻结需要 Nuxt 源码树（已删），所以实际上**不能再冻结**。`freeze-baseline.mjs` 保留是为了
+  让这个约束有个显式的执行入口和文档
 
-> **桌面一致 ≠ UI 一致。** 页高/样式对比此前只量过 1600×1000 的**浅色**，
-> 而站点里有大量 `@media (max-width: 768px)` 规则、且深色会整套换令牌。
-> 现已加 `--width=`／`--height=`／`--theme=`，默认值全部保持原样，
-> 非默认值写进**自己的** `.astro-compare/*-w390x844.json` / `*-dark.json`，
-> 不会覆盖既有基线。实测三个条件下**精确 0 差的都是同样那 54 页**。
+## 验收
 
-**`astro-site/` 已完全自包含**：不 import、不读文件到 Nuxt 树之外。
-`blog.config.ts` / `shared/utils/*` / `app/feeds.ts` / `app/utils/img.ts`
-已内联为 `src/config/blog.ts`、`src/lib/shared/*`、`src/lib/feeds.ts`、`src/lib/img.ts`；
-`parse-domain` 是它自己的依赖。门禁 `scripts/check-self-contained.mjs` 盯着这件事，
-**且必须用「注入真实缺陷后变红」验过它**——见下方教训。
+`scripts/acceptance.ps1` 是单一验收入口：**2 步构建 + 34 步**。
 
-### 迁移期最容易重蹈的十三个坑
+| 组 | 数量 | 成员 |
+| --- | --- | --- |
+| 构建 | 2 | `pnpm install`、`pnpm build`（只构建一次，所有门禁共用同一个 `dist`） |
+| PowerShell 静态门禁 | 11 | `check-integration` `check-layout` `check-anchor-classes` `check-dead-css` `check-assets` `compare-urls` `compare-titles` `check-content-preservation` `check-dates` `audit-deferred` `audit-image-pipeline` |
+| 边界/源码门禁 | 3 | `audit-dead-scope`（`$knownDeadScope = 3`）`audit-css-blocks` `check-ci-triggers` |
+| 依赖边界 | 1 | `check-self-contained` |
+| 产品门禁 | 11 | `check-icon-swap` `check-flip-gates` `check-list-controls` `check-dropped-css` `check-affordances` `check-scope-anchors` `check-heading-ids` `check-text-literal` `check-mdc-eval` `check-aria-current` `check-icon-box` |
+| 仪器自检 | 1 | `preview-guard-selftest` |
+| 线上门禁 | 7 | `live:sitemap` `live:head` `live:ui-parity` `live:style-parity` `live:ui-parity-mobile` `live:style-parity-mobile` `live:style-parity-dark` |
+| 构建告警 | 1 | `check-build-warnings` |
+
+**两道存在但没接线的门禁**（§85.4 的老问题，接管后更需要处理）：
+
+| 脚本 | 状态 |
+| --- | --- |
+| `collect-evidence.ps1` | 跑得通、exit 0，但不在 `$gates` 里 |
+| `compare-dom.ps1` | 跑得通，但报 **15 处 marker 不一致**且自身 exit 0。见「开放项」 |
+
+CI 侧只有一条流水线 `.github/workflows/build.yml`（push main 即发布），跑
+**9 道无浏览器门禁**：`check-self-contained` `check-mdc-eval` `check-heading-ids`
+`check-text-literal` `check-scope-anchors` `check-aria-current` `check-icon-box`
+`audit-css-blocks` `check-ci-triggers`。它**不**跑 `acceptance.ps1`（需要未入库的基线、
+PowerShell 入口、打线上站的 headless Chrome，干净 CI 里都不成立），也**不**跑
+`interaction-check.mjs`（流水线里不可靠而单跑可靠）。
+
+## 部署
+
+GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 PaloMiku/blog-public
+（GitHub Pages），站点经 EdgeOne CDN 对外服务。CI 是否绿是部署是否成功的唯一事实源。
+
+三处验证部署的注意点：
+
+- `gh` 在本仓库会**优先解析 `upstream` remote**（L33Z22L11/blog-v3），所有
+  `gh run list` / `gh workflow list` 都必须显式 `-R PaloMiku/blog-v4`。
+- 站点在 EdgeOne 后面，**带 query 的 URL 是独立的 cache key**：`?cb=<时间戳>` 会命中
+  尚未刷新的父层拿到**旧内容**。**验证部署一律用普通 URL**；要绕过 CDN 就查
+  `blog-public` 的部署产物本身。
+- `edgeone.json`（`/api/*` → `application/json`、`*.opml` → `application/xml`）**不在仓库里
+  被任何流水线消费**——两条流水线都只推 `dist/`。它靠 EdgeOne 控制台配置生效，改它要去控制台。
+
+## 迁移期最容易重蹈的坑（实测记录在 `docs/astro-phase1-findings.md`，85 节）
 
 1. **Astro 不做 attribute fallthrough。** `<Icon class="x" />` 的 `class` 会被**静默丢弃**，
    必须显式声明 prop 再合并。已导致封面图丢失 `aspect-ratio`、渲染高 6 倍。
@@ -67,7 +115,7 @@ node scripts/check-scope-anchors.mjs      # 顶层 :global() 丢了 scope 锚点
    `main.css` 的 `:where(.iconify){font-size:1.2em}` 特异性是 0，线上因为两个类在
    **同一个元素**上而输给组件的 `5rem`（80×80），Astro 因为拆成两层而赢（96×112），
    整块内容被顶偏一个 `gap: 2rem`。**凡是调用方给图标包装元素显式设了 `font-size`
-   的地方都要重新量一遍盒子。**
+   的地方都要重新量一遍盒子。** 2026-10-03 又在 `Tip.astro` 的 `.tip-icon` 上复发一次。
 2. **`:global()` 只作用于紧邻的选择器，不向嵌套传播。** 每个面向 slot 内容的层级
    都要单独写 `:global()`。且 `<style>` 默认隔离，写 `.x .y` 会要求 Astro 的 scope id
    落在**子组件**的根元素上，而它带的是子组件自己的 id —— 规则永不匹配。
@@ -76,287 +124,153 @@ node scripts/check-scope-anchors.mjs      # 顶层 :global() 丢了 scope 锚点
    只读 `dist/_astro/*.{css,js}` 而漏掉 Astro 7 内联进 HTML 的 1431 段产物。
    **没被看过变红的门禁等于没有门禁。** 详见 findings §62.4、§64.10–64.12。
 4. **新写的门禁不接进 `acceptance.ps1` 就等于不存在。** §64 一轮写了五道门禁，
-   一道都没进流水线——它们当时只在有人记得手动敲时才存在。`check-self-contained`
-   同样如此（§66.1）。**加门禁的同一件事里就要把它接进去**，
-   详见 findings §67.1。
-5. **别把「在一个视口下量过」当成「UI 一致」。** §72：页高与样式对比都只量
-   1600×1000 就算收官，而断点错误、`hidden` 被作者级 `display` 压过、栅格塌陷
-   全都只在窄屏显形；深色更是整套换令牌，而**页高对颜色完全无感**。
-   加测量维度时**默认值必须保持原样**，且非默认值要写进自己的产物文件，
-   否则会悄悄覆盖既有基线。
-6. **「差异不影响页高」不等于「不用查」。** §72.3 挖出的 9px 在
-   `position:fixed` 里，对页高、滚动、tab 序全无影响，于是当时想「不值得写
-   探针」。结果**工具缺口本身就是缺陷**：写了 `scripts/probe-subtree.mjs`
-   之后，40 秒就把 9px 拆成「两个按钮各 4.48px = line-height − 1em」，
-   一行 `line-height: 1` 修好，根节点从 +8.9 变 0。§77 又添两个变体：
-   一是「一个 class 改了几何，但改的是**横向**」（分页 224→752px，页高不变）；
-   二是「差异落在 `STYLE_PROPS` 没列的盒模型属性上，且采样只取头部」（`.feed-card`
-   的 margin）。**能抓住这两类的只有按属性的全量取值分布比对**，页高门禁看不见。
-7. **新加的仪器必须能自己喊停。** §74：如果 `setEmulatedMedia` 静默失效，
-   两侧都停在浅色，你会拿到一份「63 页全绿、实际量了两次浅色」的深色结论。
-   所以 preflight 里要有「`--theme=dark` 时 `<html>` 必须真的带 `.dark`，
-   否则报错退出」这种守卫，**并且注入缺陷验过它会红**——否则它只是一句注释。
-8. **顶层 `:deep(X)` 搬到 Astro 必须把锚点补回去。** Vue 的 `<style scoped>` 把
-   顶层 `:deep(X)` 编译成 `[data-v-<hash>] X`——那个属性选择器**要求祖先里有本组件
-   的元素**。写成裸 `:global(X)` 锚点就没了，规则会跑到组件外去。
-   实测（§76）：`/link` 上那张不在 FeedGroup 内的独立卡片，本该保留
-   `margin: 1em auto`，被 `FeedGroup` 的 `:deep(.feed-card.feed-card){margin:0}`
-   顶成 `0`，整页少 8px；而 `.feed-card` **本来就在** `STYLE_SELECTORS` 里，
-   样式对比却报 0 差异——因为 `STYLE_PROPS` 没有 margin 属性，且只采样列表**头部**，
-   有缺陷的那张排在尾部。`scripts/check-scope-anchors.mjs` 盯这一类。
-9. **断网测量会造出假阳性，必须用 online 模式复核。** §76：离线路径拦截页面跨域
-   fetch，于是线上那份靠客户端 JS 才达到最终渲染的内容（`ProsePre` 的 shiki 高亮）
-   停在 SSR 纯文本上，`lemmy-fediverse-deploy` 因此凭空多出 18px。切 `--mode=online`
-   是 +1px 亚像素。**离线扫描报的差值，先复核再定性。**
-10. **「这个页面/路由对应哪个源文件」是猜的，而猜测没人复核。** §77：`404.astro`
-   的文件头写着「对应 `app/error.vue`」并据此写了图标、文案、按钮和 `.app-error` 外壳。
-   线上 404 实际由 **`app/pages/[...slug].vue` 的 no-post 分支**渲染——静态托管下
-   任何缺失路径都命中 `404.html` 这个 SPA 壳，壳水合后路由到 catch-all，
-   `error.vue`（Nuxt 抛错页）**永不执行**。物证：线上 404 的 Nuxt payload 是
-   `serverRendered: false`。**每个页面都要确认「线上这份 HTML 到底由哪个源文件产出」**，
-   静态壳会让「哪个文件看起来该负责」彻底失效。而当时的门禁只扫 sitemap 里的 URL，
-   **结构上就看不见 404**——不在清单里的页面等于没测。
-   同一形状的第二形态是整条路由：robots `Disallow` 挡住的三页（见坑位 14），
-   现在清单是 `scripts/lib/page-list.mjs` 一个来源，**66 页**。
-11. **Vue 的「组件根元素」不能翻译成「枚举父元素」。** §77：线上
-   `ProseCode.vue` 的 `<style scoped> code { … }` 编译成 `code[data-v-N]`，
-   对**任意嵌套深度**都生效。Astro 侧写成了 `article p > code, li > code, …`，
-   于是 `<p><strong><code>` 那一处漏了，26 个行内代码里 1 个没样式。
-   这与坑位 8 是同一个错误的两种形态：**都在把 Vue 的组件边界换成 CSS 里的近似表达**。
-   判据要用**集合**（`code:not(pre code):not(.copy):not(.domain)`，每个排除项都要有普查依据），
-   不要往枚举表里加 `strong > code` 打地鼠。
-12. **读调用点不等于知道语义；`auto` 外边距的 computed value 是 used value。**
-   §77 两处都栽在这。① `useElementVisibility(anchorEl)` + `:class="{ expand }"`
-   看不出 `expand` 到底是「可见时加」还是「不可见时加」——源码当时根本装不到，
-   最后靠四态滚动实测才定出极性反了。② `getComputedStyle().marginRight` 对 flex item 的
-   `margin: auto` 返回**解析后的实际像素**（240.625px），不是 `auto`；
-   两侧这个值不同，说明的是**容器剩余空间**不同，而不是「规则没生效」。
-   顺着这条线量 `.pagination` 本身，才看到 224px vs 752px 的真因。
-   另：这也是坑位 6 的第三个变体——**纯横向差异**既不改页高、也不改被采样元素的纵向盒模型。
+   一道都没进流水线。`check-self-contained` 同样如此（§66.1）。**加门禁的同一件事里
+   就要把它接进去**；接进去之前先想清楚它报红时该怎么办。
+5. **别把「在一个视口下量过」当成「UI 一致」。** 页高与样式对比此前只量 1600×1000 浅色，
+   而站点里有大量 `@media (max-width: 768px)` 规则、深色更是整套换令牌。
+   加测量维度时**默认值必须保持原样**，且非默认值要写进自己的产物文件。
+6. **「差异不影响页高」不等于「不用查」。** §72.3 挖出的 9px 在 `position:fixed` 里，
+   对页高、滚动、tab 序全无影响；写了 `scripts/probe-subtree.mjs` 之后 40 秒就把 9px
+   拆成「两个按钮各 4.48px = line-height − 1em」，一行 `line-height: 1` 修好。
+   能抓住「只改横向」「只改没被采样的盒模型属性」两类的，只有按属性的全量取值分布比对。
+7. **新加的仪器必须能自己喊停。** §74：如果 `setEmulatedMedia` 静默失效，两侧都停在
+   浅色，你会拿到一份「63 页全绿、实际量了两次浅色」的深色结论。所以 preflight 里要有
+   「`--theme=dark` 时 `<html>` 必须真的带 `.dark`，否则报错退出」这种守卫，**并且注入
+   缺陷验过它会红**。
+8. **顶层 `:deep(X)` 搬到 Astro 必须把锚点补回去。** Vue 把顶层 `:deep(X)` 编译成
+   `[data-v-<hash>] X`——那个属性选择器**要求祖先里有本组件的元素**。写成裸
+   `:global(X)` 锚点就没了，规则会跑到组件外去（§76 的 `/link` 少 8px）。
+   `check-scope-anchors.mjs` 盯这一类；接管后它改成按**完整选择器**钉住现状
+   （`UNREVIEWED` 32 条）并在 `KNOWN` 里对 3 条复算 DOM 可达性。
+9. **断网测量会造出假阳性，必须用 online 模式复核。** §76：离线路径拦截跨域 fetch，
+   `lemmy-fediverse-deploy` 凭空多出 18px。**离线扫描报的差值，先复核再定性。**
+10. **「这个页面/路由对应哪个源文件」是猜的，而猜测没人复核。** §77：静态托管下任何缺失
+    路径都命中 `404.html` 这个 SPA 壳，壳水合后路由到 catch-all，`error.vue` **永不执行**。
+    **每个页面都要确认「线上这份 HTML 到底由哪个源文件产出」。** 清单是
+    `scripts/lib/page-list.mjs` 一个来源，66 页。**加路由时先问它在不在清单里。**
+11. **Vue 的「组件根元素」不能翻译成「枚举父元素」。** §77：线上 `ProseCode.vue` 的
+    `code { … }` 对**任意嵌套深度**都生效；Astro 侧写成 `article p > code, li > code, …`
+    就漏了 `<p><strong><code>`，26 个行内代码漏了 1 个。判据要用**集合**
+    （`code:not(pre code):not(.copy):not(.domain)`，每个排除项都要有普查依据）。
+12. **读调用点不等于知道语义；`auto` 外边距的 computed value 是 used value。** §77 两处
+    都栽在这。① `useElementVisibility(anchorEl)` + `:class="{ expand }"` 看不出极性，
+    最后靠四态滚动实测才定出来。② `getComputedStyle().marginRight` 对 flex item 的
+    `margin: auto` 返回**解析后的实际像素**，两侧这个值不同说明的是**容器剩余空间**不同。
 13. **用文本当元素键不成立；判据顺序必须是「先全量、再逐元素」。** §77.5b/§77.5d：
-   `compare-ui-parity.mjs` 按 `textContent` 前 40 字符分签名配对两侧元素，
-   用来解决「按下标比会把 A 段和 B 段当成同一段」。但**签名可以重复**——
-   实测撞上三类：`/link` 37 张 `.feed-card` 里两张同签名、`/link` 两个 `.gradient-card`、
-   `riddle-joker` 若干 `.article p`。于是：
-   - 按**插入顺序**配对 → 把同签名的两张配反 → 13 条假差异（`/link` @390）；
-   - 改成逐桶比**多重集** → 假差异消失，但同签名元素之间发生**取值置换**时又报出来
-     （此时分布其实相同；文本都一样 ⇒ 用户看不出哪张是哪张 ⇒ 不可见）。
-
-   定稿是**两道门槛**：`distDiff` 先算全量取值分布，分布相同的属性一律不报逐元素差异。
-
-   | 全量分布 | 逐元素 | 判定 |
-   |---|---|---|
-   | 同 | 同 | 一致 |
-   | 同 | 异 | 同文本元素间置换 → **不可见 → 不报** |
-   | 异 | 任意 | **必报** |
-
-   改这类核心比较逻辑**必须**注入真实缺陷验红绿双向（§76 的 FeedGroup 缺陷：
-   注入后 `/link` 报 `DIFF 8` exit 1，恢复后 `ok` exit 0）。
-   **「同一属性上全量分布相同而逐元素不同」这个矛盾出现时，错的永远是逐元素那一侧。**
-14. **「不在清单里的东西等于没测」的第二形态是**整条路由**。** §78.1：受测 URL 来自
-   `sitemap.xml`，而 `robots.txt` 的 `Disallow: /preview` 与 `Disallow: /previews/`
-   把三页挡在外面。代价不是「少量未覆盖」——`content/previews/**` 用到的 19 个 MDC 组件里
-   **12 个在 `content/posts/**` 里一次都没出现过**（`blur` `card-list` `link-banner` `link-card`
-   `meta-aside-bar` `meta-aside-foo` `meta-copyright` `poetry` `project-group` `series-group`
-   `timeline` `video-embed`），零测量背书。手工核对 `/preview` 的 HTML 立刻抓到真缺陷：
-   h1 里的「返回首页」链接整个漏了，**移动端没有任何回首页的入口**。
-   **页高看不见**（390 下两侧都是 1176）、**样式对比也看不见**（`STYLE_SELECTORS` 里没有
-   `.preview-header a`）——「某个元素在不在」这两道门禁都不管。
-   清单现收敛到 `scripts/lib/page-list.mjs` 一个来源，66 页。**加路由时先问它在不在清单里。**
-15. **同一个渲染结果，两边的 HTML 结构上就不可比。** §78.2：想省掉浏览器做静态 HTML
-   语义对比，第一条差异就是「线上每个标题文字是自链接、Astro 没有」——**假的**。
-   Nuxt Content 的 `anchorLinks` 是**构建期**产物（进 SSR HTML），Astro 的
-   `prose-enhance.ts` 是**运行时**增强，渲染一致而 HTML 不同；反向还成立：Astro 静态输出
-   搜索框/分享按钮/65 个「引用整段到评论区」/二维码 img，这些在 Nuxt 侧是 client-only。
-   连 `button` 的 `type` 都不同（线上 46 个全没有，Astro 全加）。**判据必须落在渲染后的 DOM。**
-   写这类静态探针时另有两个必踩：`innerText` 必须剔 `<script>` 子树（Astro 把组件
-   `<script>` 渲染成组件根元素的**子节点**，会把整段 JS 吸进按钮文本）；
-   遍历递归**不能写在 `if (n.tagName)` 里面**（parse5 的 `#document` 节点没有 `tagName`，
-   整棵树不会被遍历，你会得到「线上 0 个 button」）。
-16. **「连量两遍一致」不等于「页面是确定的」。** §78.4：63 页那趟 `/link` @390 报 −20px，
-   单页复跑却是 UNST。实测线上 `/link?shuffle=false` **连装 10 次**得到
-   2677 2677 2677 2674 2633 2654 2650 2670 2674 2674（**跨度 44px**），
-   而每次装载**内部**连采 5 次完全相同 ⇒ 不是动画没停，是**每次装载结果本身不同**。
-   定位到叶子：组内卡片**顺序每次都变**，390 下 4 列 × 84.1px，名字长短决定换行。
-   根因是线上洗牌写在 `onMounted`（`FeedGroup.vue:21-24`，`randomInGroup: true`），
-   而那个「关掉随机」的逃生口**在线上无效**（参数确实到了：纯 HTTP 三次取回 HTML
-   逐字节相同 ⇒ SSR 顺序固定，变动在客户端）。判据已改成 `--samples`（默认 3）次
-   判**极差**，报告摊开 N 次读数。只要抖动是间歇的，相邻两次落在同一档的概率就相当高。
-   **Astro 侧 10/10 恒定，别为了让两边「看起来一样」把静态站也改成随机。**
-17. **断网模式自己会造假，差值必须用 online 复核。** §78.3：`lemmy` 的 −19px
-   （offline 9645/9626 vs online 9971/9971）——隔离之后是**线上自己变高 19.03px**，
-   本地一点没动。危险在方向：d = Astro − 线上 = −19 读起来像「Astro 少渲染了东西」，
-   而实际什么都没少。工具现在**自己**用第二个浏览器（没有 `--host-resolver-rules`）
-   复量，落在 ±40（本工具 online 模式一直以来的默认容差）内就判 `ARTIF` 单独列出。
-   **别把 `ARTIF` 混进「一致」**（看不出这一页曾经红过），也别混进「超差」
-   （会让人去改本来正确的代码）。
-18. **live 不是当前 Nuxt 源码——差异分三类，门禁自己分不出来。** §78.8：`git status` 显示
-   Nuxt 树里有 **10 个已改动文件**（`BlogSidebar.vue` 状态 `MM`、`animation.css`、`Secret.vue`、
-   `shared/utils/icon.ts`、6 个 `content/**`）。物证：`git show HEAD:app/components/blog/BlogSidebar.vue`
-   里**没有** `listClass` 也没有 `sidebar-nav-leaf`，而工作区版有——
-   线上 `/previews/example` 的 HTML 里 `sidebar-nav-leaf` 出现 **0 次**。
-   ⇒ **Astro 照工作区移植，线上跑最后一次提交。** 于是每条差异只有三种可能：
-   迁移缺陷（`git status` 干净） / **部署滞后漂移**（能被某个未提交改动解释） / 内容漂移。
-   **正确动作是部署，不是改 Astro；绝不加进 `ACCEPTED`/`STYLE_ACCEPTED`/`known`**——
-   那会把「Nuxt 源码还没部署」这个信号永久静音。
-   其中 `Secret.vue` 那条是**本地更正确**：原写法 `&:hover > &` 拍平后要求元素是自己的后代，
-   永不匹配，所以线上那个 secret 链接从来不可见。
-   附三条做普查时会踩的仪器坑：**跳过 `svg` 子树会凭空造出「类缺失」**（`.domain-icon` 线上挂
-   `<span>`、本地挂内联 `<svg>`）；**按 `"${cls}` 找上下文只命中该类名排在 class 首位的情况**；
-   **只比对可见部分会漏掉折叠分支**（侧栏「资料」子列表在 DOM 里但 `display:none`——
-   看不见不等于不存在，与坑位 12 的 `auto` 外边距 used value 同类）。
+    `textContent` 前 40 字符的签名会重复（同签名卡片、同签名段落）。定稿是**两道门槛**：
+    `distDiff` 先算全量取值分布，分布相同的属性一律不报逐元素差异。
+    | 全量分布 | 逐元素 | 判定 |
+    |---|---|---|
+    | 同 | 同 | 一致 |
+    | 同 | 异 | 同文本元素间置换 → 不可见 → 不报 |
+    | 异 | 任意 | 必报 |
+    改这类核心比较逻辑**必须**注入真实缺陷验红绿双向。
+14. **「不在清单里的东西等于没测」的第二形态是整条路由。** §78.1：受测 URL 来自
+    `sitemap.xml`，而 robots 的 `Disallow` 把三页挡在外面，代价是 19 个 MDC 组件里
+    **12 个零测量背书**。手工核对立刻抓到真缺陷：移动端没有任何回首页的入口。
+15. **同一个渲染结果，两边的 HTML 结构上就不可比。** §78.2：Nuxt 的 `anchorLinks` 是
+    **构建期**产物，Astro 的 `prose-enhance.ts` 是**运行时**增强；Astro 还多静态输出
+    搜索框/分享按钮/二维码。连 `button` 的 `type` 都不同。**判据必须落在渲染后的 DOM。**
+    写静态探针时另有两个必踩：`innerText` 必须剔 `<script>` 子树；遍历递归**不能**写在
+    `if (n.tagName)` 里面（parse5 的 `#document` 节点没有 `tagName`，整棵树不会被遍历）。
+16. **「连量两遍一致」不等于「页面是确定的」。** §78.4：线上 `/link` 装 10 次页高跨度 44px，
+    根因是洗牌写在 `onMounted`（`randomInGroup: true`），而那个逃生口在线上无效。
+    判据已改成 `--samples`（默认 3）次判**极差**。**Astro 侧是静态站，不要为了两边
+    「看起来一样」把静态站也改成随机。**
+17. **断网模式自己会造假，差值必须用 online 复核。** §78.3：工具**自己**用第二个浏览器
+    复量，落在 ±40 内判 `ARTIF` 单独列出。**别把 `ARTIF` 混进「一致」，也别混进「超差」。**
+18. **live 不是当前源码——差异分三类，门禁自己分不出来。** §78.8：每条差异只有
+    「迁移缺陷 / **部署滞后漂移** / 内容漂移」三种可能，**正确动作是部署，不是改 Astro；
+    绝不加进 `known`/`ACCEPTED`**——那会把「源码还没部署」这个信号永久静音。
 19. **「构建通过 + 门禁全绿 + 产物一字未变」也可能是「代码根本没执行」。** §79.2：
-   标题 id 归一第一次接在 `with-article-meta.ts` 的 `load()` 里改 `entry.rendered.html`，
-   构建过、门禁绿、`dist` 逐字节没变。物证是构建期一句 `console.error`：
-   68 个条目的 `entry.rendered` **全是 undefined**——`@astrojs/mdx` 注册的 entry type
-   带 `contentModuleTypes` 且不提供 `getRenderFunction`，glob loader 因此走
-   `deferredRender` 分支（`astro/dist/content/loaders/glob.js:155-163`），
-   写入 store 的条目里**根本没有 `rendered` 字段**，正文 HTML 是运行时由 MDX 组件产出的。
-   **⇒ 没有「改完之后产物变了吗」这一项检查，一切「接上了」都是猜的。**
-   正确位置是 rehype 插件且必须排在 `rehypeHeadingIds` **之前**——
-   它排最后，但**尊重已存在的 string id**（`if (typeof node.properties.id !== "string")`），
-   所以前置写好 id 能一处管住正文 DOM 与 `headings` 元数据两条通路。
-   连带一条：slug 依赖的**标题文字提取规则必须照抄** `rehypeHeadingIds`（四处分支），
-   简化实现会在某篇带表达式的标题上静默产出不同 slug，而那种缺陷没有任何门禁看得见
-   ——与坑位 11 是同一个错误的两种形态。
-20. **构建会改写正文字面，而所有几何门禁都看不见。** §79.5：`remark-smartypants`
-   在 Astro 侧**默认开着**（判的是 `smartypants !== false`），Nuxt 侧没开，
-   于是 20/64 页的 `"…"` 被写成 `“…”`、`...` 被写成 `…`。
-   **换的是字形不是盒子**，页高与计算样式两条都测不出来；
-   是在语义探针的一处 h4 文字（`Key社，我哭死...` vs `…`）上偶然撞见的。
-   补门禁时**第一版判据是「dist 里每个 `…` 在源里都出现过」——它红不了**：
-   源 `.mdx` 里本来就有 `“ ” … ’ –`，于是每个字符都「有出处」，判据形同虚设。
-   定稿是**逐字符计数不等式** `产物次数 ≤ 源次数`：`≤` 不是 `=`（构建也可能减少），
-   增加才是改写。**一个从不报错的门禁比没有门禁更糟**——它让人以为这条已被覆盖。
+    物证是构建期一句 `console.error`——68 个条目的 `entry.rendered` **全是 undefined**，
+    因为 `@astrojs/mdx` 的 entry type 不提供 `getRenderFunction`，glob loader 走
+    `deferredRender` 分支。**⇒ 没有「改完之后产物变了吗」这一项检查，一切「接上了」都是猜的。**
+20. **构建会改写正文字面，而所有几何门禁都看不见。** §79.5：`remark-smartypants` 在 Astro 侧
+    **默认开着**（判的是 `smartypants !== false`），20/64 页的 `"…"` 被写成 `“…”`。
+    换的是字形不是盒子。判据是**逐字符计数不等式** `产物次数 ≤ 源次数`。
+    **一个从不报错的门禁比没有门禁更糟**——它让人以为这条已被覆盖。
 21. **断言自己会错，两个仪器结论打架时先怀疑仪器。** §79 追加 findings 时用
-   `if (/\n(?!\r)/.test(s))` 判「有没有裸 LF」，它**匹配了全部 5728 个换行**——
-   lookahead 看的是 `\n` **之后**的字符，而 CRLF 的 `\n` 后面接的是下一行开头。
-   差点照着它把 32 万字节的换行全改掉。同一份文件用 `latin1` 与 `utf8` 两种读法
-   分别数过都是 CRLF 5728 / 裸 LF 0，**文件从来没脏过**。正确写法 `/(?<!\r)\n/`。
-   同源的一条：后台任务读到的脚本内容可能不是你刚写的那份——连续三次首腿与脚本
-   不符（换过文件名、脚本内容确认无误、同一脚本**前台 dry run 完全正确**），
-   而磁盘上的产物证明它跑的确实是旧参数。所以
-   **起完任务先对一眼它的第一行输出，别信「我已经改了脚本」。**
-   **同源的第二条：判断「构建产物变没变」不要用整体哈希。** 实测连续两次
-   **同样源码**的构建给出两个不同哈希，逐文件追下去只有 4 个文件变
-   （`atom.xml` 的 `<updated>`、OPML 的 `dateModified>`、首页与归档页 BlogStats 的
-   `title="构建于 …"`）——**全是构建时间戳**。我据此差点断定「`eslint --fix` 改了语义、
-   测量基线过期」，而它其实只改了格式。整目录哈希这种粗判据会把「时间戳」误报成
-   「代码变了」。查产物差异必须**逐文件 + 定位到首个不同字符**，不能停在哈希不相等。
+    `if (/\n(?!\r)/.test(s))` 判「有没有裸 LF」，它**匹配了全部 5728 个换行**（lookahead 看的是
+    `\n` **之后**的字符）。正确写法 `/(?<!\r)\n/`。同源两条：后台任务读到的脚本可能不是你刚写的
+    那份（起完任务先对一眼第一行输出）；**判断「产物变没变」不要用整目录哈希**——实测连续两次
+    同样源码的构建给出两个不同哈希，追下去只有 4 个文件变，**全是构建时间戳**。
 22. **「把字符串当 HTML 吐出去」= 静默空白；判据必须是「未求值即失败」。** §79.10：
-   `rehype-meta-slots` 在 Nuxt 侧存 **MDC AST** 并用 `ContentRenderer` **求值**；
-   Astro 侧 codemod 产出 frontmatter 里的**字符串**，而 `BlogWidget.astro` 用
-   `set:html={meta.content}` 注入 ⇒ `<LinkCard />` 变成浏览器不认识的未知元素，
-   `/previews/example` 的**第三个侧栏 widget 整个空白**。
-   **页高看不见它**（空白也是合法盒子），**计算样式看不见它**（压根没有元素），
-   语义探针只报「数量差 1」。
-   门禁 `check-mdc-eval.mjs` 的判据是**零歧义**的：注册表里 26 个组件名与 HTML 原生标签
-   **无一重名**，所以「产物里出现 `<linkcard`」严格等价于「未求值」。
-   配套的解析器（`src/lib/meta-slot.ts`）对不认识的形态**抛错让构建失败**——
-   这条当场救了一次：第一版正则漏了 `</Blur>`，构建立刻炸在「`<Blur>` 没有闭合」，
-   而宽松跳过就会安静渲染出一个缺 children 的 `<Blur>`。
+    `rehype-meta-slots` 在 Nuxt 侧存 MDC AST 并求值，Astro 侧存字符串 ⇒ 侧栏 widget 整个空白。
+    **页高看不见**（空白也是合法盒子），**计算样式看不见**（压根没有元素）。门禁
+    `check-mdc-eval.mjs` 的判据是零歧义的：注册表里 26 个组件名与 HTML 原生标签**无一重名**。
 23. **Vue/MDX 的「属性」在两侧不在同一处；只读对、写错就静默无效。** §79.11：
-   `prose.ts` 的 `tagOf()` 只把 MDX 元素里 `name === 'code'` 认出来，
-   于是手写的 MDX `<a>` 整条绕过 `buildLink`——没有 `z-link`、没有图标、
-   `icon` 属性原样漏进 DOM。**判据应该是「这个标签在 Nuxt 侧有没有对应的 `Prose*` 组件」，
-   不是「它是不是小写」**（`ProseCode` 与 `ProseA` 都会被 codemod 转成 JSX）。
-   修完又暴露第二层：`getAttr` 早就同时读 `properties` 与 `attributes`，
-   但 `addClass` 只写 `properties`，**对 MDX 节点是无声空操作**。
-   第三层更阴：新增的 MDX 属性对象**必须带 `type: 'mdxJsxAttribute'`**，
-   裸 `{name,value}` 会被 hast→estree 静默丢弃——症状是「图标渲染了、`icon` 也清掉了，
-   唯独 `class` 没加」，看起来像 `addClass` 没被调用。
-24. **巧合正确的路径会掩盖整类缺陷；探针的失败模式不止一种。** §80：
-   ① `BlogSidebar` 的 `currentMark` 写 `path === item.url`，而
-   `build.format: 'directory'` 让 `Astro.url.pathname` **带尾斜杠**，
-   于是精确命中恒不成立、该给 `page` 的退化成 `true`。
-   **首页之所以「看起来是对的」，只因为 `item.url` 恰好也是 `/`**——
-   一个巧合让这条缺陷在最容易测的那一页隐形，却在 `/link` `/archive` `/games`
-   `/drive` `/about` 五页同时发作。**一个断言在某个输入上通过，
-   必须问「它是因为正确而通过，还是因为巧合」。**
-   ② 同一个探针的失败模式我先后猜错了两次：以为产物错（实际是 EdgeOne 的
-   `?cb=` 命中了**另一个 cache key**、父层还没刷新，而真实用户走的普通 URL 早就是新的），
-   以为正则慢（逐阶段计时全是 48ms/9ms 的正常值，实际是 `indexOf` 返回 **-1**、
-   `i = -1 + 1 = 0` 把指针送回开头**死循环**，白烧 99s CPU）。
-   **仪器卡住时先分段计时再猜原因；`indexOf` 一类会返回哨兵值的 API，
-   指针运算必须显式处理哨兵。**
-   ③ 顺带两条 HTML 事实：双引号属性值里**允许**裸 `>`（禁的只有 `"` `<` `&`），
-   所以 `<a\b([^>]*)>` 这类匹配会在属性值中间截断，产出「引号未闭合」的假象；
-   而 `riddle-joker` 的 `title` 里真有 `式部茉优 > 在原七海`，线上序列化成 `&gt;`
-   而本地是裸 `>`——**这不是缺陷**，`getAttribute` 拿到的字符串逐字相同，
-   页高与计算样式两道门禁都看不见它。
+    `addClass` 只写 `properties`，对 MDX 节点是**无声空操作**；新增的 MDX 属性对象**必须带
+    `type: 'mdxJsxAttribute'`**，裸 `{name,value}` 会被 hast→estree 静默丢弃。
+24. **巧合正确的路径会掩盖整类缺陷；探针的失败模式不止一个。** §80：`currentMark` 写
+    `path === item.url`，而 `build.format: 'directory'` 让 pathname 带尾斜杠，于是精确命中恒不成立、
+    该给 `page` 的退化成 `true`。**首页「看起来是对的」只因 `item.url` 恰好也是 `/`。**
+    一个断言在某个输入上通过，必须问「它是因为正确而通过，还是因为巧合」。
+25. **「量了外框」可以连续错三次；列测量清单的依据必须是遍历出来的普查表。** §82：按组件
+    结构补到 17 条选择器后仍全绿，因为 `#blog-sidebar` 两侧都是 `visibility:hidden`，
+    所有后代在「可见吗」这一层就出局。**判据在更上游的环节出局时，往下游补清单是白费力气。**
+26. **`X.check()` 这类便利谓词往往不是你以为的那个问题，而且答案可能是反的。** §82：
+    `document.fonts.check('600 24px "LXGW WenKai Screen"', …)` 得**线上 `true` / 本地 `false`**，
+    据此写「本地字体没加载」**结论正好反了**——线上那条 `<link>` 的 `media` 停在 `print`，
+    样式表下载了却**永不应用**，静默无错。**判断「某个资源到底用没用上」必须用与该问题
+    定义相符的字段；同一探针里两个字段打架时，挑定义相符的那个。**
+27. **Windows PowerShell 5.1 会先插值再交给 node。** 2026-10-03 接管期实测两次：
+    `node -e "...s.replace(/- name: Gate: (.+)/, '- name: \"Gate: $1\"')"` 里
+    `$1` 被 PS 当变量吃掉，产出 `- name: " Gate: \`；`\$sampleEvery` 里的 `$` 同理。
+    **改文件用 `edit`/`write` 工具，或写进临时 .mjs 再跑**，不要把带 `$` 的替换塞进
+    `powershell -Command` 风格的双引号串。同理 §85.7：PS 5.1 把 UTF-8 当 ANSI 读，
+    **`.ps1` 必须是 ASCII-only**（无 BOM 的 `.ps1` 里的非 ASCII 字节会吞掉换行）。
+28. **`.ps1` 里的路径必须从 `$PSScriptRoot` 解析。** `Resolve-Path '..\x'` 跟的是**进程 CWD**，
+    不是脚本位置——`check-dates` 与 `compare-urls` 因此指向过从未存在的路径
+    （`compare-urls.ps1` 一直读 `..\baseline-urls.txt`，那个文件全仓库不存在，
+    `docs/baseline-nuxt.md:105` 却还引用着它）。接管时全部改成 `$PSScriptRoot` 锚定。
+29. **「查了少了一个值」之前，先确认查询覆盖了全部路径。** §67.3：glob 只覆盖 `dist/*.html`、
+    而归档页在 `dist/archive/index.html`，差点把一条根本没丢的字体规则报成缺陷。
+    §76.4.1 是加强版：新门禁里「这个选择器命中 N 页」的口径连错四次，每次都往相反方向错。
+    定稿是不看正则——`class="([^"]*)"` 整个取出来按空白切分再判成员。
+    **一个门禁自己的计数器不可信，它的结论就一条都不可信。** 2026-10-03 又踩了一次：
+    `audit-css-blocks.mjs` 在新布局下 ENOENT 崩掉，因为它**假定 `.astro-compare/`
+    已由别的脚本建好**；`check-content-preservation.ps1` 在采样数为 0 时除零崩掉，
+    报出来的是「崩溃」而不是「一道什么都没测的门禁不能算通过」。
+30. **仪器自己也要能被证伪，接管期逮到的四个例子。** ① `check-ci-triggers` 在我写出新
+    `build.yml` 的**第一版**就报红——我把旧文件里「`- name: Gate: …` 缺引号」这个
+    YAML 语法错误原样搬了过去。② `check-scope-anchors` 的新棘轮把 32 条既有裸 `:global()`
+    全报了出来，说明按 `subjectOf()` 的「主体」判定会同时误报（`:global(.toc ol)`）与漏报
+    （`:global(:hover) > .icon-line` 主体是 `:hover`）。③ `check-content-preservation`
+    报 `/drive/` 少一段，实为**源里的 markdown 链接**与**产物里 `<svg>` 替换留下的空格**
+    拼接方式不同，判据改成去空白比对才对。④ 每一次负控都要打在**会被采样的行**上——
+    第一次负控注入的行号没被采样，脚本报绿，我差点把它当成「门禁不灵」。
+31. **「钉住未复核」不等于「批准」。** 接管时 `check-scope-anchors` 有 32 条顶层裸
+    `:global()` 全部需要 `:global()`（主体由子组件 / slot / 第三方库渲染、`::view-transition-*`
+    天然全局）。逐条补可达性不变式是独立的复核工作，接管不做。做法是按**完整选择器**
+    钉进 `UNREVIEWED` 并显式标注未复核——比计数棘轮强（改名/删除会被抓到），
+    又不等于替它们背书。
 
+## 开放项（接管后新增，勿当成已解决）
 
-> 观测手段本身也要证伪。§67.3 里我因为 glob 只覆盖了 `dist/*.html`、
-> 而归档页在 `dist/archive/index.html`，差点把一条**根本没丢**的字体规则报成缺陷。
-> 查出来「少了一个值」时，先确认你的查询覆盖了全部路径，再去解释那个数字。
-> §76.4.1 是同一个教训的加强版：新门禁里那列「这个选择器命中 N 页」的口径
-> **连错四次**，而且每次都往相反方向错（把 CSS 选择器文本当成元素、把命中 39 页
-> 的规则报成 0 页、把 `nav-icon` 里的 `icon` 算成独立 class）。定稿是不看正则——
-> `class="([^"]*)"` 整个取出来按空白切分再判成员。**一个门禁自己的计数器不可信，
-> 它的结论就一条都不可信。**
-> §77.4.1 又添一个盲区形态：枚举「命中且声明了某属性的规则」时，
-> 直接对含 `cssRules` 的样式规则 `continue` 去递归，会**跳过该规则自身的声明**——
-> 而 CSS 嵌套里目标规则正是嵌套子规则，签名文本是 `& > .x`，`matches()` 直接抛错，
-> 于是返回**空数组**。结论当时是靠 `getComputedStyle` 数字与静态 CSS 搜索交叉定出来的。
-> §78.2 再添两条，同属「仪器错了而不是站点错了」：
-> ① **正则在字符数上限处截断会造出「元素不存在」的假象**——
-> `<h1[\s\S]{0,200}?<\/h1>` 扫线上得出「没有 h1」，实际闭合标签在 200 字符之外
-> （里面塞着 iconify 的 span）。这是 §76.4.1「先确认查询覆盖了全部路径」的同一形态。
-> ② **树遍历的递归不能写在 `if (n.tagName)` 里面**——parse5 的 `#document` 节点没有
-> `tagName`，于是整棵树一次都没被遍历，工具报「线上 0 个 `<button>`」。
-> 我差点据此得出「线上根本没有按钮」。
+| 项 | 证据 | 状态 |
+| --- | --- | --- |
+| `dist` 是指向 `.output/public` 的**悬空 junction** | 硬安全策略禁止任何 CLI 永久删除，`mavis-trash` 拒收 reparse point ⇒ **需要你手动 `rmdir dist`**（只删链接，不动数据） | 未解决；本次靠重建 `.output/public` 让链接恢复有效才跑通构建 |
+| `astro-site/` 尚未删除 | 目录内容已全部上移到仓库根，但每次删除都被**正在运行的 `compare-ui-parity`** 占用（它从 `astro-site/dist` 起 preview）而失败 | 扫描结束后 `rm -- "astro-site"` 即可。本次提交**刻意没有把它带进去**（254 个文件），它仍是 untracked |
+| `games/galgames/clannad` 表格差异 | 源 `clannad/index.mdx` 1113 行、508 行表格、17 个 `<Folding>`；Astro 渲染 31 张表（310 处 `md-table`），**Nuxt 基线 0** | 未分类。`compare-dom` 报出的 15 处 marker 不一致里最大的一条，机制待查（Nuxt Content 的 GFM 表格在 MDC 块里是否被解析） |
+| `/2025/10/clarity-resource-list` 代码块计数 | 基线（用**当前源码**重建）nuxt=1 / astro=2；该页页高 d=0，两道几何门禁都看不见 | 未分类，根因同上（围栏代码块嵌在 MDC tab 槽位里，两侧解析不同） |
+| `compare-dom` 15 处 marker 不一致 | 脚本自身 exit 0（§85.5 那族「打了分不算红」） | 未接线、未分类，因此没进 `acceptance.ps1` |
+| `compare-titles` 缺 `exit` | 打印 RESULT 但退出码恒 0 | 属 §85.5 那族（8 道里只修了 `check-integration`），未逐道补 |
+| 32 条顶层裸 `:global()` 未复核 | `check-scope-anchors` 的 `UNREVIEWED` | 钉住但未复核，见坑位 31 |
+| `vue` / `@astrojs/vue` 是死重量 | `src/` 下 **0 个 `.vue` 文件**，这两个依赖只服务 `astro.config.mjs` 的 `vue()` | 未摘。摘之前先确认不再引入 Vue 岛 |
+| 基线缺 Nuxt 的 `atom.xml` / `subscriptions.opml` | 首次冻结只收 html+css（`freeze-baseline.mjs` 的理由漏了 xml），已把 `*.xml` 补进白名单 | **不可本地修复**（Nuxt 源码树已删）。要取回只能抓 https://blog.sotkg.com/atom.xml |
+| 分享按钮两侧不同步 | §85 选的是「两侧同步改、先不部署」，但 Nuxt 侧（`app/components/popover/Share.vue` + `PostHeader.vue`）**从未改**，随树删除一并消失 ⇒ 线上仍有按钮，Astro 已删 ⇒ 每篇文章页 −10~−11px 且少一个 button | 随接管自然消解（Nuxt 侧已不存在），但**第一次 push main 部署后线上会真的少掉这个按钮** |
+| `live:*` 三道门禁未在新布局下重跑 | 本次只跑了离线门禁 | 未验证 |
 
-25. **「量了外框」可以连续错三次；列测量清单的依据必须是遍历出来的普查表。**
-    §82：用户报侧栏差异，先查出 `STYLE_SELECTORS` 里侧栏只有 2 条**外框**。
-    按组件结构补到 17 条后**仍然全绿**——第二次失败的原因是 `#blog-sidebar` 两侧
-    都是 `visibility:hidden`，`visible()` 判不可见，所有后代在**「可见吗」这一层就出局**，
-    `nv.visible === 0` 直接 `continue`，**补多少选择器都没用**。
-    修好可见性后第三次全绿：补的 17 条里页脚只有两个外框，
-    真正承载样式的 `<menu>` 里的 `<a>` 不在表里，而反向测试注入正好写在那个 `<a>` 上。
-    **应用**：测量清单不能靠「读一遍组件结构时的理解」来列，要遍历整棵子树、
-    按 `tag.class` 汇总两侧签名、拿一张普查表当依据；清单里每一条都要能指着普查表
-    说「这条两侧同名」。**判据在更上游的环节出局时，往下游补清单是白费力气——
-    先确认判据那一层本身成立，再谈覆盖面。**
-26. **`X.check()` 这类便利谓词往往不是你以为的那个问题，而且答案可能是反的。**
-    §82：`span.split-char` 高 35（线上）/ 32（Astro），两侧 CSS 逐字相同，
-    `fontSize`/`lineHeight`/`fontWeight`/`fontVariationSettings`/动画 `currentTime` 全部一致。
-    读 `document.fonts.check('600 24px "LXGW WenKai Screen"', …)` 得**线上 `true` / 本地 `false`**，
-    据此写下「本地字体没加载、回退到 Noto」——**这个结论正好反了**。
-    改查 `document.fonts` 的 face 列表与那条 `<link>` 的 **`media` 运行时实际值**：
-    线上 `media` 停在 `print`（`onload` 未执行，样式表下载了却**永不应用**，静默无错）、
-    `LXGW WenKai Screen` 一个 face 都没有；本地 `media=all`、3 个 face `loaded`。
-    **应用**：判断「某个资源到底用上没有」，必须用与该问题**定义相符**的字段——
-    `fonts.check()` 判的是「该文本能否无回退渲染」且把整条 fallback 链算进去，
-    `getComputedStyle().fontFamily` 则原样回显声明值，两个都不是。
-    **同一个探针里两个字段互相打架时，挑定义与被测问题相符的那个，
-    而不是先读到的、或看起来更权威的那个。** 顺带一条：基线的成立条件要显式写下来——
-    本项目「两侧字体环境一致」是靠**断网隔离**碰上的，不是任何检查保证的，
-    切到 online 模式就必须重取基线。
+## 当前状态（2026-10-03，接管当日）
 
-> **`live:ui-parity` 的红灯理由已经变了。** 它此前 exit 1 的 7 条差异里，
-> 5 条是「本地内容比线上多」（用户删了 `## 相关条目`、移除了 Bangumi，线上还留着）。
-> **2026-10-02 已把这批部署上线**（`89136cb` → CI `37029853527` 全绿 → `blog-public` `91291045`），
-> 这一类理由随之消失。**仍然不要为了让门禁变绿而把任何页加进 `known` 列表**——
-> 要先分清剩下的每一条属于「迁移缺陷 / 部署滞后漂移 / 内容漂移」哪一类，
-> 后两者的正确动作是部署，绝不豁免。详见 findings §80.1–§80.2。
-
-## 部署
-
-GitHub Actions（push main 触发）：`pnpm generate` 后把 `.output/public` 推送到 PaloMiku/blog-public（GitHub Pages），站点经 EdgeOne CDN 对外服务（edgeone.json 只管 /api 与 OPML 的 Content-Type）。CI 是否绿是部署是否成功的唯一事实源。
-
-**两处验证部署的注意点**（§80.2）：
-
-- `gh` 在本仓库会**优先解析 `upstream` remote**（`L33Z22L11/blog-v3`），
-  所有 `gh run list` / `gh workflow list` 都必须显式 `-R PaloMiku/blog-v4`。
-- 站点在 EdgeOne 后面，**带 query 的 URL 是独立的 cache key**：
-  `?cb=<时间戳>` 这种 cache-buster 会命中尚未刷新的父层，拿到**旧内容**，
-  而同一时刻普通 URL 已经是新的。**验证部署一律用普通 URL**；
-  要绕过 CDN 就查 `blog-public` 的部署产物本身。
-
-## 当前状态（2026-10-03）
-
-- 包版本 3.8.0，已完全同步上游 v3.8.0；已完成 SCSS→纯 CSS 迁移
-- Bangumi 功能已于 2026-09-30 移除：bangumi-clarity 模块暂不引入（源码在仓库外 D:/Projects/Bangumi-Clarity）；`app/pages/bangumi.vue` 与无引用的 `HomeHeroBar.vue` 已删、可从 git 历史找回；自包含的 `InfoCard.vue` 与 `content/previews/bangumi-components.md` 保留，作为恢复时的展示资产
-- 分支 `feat/sync-upstream-v3.7.1` 已完全合并进 main，可删
-- Nuxt 侧工作区已清空，`89136cb` 已部署（见上方「部署」小节）；此后所有迁移工作只发生在 `astro-site/`
-- `astro-site/scripts/acceptance.ps1` 的产品门禁 **10 道**（新增 `check-heading-ids`、`check-text-literal`、`check-mdc-eval`、`check-aria-current`）
+- Astro 7 接管仓库根完成：`pnpm build` 出 **68 页**（11.7s），`dist` 264 文件 / 12.77 MB
+- 依赖合并完成：5 组 catalogs / 45 条，**逐条对齐 `astro-site/node_modules` 的实装版本**
+- 冻结基线 67 路由 / 120 文件 / 6.65 MB，来源提交 `fa9f2b3`
+- 离线门禁实测：**11 道 PowerShell 门禁中 10 绿 1 红**（`check-dead-css` 的
+  `clarity-resource-list` 代码块计数，见开放项）、**15 道 node 门禁全绿**、CI 形状门禁绿
+- 接管期顺手修掉的真缺陷：`build.yml` 的 4 处 YAML 缺引号（照抄旧文件带过来的）、
+  `Tip.astro` 的 `.tip-icon` 永不匹配、`compare-urls.ps1` 指向不存在的文件、
+  `check-dates.ps1` 判据不兼容导致 40/40 全红、`audit-dead-scope` 因 3 条已查明死规则永久红、
+  `audit-css-blocks` 假定产物目录已存在、`.ps1` 的 CWD 相对路径一族
+- **全部改动尚未提交**（`git status` 里 `src/` `scripts/` 等仍为 untracked）

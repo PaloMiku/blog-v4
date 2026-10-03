@@ -1,0 +1,201 @@
+---
+/**
+ * PostHeader 组件（Astro 版）—— 文章头部：封面、标题、元信息。
+ *
+ * 对应 `app/components/post/PostHeader.vue`。
+ *
+ * 与 Nuxt 版的差异：
+ * - `v-tip` tooltip（UtilDate 的悬浮提示）属 Phase 4，改用原生 `title`：
+ *   `util/Date.astro` 的 `tipTransform` 在这里复刻了 Nuxt 版的「创建于 / 修改于」前缀。
+ *
+ * 头部原先自行拼 `<time>`、把 frontmatter 原始串当正文显示（`2025-05-19`），
+ * 且 `datetime` 没归一到瞬时值；现统一交给 `util/Date.astro`。
+ * Nuxt 侧没有 `post-date` / `post-date-value` 这两个类（Astro 侧此前自造且无对应样式），
+ * 间距由本组件原有的 `.post-info span { display: inline-flex; gap: .25rem }` 承担。
+ *
+ * 分享按钮（`description` / `path` 两个 prop 原本只为它存在）与 `ShareModal` 已整体移除，
+ * 两侧同步。`.post-nav` 因此只剩 `.post-info` 一个子元素——`justify-content: space-between`
+ * 对单子元素等价于 flex-start，`.post-info` 的位置不变，故这条声明保留原样。
+ */
+import Icon from '../Icon.astro'
+import Pic from '../content/Pic.astro'
+import UtilDate from '../util/Date.astro'
+import blogConfig from '../../config/blog'
+import { formatNumber, isTimeDiffSignificant } from '../../lib/shared'
+
+interface Props {
+	title?: string
+	subtitle?: string
+	date?: string
+	updated?: string
+	image?: string
+	categories?: string[]
+	tags?: string[]
+	type?: string
+	readingTime?: { words?: number }
+	coverDim?: boolean
+	coverFilter?: string
+}
+
+const {
+	title = '',
+	subtitle,
+	date,
+	updated,
+	image,
+	categories,
+	type,
+	readingTime,
+	coverDim,
+	coverFilter,
+} = Astro.props
+
+const coverStyle = coverFilter || (coverDim ? 'brightness(0.75)' : undefined)
+const categoryLabel = categories?.[0]
+
+/** 分类图标取自 blogConfig.article.categories 的配置 */
+function getCategoryIcon(label?: string): string {
+	if (!label)
+		return 'tabler:circle-dashed'
+	const cfg = (blogConfig.article.categories as Record<string, { icon?: string }>)[label]
+	return cfg?.icon ?? 'tabler:circle-dashed'
+}
+
+const showUpdated = Boolean(updated) && isTimeDiffSignificant(date, updated!, 1)
+---
+
+<div class="post-header" class:list={{ 'has-cover': Boolean(image) }}>
+	{image && <Pic class="post-cover" src={image} alt={title} filter={coverStyle} />}
+
+	<div class="post-header-content">
+		<h1 class:list={['post-title', `text-${type || 'tech'}`]}>{title}</h1>
+
+		{subtitle && <p class="post-subtitle">{subtitle}</p>}
+
+		<div class="post-nav">
+			<div class="post-info">
+				{date && (
+					<UtilDate date={date} icon="tabler:pencil" tipTransform={d => `创建于${d}`} />
+				)}
+
+				{showUpdated && (
+					<UtilDate date={updated} icon="tabler:history" tipTransform={d => `修改于${d}`} />
+				)}
+
+				{categoryLabel && (
+					<span>
+						<Icon name={getCategoryIcon(categoryLabel)} />
+						{categoryLabel}
+					</span>
+				)}
+
+				<span>
+					<Icon name="tabler:pilcrow" />
+					{formatNumber(readingTime?.words)} 字
+				</span>
+			</div>
+		</div>
+	</div>
+</div>
+
+<style scoped>
+.post-header {
+	overflow: hidden;
+	margin: 0.5rem;
+	border-radius: 1rem;
+	box-shadow: var(--box-shadow-2);
+	background-color: var(--c-bg-2);
+	color: var(--c-text);
+	transition: transform 0.2s ease;
+
+	@media (max-width: 768px) {
+		margin: 0;
+		border-radius: 0;
+	}
+
+	&:hover {
+		transform: translateY(-2px);
+	}
+}
+
+/*
+ * `.post-cover` 渲染在 `Pic.astro`（子组件）里，而 Vue 的 scoped CSS 有个机制：
+ * **子组件的根元素会同时带上父组件的 scope id**。基线产物里因此是
+ * `<figure class="image post-cover" data-v-33b9aef5 data-v-bb6a4939>`——
+ * 两个 id，父的那个让本组件的规则匹配得上。
+ *
+ * Astro **没有这个机制**：`figure` 只会带 `Pic` 自己的 cid，于是
+ * 写成 `.post-cover { … }` 会编译成 `.post-cover[data-astro-cid-5kfkgu4y]`，
+ * 而实际元素是 `data-astro-cid-dy6iz5vj` —— **规则永不匹配**。
+ * 后果不是"样式差一点"，而是 `aspect-ratio: 16/9` 与 `> img{height:100%}`
+ * 整组失效，封面图退回按原始像素渲染：文章头图 547px 变 3355px，
+ * 单页凭空多出 2808px（实测 misskey 那篇）。
+ *
+ * 凡是**要作用于子组件根元素**的规则，都得整体 `:global()`。
+ */
+:global(.post-cover) {
+	width: 100%;
+	height: auto;
+	aspect-ratio: 16/9;
+
+	/*
+	 * 原本是 `> :deep(img)`。Astro 不认 `:deep()`：Lightning CSS 会报
+	   "'deep' is not recognized as a valid pseudo-class"，规则被静默丢弃——
+	   后果是文章头图既没有 100% 宽高填充也没有 object-fit: cover。
+	   Vue 的 `:deep(x)` 语义是「不关心 x 的 scope」，对应这里的 :global(x)。
+	 */
+	> :global(img) {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+}
+
+.post-header-content {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	padding: 1rem;
+}
+
+.post-title {
+	margin: 0;
+	font-size: 1.75rem;
+	font-weight: 700;
+	line-height: 1.3;
+	color: var(--c-text);
+}
+
+.post-subtitle {
+	max-width: 100%;
+	margin: 0;
+	font-size: 1rem;
+	line-height: 1.4;
+	color: var(--c-text-2);
+}
+
+.post-nav {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	font-size: 0.85rem;
+	color: var(--c-text-1);
+}
+
+.post-info {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem 1rem;
+}
+
+/* 原本是 `.post-info :deep(.icon)`，同样是无效的 `:deep()`，一并转成 :global()。 */
+.post-info span,
+.post-info :global(.icon) {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+</style>

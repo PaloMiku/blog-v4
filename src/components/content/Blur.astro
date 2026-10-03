@@ -1,0 +1,22 @@
+---
+interface Props {
+	text?: string
+}
+
+const { text } = Astro.props
+---
+
+<span class="blur">
+	<slot>{text}</slot>
+</span>
+
+<style>
+.blur {
+	transition: filter 0.2s;
+	filter: blur(4px);
+
+	&:hover {
+		filter: blur(0);
+	}
+}
+</style>

@@ -1,0 +1,113 @@
+---
+// getGithubAvatar / getFavicon 与 Nuxt 侧同源，临时跨项目引用，
+// 正式做法是把 app/utils/img.ts 整体搬进 astro-site/src/lib/img.ts
+import { getFavicon, getGithubAvatar } from '../../lib/img'
+import { getDomain, getGithubUsername, isExtLink } from '../../lib/shared'
+
+// 即使 boolean 可选，其值也不会是 undefined（Astro 侧未传时为 undefined，同样是 falsy）
+interface Props {
+	img?: string
+	text?: string
+	link?: string
+	round?: boolean
+	square?: boolean
+}
+
+const { img: imgProp, text, link, round: roundProp, square } = Astro.props
+
+// 图片回退链：显式 img → GitHub 头像 → 外链 favicon → 空
+let img = ''
+if (imgProp) {
+	img = imgProp
+}
+else {
+	const ghUsername = getGithubUsername(link)
+	if (ghUsername)
+		img = getGithubAvatar(ghUsername)
+	else if (link && isExtLink(link))
+		img = getFavicon(getDomain(link))
+}
+
+// 有图时默认为圆形样式，除非指定为方形
+// 无图时默认为方形样式，除非指定为圆形
+const round = img ? !square : roundProp
+
+/*
+ * link 可为空。Nuxt 侧 UtilLink 在没有 to 时渲染 <span> 而不是 <a>，
+ * 而样式里有 `&[href]:hover`，所以这里必须区分。
+ */
+const target = link && !link.startsWith('#') && isExtLink(link) ? '_blank' : undefined
+
+/*
+ * rel 同理：Nuxt 侧走 `NuxtLink`（app/components/util/Link.vue:8），对 `target="_blank"`
+ * 自动补 `rel="noopener noreferrer"`；这里就地渲染裸 `<a>`，必须自己补。
+ * 实测漏掉时产物里 11 个外链 Badge 一个 rel 都没有。
+ */
+const relValue = target === '_blank' ? 'noopener noreferrer' : undefined
+---
+
+{
+	link ? (
+		<a href={link} class="badge" class:list={{ round }} target={target} rel={relValue}>
+			{img && <img class="badge-icon" src={img} alt="" />}
+			<span class="badge-text">
+				<slot>{text}</slot>
+			</span>
+		</a>
+	) : (
+		<span class="badge" class:list={{ round }}>
+			{img && <img class="badge-icon" src={img} alt="" />}
+			<span class="badge-text">
+				<slot>{text}</slot>
+			</span>
+		</span>
+	)
+}
+
+<style>
+/* 对齐到基线，同时保持图片垂直居中 */
+.badge {
+	display: inline-flex;
+	align-items: baseline;
+	margin: 0.1em;
+	border: 1px solid var(--c-border);
+	border-radius: 4px;
+	box-sizing: content-box;
+	background-color: var(--c-bg-2);
+	font-size: 0.875em;
+	transition: color 0.2s;
+
+	@supports (color: color-mix(in srgb, transparent, transparent)) {
+		border-color: color-mix(in srgb, currentcolor 10%, transparent);
+		background-color: color-mix(in srgb, currentcolor 5%, transparent);
+		color: color-mix(in srgb, currentcolor 80%, transparent);
+	}
+
+	&[href]:hover {
+		color: var(--c-text);
+	}
+
+	&.round, &.round > .badge-icon {
+		border-radius: 0.8em;
+	}
+}
+
+.badge-icon {
+	align-self: normal;
+	height: 1.6em;
+	border-radius: 3.5px;
+
+	+ .badge-text {
+		margin-inline-start: -0.1em;
+	}
+}
+
+.badge-text {
+	padding: 0.2em 0.4em;
+	line-height: 1.2;
+
+	&:empty {
+		display: none;
+	}
+}
+</style>

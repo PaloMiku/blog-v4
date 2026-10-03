@@ -1,0 +1,233 @@
+---
+/**
+ * Slider 组件（Astro 版），对应 `app/components/partial/Slider.vue`。
+ *
+ * ## 命名说明
+ * 与 `Toggle.astro` 同理：Nuxt 侧是 `<ZSlider>`，Astro 侧需显式 import。
+ *
+ * ## `v-model` → 自管状态 + 冒泡事件
+ * 原组件 `defineModel<number>({ required: true })`。Astro 的 prop 不能携带函数，
+ * 只能单向传值，故沿用本仓库约定（与 `OrderToggle.astro` / `Toggle.astro` 一致）：
+ *   1. `value` / `min` / `max` / `step` / `list` 都是单向 prop；
+ *   2. 组件脚本自管运行时模型，写回 `<input>.value` 与 `.data-value`；
+ *   3. 每次模型变化从**根元素**派发冒泡的
+ *      `CustomEvent('partial:change', { detail: { value: number, spring: boolean } })`。
+ *      `spring: true` 表示这次变化是「弹簧区间」把值夹回来的，页面据此决定要不要回写 URL。
+ *
+ * ## 行为逐条对应
+ * | 原版 | 这里 |
+ * | --- | --- |
+ * | `v-model.number` | `input` 事件里 `Number(input.value)` |
+ * | `@change="debounceSpring"` | 原生 `setTimeout(…, 500)`，重复触发时**重置**计时（等价 `useDebounceFn`） |
+ * | `spring()` 夹进 `[springMin, springMax]` | 同逻辑，`springMin` / `springMax` 可选，缺一端就不夹 |
+ * | `@dblclick="modelValue = initialValue"` | 原生 `dblclick` + **初始化时**记下的初值 |
+ * | `useId()` 生成 datalist id | 构建期用 `crypto.randomUUID()` 的短前缀拼 id |
+ *
+ * ⚠️ `initialValue` 必须在**挂载时**从 `value` prop 取一次快照。
+ * Vue 版是 `const initialValue = modelValue.value`，即组件创建时的值；
+ * 若改成「每次 dblclick 现读 prop」，prop 变化后双击就不再回到初值了——
+ * 这是一个容易写错、且从 UI 上完全看不出来的偏差。
+ *
+ * ## `--slider-value` 契约
+ * `.data-value` 的 `min-width: var(--slider-value, 3ch)` 保留原样。
+ * 页面想让读数宽度不跳动就设 `--slider-value`（例如 `4ch`）；
+ * 组件自身**不**设置它，与原版一致。
+ *
+ * ## 作用域
+ * 模板与样式只覆盖本组件渲染的元素，无需 `:global()`。
+ */
+interface Props {
+	/** slot 为空时的兜底文案 */
+	label?: string
+	/** 数值模型（构建期初值） */
+	value?: number
+	min?: number
+	max?: number
+	step?: number
+	/** 弹簧下界：拖到低于它的值会在 500ms 后被夹回来 */
+	springMin?: number
+	/** 弹簧上界 */
+	springMax?: number
+	/** 刻度提示，映射为 `<datalist>` */
+	list?: (string | { value: string, label?: string })[]
+	/** 合并到根元素 */
+	class?: string
+	style?: string | Record<string, string | number>
+}
+
+const {
+	label,
+	value = 0,
+	min,
+	max,
+	step,
+	springMin,
+	springMax,
+	list,
+	class: className,
+	style,
+} = Astro.props
+
+/*
+ * `useId()` 的替代：模块级自增计数器。
+ * 不能用 `Astro.url.path` 派生——同一页面上有多个 slider 时会得到同一个 id，
+ * datalist 会互相串。（frontmatter 每实例重跑一次，模块级变量在同一次构建内自增。）
+ */
+let uidSeq = 0
+const datalistId = `z-slider-${(uidSeq++).toString(36)}`
+
+/* 对应原版的 `list` computed：字符串直接补成 `{ value }` */
+const options = list?.map(v => (typeof v === 'string' ? { value: v } : v))
+---
+
+<label
+	class:list={['z-slider', className]}
+	style={style}
+	data-slider-root
+	data-value={String(value)}
+	data-initial-value={String(value)}
+	data-spring-min={springMin === undefined ? undefined : String(springMin)}
+	data-spring-max={springMax === undefined ? undefined : String(springMax)}
+>
+	<slot>{label ? <span>{label}</span> : null}</slot>
+
+	<input
+		class="input-slider"
+		type="range"
+		value={String(value)}
+		min={min}
+		max={max}
+		step={step}
+		list={options ? datalistId : undefined}
+		data-slider-input
+	>
+
+	<data class="data-value" value={String(value)} data-slider-value>{String(value)}</data>
+
+	{options && (
+		<datalist id={datalistId}>
+			{options.map(o => (
+				<option value={o.value} label={o.label} />
+			))}
+		</datalist>
+	)}
+</label>
+
+<script>
+	/*
+	 * 原生脚本会被 Astro 去重合并，用 data 属性定位各个实例；
+	 * `data-slider-ready` 保证同一节点重复 init 时直接返回。
+	 */
+	function initAll() {
+		for (const node of document.querySelectorAll('[data-slider-root]')) {
+			if (!(node instanceof HTMLElement) || node.dataset.sliderReady)
+				continue
+			node.dataset.sliderReady = '1'
+
+			const input = node.querySelector('[data-slider-input]')
+			const readout = node.querySelector('[data-slider-value]')
+			if (!(input instanceof HTMLInputElement))
+				continue
+
+			// 双击回到**初值**：必须在 init 时快照，不能每次现读 data-initial-value
+			const initial = Number(node.dataset.initialValue ?? input.value)
+			const springMin = node.dataset.springMin === undefined ? undefined : Number(node.dataset.springMin)
+			const springMax = node.dataset.springMax === undefined ? undefined : Number(node.dataset.springMax)
+
+			/** 写回模型并广播；`spring` 标记这次是否由弹簧区间夹回 */
+			function commit(next: number, spring: boolean) {
+				if (!Number.isFinite(next))
+					return
+				const text = String(next)
+				if (input.value !== text)
+					input.value = text
+				if (readout) {
+					readout.textContent = text
+					readout.setAttribute('value', text)
+				}
+				node.dataset.value = text
+				node.dispatchEvent(new CustomEvent('partial:change', {
+					bubbles: true,
+					detail: { value: next, spring },
+				}))
+			}
+
+			// 拖动中实时更新读数（对应 v-model.number）
+			input.addEventListener('input', () => commit(Number(input.value), false))
+
+			// 松手后 500ms 夹回弹簧区间；等价 VueUse 的 useDebounceFn(fn, 500)
+			let timer = 0
+			input.addEventListener('change', () => {
+				window.clearTimeout(timer)
+				timer = window.setTimeout(() => {
+					let next = Number(input.value)
+					if (springMin !== undefined && next < springMin)
+						next = springMin
+					if (springMax !== undefined && next > springMax)
+						next = springMax
+					if (next !== Number(input.value))
+						commit(next, true)
+				}, 500)
+			})
+
+			input.addEventListener('dblclick', () => commit(initial, false))
+		}
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.z-slider {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	user-select: none;
+}
+
+.input-slider[type="range"] {
+	flex-grow: 1;
+	overflow: hidden;
+	height: 1.2em;
+	border-radius: 1em;
+	background-color: var(--c-bg-soft);
+	appearance: none;
+
+	@supports (-moz-appearance: auto) {
+		accent-color: var(--c-primary);
+		appearance: auto;
+	}
+
+	&::-webkit-slider-container {
+		min-block-size: auto;
+	}
+
+	&::-webkit-slider-runnable-track {
+		height: 100%;
+	}
+
+	&::-webkit-slider-thumb {
+		height: 100%;
+		aspect-ratio: 1;
+		border: 0.2em solid var(--c-primary);
+		border-radius: 50%;
+		box-shadow: -100vw 0 0 calc(100vw - 0.6em) var(--c-primary);
+		background-color: var(--c-bg-1);
+		transition: all 0.2s;
+		appearance: none;
+
+		:hover > & {
+			background-color: var(--c-bg-3);
+		}
+	}
+}
+
+.data-value {
+	min-width: var(--slider-value, 3ch);
+	text-align: right;
+}
+</style>

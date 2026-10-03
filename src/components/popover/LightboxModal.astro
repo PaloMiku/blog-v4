@@ -1,0 +1,205 @@
+---
+/**
+ * LightboxModal —— 图片灯箱。
+ *
+ * 对应 Nuxt 侧的 `LazyPopoverLightbox`（`popover/Lightbox.vue`）+ `@bikariya/image-viewer`。
+ * 模态栈在 Phase 4 重建后，这里是第三个也是最后一个 `modalStore.use()` 调用点。
+ *
+ * 数据由栈里那一项的 props 提供：`{ src, alt, caption }`，
+ * 由 `Pic.astro` 渲染的 `img[data-zoom]` 点击时组装。
+ *
+ * caption 优先级与原灯箱一致：**alt → caption → slot**（注意与 figcaption 的
+ * 「slot → caption」顺序本来就不一致，这里照搬灯箱那套）。
+ */
+const DURATION = 200
+---
+
+{/*
+ * ⚠️ Astro 的 `<script>` **不继承 frontmatter 的 import 和 const**。
+ * 之前 `subscribeModals` / `getModalByKey` / `DURATION` 只在 frontmatter 里声明，
+ * 编译产物里它们是裸标识符、没有 import，运行时抛
+ * `ReferenceError: subscribeModals is not defined`。
+ * 而 `initAll()` 先调 `bindLightboxTriggers()` 再进循环，于是
+ * `data-lightbox-bound` 被置上、**看起来一切正常**，实际 `initLightbox` 每次都抛错：
+ * 没有任何订阅者去响应模态栈，灯箱点了永远不出现。
+ * 这三条必须在 `<script>` 里各自 import / 声明。
+ */}
+
+{/*
+ * 注意：这里**不能**写 `data-show={false}`。
+ * Astro 会把它渲染成 `data-show="false"` —— 一个**存在**的属性，
+ * 而 CSS 的 `&[data-show]` 只看属性是否存在、不看值，
+ * 结果灯箱在首屏就 `display:flex` 盖住整个页面（正文不可见）。
+ * 约定：SSR 期不输出该属性，客户端脚本用 `toggleAttribute` 加/删。
+ * CSS 侧另加 `:not([data-show="false"])` 兜底。
+ */}
+<div class="lightbox-modal" data-modal="lightbox" aria-hidden="true">
+	<button class="lightbox-close" type="button" data-modal-close aria-label="关闭">
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+			<path d="M18 6 6 18M6 6l12 12" />
+		</svg>
+	</button>
+
+	<figure class="lightbox-figure">
+		<!-- 不要写 src=""：空 src 会让浏览器把**当前页面 URL** 当图片去请求，
+		     每页多一次必定失败的请求 + 一条控制台错误。src 由下面的
+		     subscribeModals 回调在打开时才写入。 -->
+		<img data-lightbox-img alt="" />
+		<figcaption data-lightbox-caption hidden />
+	</figure>
+</div>
+
+<script>
+	import { subscribeModals } from '../../lib/modal'
+
+	/** 与调用处传入的 duration 对齐 */
+	const DURATION = 200
+
+	// 委托：Pic 渲染的 img[data-zoom] 可能在页面加载后才出现（MDX 内的组件），
+	// 故绑在 document 上而不是元素上。
+	function bindLightboxTriggers() {
+		if (document.documentElement.dataset.lightboxBound)
+			return
+		document.documentElement.dataset.lightboxBound = '1'
+		document.addEventListener('click', async (e) => {
+			const img = e.target.closest?.('img[data-zoom]')
+			if (!img)
+				return
+			const { openModal } = await import('../../lib/modal')
+			openModal({
+				key: 'lightbox',
+				props: {
+					src: img.getAttribute('src') || '',
+					alt: img.getAttribute('alt') || '',
+					caption: img.getAttribute('data-zoom-caption') || '',
+				},
+			})
+		}, true)
+	}
+
+	function initLightbox(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.lightboxReady)
+			return
+		root.dataset.lightboxReady = '1'
+
+		const img = root.querySelector('[data-lightbox-img]')
+		const caption = root.querySelector('[data-lightbox-caption]')
+		if (!img)
+			return
+
+		let timer
+
+		// 关闭时淡出，和模态栈的 data-show 配合
+		const closeBtn = root.querySelector('[data-modal-close]')
+		closeBtn?.addEventListener('click', () => root.dispatchEvent(new CustomEvent('lightbox:close')))
+
+		subscribeModals((entries) => {
+			// ⚠️ 不要写成 `getModalByKey(entries, 'lightbox')`。
+			// `getModalByKey(key: string)` 只接受**一个**参数，数组会被当成 key
+			// 去和栈里每一项的 key 比对，永远匹配不到 → show 恒为 false →
+			// 灯箱点了没反应且不报错。SearchModal 的调用都是对的。
+			// 这里直接在传入的栈快照上找最靠上的一项，与该函数的语义一致。
+			const entry = [...entries].reverse().find(e => e.key === 'lightbox')
+			const show = Boolean(entry)
+			root.toggleAttribute('data-show', show)
+			root.setAttribute('aria-hidden', show ? 'false' : 'true')
+
+			if (!show) {
+				clearTimeout(timer)
+				return
+			}
+
+			const p = (entry.props || {})
+			img.setAttribute('src', p.src || '')
+			img.setAttribute('alt', p.alt || '')
+			// 灯箱的优先级：alt → caption
+			const text = p.alt || p.caption || ''
+			if (caption) {
+				caption.textContent = text
+				caption.toggleAttribute('hidden', !text)
+			}
+			img.focus?.()
+		})
+
+		root.addEventListener('lightbox:close', () => {
+			clearTimeout(timer)
+			root.removeAttribute('data-show')
+			root.setAttribute('aria-hidden', 'true')
+			timer = setTimeout(() => {
+				if (!root.hasAttribute('data-show'))
+					img.setAttribute('src', '')
+			}, DURATION)
+		})
+	}
+
+	function initAll() {
+		bindLightboxTriggers()
+		for (const root of document.querySelectorAll('[data-modal="lightbox"]'))
+			initLightbox(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+	.lightbox-modal {
+		position: fixed;
+		inset: 0;
+		z-index: 512;
+		display: none;
+		align-items: center;
+		justify-content: center;
+		padding: 2rem;
+		opacity: 0;
+		transition: opacity 200ms ease;
+
+		&[data-show]:not([data-show='false']) {
+			display: flex;
+			opacity: 1;
+		}
+	}
+
+	.lightbox-close {
+		position: absolute;
+		inset-block-start: 1rem;
+		inset-inline-end: 1rem;
+		padding: 0.4rem;
+		border: 0;
+		border-radius: 0.4em;
+		background-color: transparent;
+		color: #FFF;
+		font-size: 1.5rem;
+		line-height: 1;
+		cursor: pointer;
+
+		svg {
+			width: 1.2em;
+			height: 1.2em;
+		}
+	}
+
+	.lightbox-figure {
+		margin: 0;
+		max-width: 100%;
+		max-height: 100%;
+		text-align: center;
+
+		img {
+			max-width: 100%;
+			max-height: 80vh;
+			border-radius: 0.6rem;
+			box-shadow: var(--box-shadow-3);
+		}
+
+		figcaption {
+			margin-top: 0.8rem;
+			color: #FFF;
+			font-size: 0.9em;
+			opacity: 0.85;
+		}
+	}
+</style>

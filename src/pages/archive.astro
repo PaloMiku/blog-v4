@@ -1,0 +1,520 @@
+---
+/**
+ * 归档页 —— 全部文章按年份分组。
+ *
+ * 对应 `app/pages/archive.vue`。
+ *
+ * ## 排序 / 分类 / 密度三个状态
+ * Nuxt 侧是三个 `ref`（`sortOrder` / `isAscending` / `category`）加两个
+ * （`spacing` / `column`），由 `OrderToggle`、两个 `ZSlider` 与一个 `ZToggle` 双绑。
+ * Astro 的 prop 不能携带回调，故沿用本仓库既有约定：**单向 prop 出构建期初值，
+ * 组件自管运行时状态并派发 `partial:change`，页面在这里重排 DOM**。
+ *
+ * 此前这一页的监听器只认 `d.category`，把 `sortOrder` 与 `isAscending` 丢掉了
+ * （等于每次都按构建期默认值重排），于是排序按钮与方向按钮全是死的。
+ * 现在三个字段全部参与。
+ *
+ * ## 「年份分组随 sortOrder 变化」这件事没复现（已知差异）
+ * Nuxt 的 `getArticleYear(article[sortOrder])` 意味着切到「更新日期」后，
+ * 一篇文章可能被分进**另一个年份**的段（创建于 2024-03、更新于 2025-06 的文章
+ * 会从 2024 段跳到 2025 段），段里的字数与篇数也要跟着重算。
+ * 客户端要复现就得整段重建 `<section>`（含年份大字、年龄、字数、篇数），
+ * 且年份集合本身可能随之增减。本次只做**段内重排 + 段序重排**，
+ * 分组键固定为构建期的 `sortOrder`。见交付报告。
+ */
+import Blog from '../layouts/Blog.astro'
+import Archive from '../components/post/Archive.astro'
+import BlogLog from '../components/widget/BlogLog.astro'
+import BlogStats from '../components/widget/BlogStats.astro'
+import OrderToggle from '../components/post/OrderToggle.astro'
+import ListTransition from '../components/util/ListTransition.astro'
+import Secret from '../components/partial/Secret.astro'
+import Slider from '../components/partial/Slider.astro'
+import Toggle from '../components/partial/Toggle.astro'
+import { categorizeArticles, getAllContent, sortArticles, toPath } from '../lib/content'
+import { appConfig } from '../lib/app-config'
+import { formatNumber, toZonedTemporal } from '../lib/shared'
+import { getStats } from '../lib/stats'
+																import blogConfig from '../config/blog'
+
+const posts = (await getAllContent()).filter(e => e.data.isPost)
+/* 博客统计：与 /api/stats 同源，构建期算出后作为 prop 注入侧栏 */
+const stats = await getStats()
+const { sorted, sortOrder, isAscending } = sortArticles(posts)
+const { categories, byCategory } = categorizeArticles(sorted)
+const list = byCategory(undefined)
+
+const birthYear = appConfig.component.stats?.birthYear ?? 0
+
+/** 密度面板的初值，逐条对应 archive.vue 的 `const spacing = ref(0)` / `const column = ref(1)` */
+const spacing = 0
+const column = 1
+
+function getArticleYear(date?: string) {
+	if (!date)
+		return ''
+	try {
+		return String(toZonedTemporal(date).year)
+	}
+	catch {
+		return ''
+	}
+}
+
+// 默认按日期倒序时分组也要倒序（最新的年份在前）
+const groups = Object.entries(
+	list.reduce<Record<string, typeof list>>((acc, e) => {
+		const y = getArticleYear(e.data[sortOrder] ?? e.data.date)
+		;(acc[y] ??= []).push(e)
+		return acc
+	}, {}),
+)
+if (!isAscending)
+	groups.reverse()
+
+/**
+ * `useUpdated` 的两种形态各存一份 `<li>`。
+ *
+ * `Archive.astro` 里的 `mainDate = useUpdated ? updated : date` 换掉的是
+ * **`<time>` 的文本**（还会多出一个「创建于」的补充日期），客户端没法凭空算出
+ * `toZdtLocaleString(zdt, 'monthDay')` 的措辞——那是构建机的 locale 决定的。
+ * 所以两种形态都渲染出来，客户端按 `sortOrder` 挑。
+ */
+const listStates = ['date', 'updated'] as const
+---
+
+<Blog title="归档" hasAside description={`${blogConfig.title}的所有文章归档。`}>
+	{/* 不要在这里再套 `<main>`：`Blog.astro` 已提供 `<main id="main-content">`，
+	    嵌套 main 是无效 HTML。基线产物里 #main-content 的子元素就是
+	    `div.archive.proper-height`，没有多余层级。 */}
+	<div class="archive proper-height">
+		<OrderToggle
+			sortOrder={sortOrder}
+			isAscending={isAscending}
+			categories={categories}
+		>
+			{/* archive.vue:51-56 —— 密度面板的开关藏在 OrderToggle 的槽位里 */}
+			<Secret>
+				<Toggle label="密度调节" />
+			</Secret>
+		</OrderToggle>
+
+		<ListTransition id="archive-list">
+			<div
+				data-archive-list
+				data-default-order={sortOrder}
+				data-default-ascending={String(isAscending)}
+				data-show-category={column < 3 ? '1' : '0'}
+			>
+				{groups.map(([year, yearGroup]) => (
+					<section
+						class="archive-group"
+						data-archive-group={year}
+						data-year={year}
+						style={{
+							'--archive-item-gap': `${spacing}em`,
+							'--archive-item-column': column,
+						}}
+					>
+						<div class="archive-title" data-list-key={`year:${year}`}>
+							<h2 class="archive-year">{year}</h2>
+
+							{birthYear > 0 && (
+								<div class="archive-age">
+									<span>{Number(year) - birthYear}</span>
+									<span class="age-label">岁</span>
+								</div>
+							)}
+
+							<div class="archive-info">
+								<span>{formatNumber(yearGroup.reduce((sum, e) => sum + (e.data.readingTime?.words ?? 0), 0))}字</span>
+								<span>{yearGroup.length}篇</span>
+							</div>
+						</div>
+
+						<menu class="archive-list">
+							{yearGroup.map((article, index) => (
+								<Archive
+									title={article.data.title}
+									description={article.data.description}
+									date={article.data.date}
+									updated={article.data.updated}
+									categories={article.data.categories}
+									tags={article.data.tags}
+									path={article.id}
+									readingTime={article.data.readingTime}
+									to={toPath(article)}
+									useUpdated={sortOrder === 'updated'}
+									showCategory={column < 3}
+									delay={index * 0.03}
+									data-list-key={toPath(article)}
+									data-archive-item=""
+									data-date={article.data.date ?? ''}
+									data-updated={article.data.updated ?? article.data.date ?? ''}
+									data-category={article.data.categories?.[0] ?? ''}
+									data-words={article.data.readingTime?.words ?? 0}
+								/>
+							))}
+						</menu>
+					</section>
+				))}
+			</div>
+		</ListTransition>
+
+		{/*
+		 * archive.vue:101-119 的密度面板。
+		 *
+		 * ⚠️ `class="archive-tuning card"` + `hidden` 是**不够的**：
+		 * `src/styles/reusable.css:2` 的 `.card { display: block }` 是作者级样式，
+		 * 优先级高于 UA 的 `[hidden] { display: none }`，于是面板会一直占位可见——
+		 * 这正是当初把它删掉时记下的那个坑。故本文件在 <style> 里显式压回 `display: none`。
+		 * 滑杆的 min/max/step/springMin/springMax/list 与 Nuxt 逐字一致。
+		 */}
+		<div
+			class="archive-tuning card"
+			data-archive-tuning
+			data-archive-spacing={spacing}
+			data-archive-column={column}
+			hidden
+		>
+			<Slider
+				label="间距"
+				value={spacing}
+				springMin={-0.4}
+				springMax={0.1}
+				list={['-0.3', '0']}
+				min={-1}
+				max={0.2}
+				step={0.1}
+			/>
+
+			<Slider
+				label="列数"
+				value={column}
+				min={1}
+				max={8}
+			/>
+		</div>
+
+		{/* 全量数据的两种 useUpdated 形态，惰性（<template> 不参与布局） */}
+		<template data-archive-dataset>
+			{list.flatMap(article => listStates.map(state => (
+				<Archive
+					title={article.data.title}
+					description={article.data.description}
+					date={article.data.date}
+					updated={article.data.updated}
+					categories={article.data.categories}
+					tags={article.data.tags}
+					path={article.id}
+					readingTime={article.data.readingTime}
+					to={toPath(article)}
+					useUpdated={state === 'updated'}
+					showCategory={column < 3}
+					data-list-key={toPath(article)}
+					data-list-state={state}
+					data-archive-item=""
+					data-date={article.data.date ?? ''}
+					data-updated={article.data.updated ?? article.data.date ?? ''}
+					data-category={article.data.categories?.[0] ?? ''}
+					data-words={article.data.readingTime?.words ?? 0}
+				/>
+			)))}
+		</template>
+	</div>
+
+	<Fragment slot="aside">
+		<BlogStats stats={stats} />
+		<BlogLog />
+	</Fragment>
+</Blog>
+
+<script>
+	/**
+	 * 归档页控制器：`OrderToggle` 的三个字段全部参与重排，密度面板驱动布局变量。
+	 *
+	 * 比较器 = `orderBy(list, [sortOrder, 'date'], [isAscending ? 'asc' : 'desc'])`。
+	 * 段内按该序重排；段序按年份升降（Nuxt 是 `isAscending ? groupList : groupList.reverse()`，
+	 * 而分组键来自 `groupBy` 的插入序，故升序即年份升序）。
+	 */
+	function initArchiveList() {
+		const root = document.querySelector('[data-archive-list]')
+		if (!(root instanceof HTMLElement) || root.dataset.sortReady)
+			return
+		root.dataset.sortReady = '1'
+
+		const groups = [...root.querySelectorAll('[data-archive-group]')]
+		const dataset = document.querySelector('[data-archive-dataset]')
+		const tuning = document.querySelector('[data-archive-tuning]')
+		const flip = document.querySelector('#archive-list')
+		if (!groups.length || !(dataset instanceof HTMLTemplateElement))
+			return
+
+		/**
+		 * path → { date/updated: 排序用的字符串, category, byState: { date: <li>, updated: <li> } }
+		 *
+		 * ⚠️ 排序字段叫 `date`/`updated`、DOM 节点必须换一组键名（`byState`），
+		 * 否则 `item.date = row` 会把排序用的日期串直接覆盖掉。
+		 */
+		const pool = new Map()
+		for (const row of dataset.content.querySelectorAll('[data-archive-item]')) {
+			const key = row.dataset.listKey
+			if (!key)
+				continue
+			let item = pool.get(key)
+			if (!item) {
+				item = {
+					date: row.dataset.date || '',
+					updated: row.dataset.updated || '',
+					category: row.dataset.category || '',
+					byState: {},
+				}
+				pool.set(key, item)
+			}
+			item.byState[row.dataset.listState || 'date'] = row
+		}
+
+		/*
+		 * 分组键固定为构建期的 sortOrder（见头注「已知差异」），
+		 * 所以每段包含哪些条目是常量：init 时记一次，之后只重排不重分组。
+		 */
+		const layout = groups.map((group) => {
+			const menu = group.querySelector('.archive-list')
+			const keys = [...group.querySelectorAll('[data-archive-item]')]
+				.map(i => i.dataset.listKey)
+				.filter(k => k && pool.has(k))
+			return { group, menu, keys }
+		})
+
+		/** es-toolkit `compareAscending` 的字符串分支：无 localeCompare */
+		function compareValues(a, b) {
+			if (a < b) return -1
+			if (a > b) return 1
+			return 0
+		}
+
+		function apply(order, ascending, category) {
+			/*
+			 * 关键顺序：先量旧位置，再改 DOM。
+			 * MutationObserver 在变更**之后**的微任务里才回调，那时新位置已落布局，
+			 * 拿不到 before rect；引擎只能靠位置缓存，所以必须手动 refresh()。
+			 */
+			flip?.listTransition?.refresh()
+
+			const state = order === 'updated' ? 'updated' : 'date'
+			const dir = ascending ? 1 : -1
+
+			for (const { group, menu, keys } of layout) {
+				if (!(menu instanceof HTMLElement))
+					continue
+				const sorted = keys
+					.map(k => pool.get(k))
+					.filter(Boolean)
+					.sort((a, b) => {
+						const p = compareValues(a[order] || '', b[order] || '')
+						return p !== 0 ? p * dir : compareValues(a.date, b.date) * dir
+					})
+
+				const rows = sorted.map((item, index) => {
+					const source = item.byState[state]
+					if (!source)
+						return null
+					const row = source.cloneNode(true)
+					// getFixedDelay(index * 0.03)
+					row.style.setProperty('--delay', `${(index * 0.03).toFixed(2)}s`)
+					row.hidden = Boolean(category) && item.category !== category
+					return row
+				}).filter(Boolean)
+				menu.replaceChildren(...rows)
+			}
+
+			// 段序：升序时年份升序，降序时倒序
+			const sortedGroups = [...groups].sort((a, b) =>
+				dir * compareValues(a.dataset.year || '', b.dataset.year || ''))
+			for (const g of sortedGroups)
+				root.appendChild(g)
+		}
+
+		/** 密度：间距 / 列数驱动段上的自定义变量与两个派生 class */
+		function applyDensity(spacing, column) {
+			for (const group of groups) {
+				group.style.setProperty('--archive-item-gap', `${spacing}em`)
+				group.style.setProperty('--archive-item-column', String(column))
+				// archive.vue:64 —— :class="{ 'hide-info': column > 1 }"
+				group.classList.toggle('hide-info', column > 1)
+			}
+			// archive.vue:93 —— :show-category="column < 3"
+			root.dataset.showCategory = column < 3 ? '1' : '0'
+		}
+
+		/**
+		 * 密度初值从面板根节点读，而不是从两个 `[data-slider-root]` 里按序猜——
+		 * 后者一旦 Slider 组件调整渲染顺序就会串位。
+		 */
+		let spacing = Number(tuning?.dataset.archiveSpacing ?? 0)
+		let column = Number(tuning?.dataset.archiveColumn ?? 1)
+
+		/*
+		 * 密度面板的两个控件都**挂在各自的根上**监听，而不是在 document 上按 detail 猜：
+		 * `partial:change` 的 detail 在两个 `Slider` 之间完全同形（都只有
+		 * `{ value, spring }`），Toggle 又是第三种形状，挂在 document 上只能靠
+		 * 「哪个字段恰好出现」来猜身份——那是最容易悄悄错的一种写法。
+		 */
+		const sliders = tuning ? [...tuning.querySelectorAll('[data-slider-root]')] : []
+		sliders.forEach((slider, index) => {
+			slider.addEventListener('partial:change', (e) => {
+				const value = e.detail?.value
+				if (typeof value !== 'number')
+					return
+				if (index === 0)
+					spacing = value
+				else
+					column = value
+				applyDensity(spacing, column)
+			})
+		})
+
+		const densityToggle = document.querySelector('[data-toggle-root]')
+		densityToggle?.addEventListener('partial:change', (e) => {
+			if (typeof e.detail?.checked !== 'boolean' || !(tuning instanceof HTMLElement))
+				return
+			tuning.hidden = !e.detail.checked
+		})
+
+		document.addEventListener('partial:change', (e) => {
+			const d = e.detail || {}
+			// 密度面板的两个控件已在各自的根上处理（见上），这里只管 OrderToggle
+			if (d.category !== undefined || d.sortOrder !== undefined || d.isAscending !== undefined) {
+				apply(
+					d.sortOrder ?? root.dataset.defaultOrder ?? 'date',
+					d.isAscending ?? (root.dataset.defaultAscending === 'true'),
+					d.category ?? '',
+				)
+			}
+		})
+
+		window.__applyArchiveSort = apply
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initArchiveList)
+	else
+		initArchiveList()
+	document.addEventListener('astro:page-load', initArchiveList)
+</script>
+
+<style>
+/* 对应 app/pages/archive.vue 的 <style scoped>（Phase 4-6 移植时整块漏失）。 */
+.archive {
+	padding: 1rem; /* 防止内部 outline 被 mask */
+	mask-image: linear-gradient(#FFF 50%, #FFF7);
+}
+
+.archive-group {
+	margin: 1rem 0 3rem;
+
+	> .archive-list {
+		display: grid;
+		grid-template-columns: repeat(var(--archive-item-column, 1), 1fr);
+		column-gap: calc((5 - var(--archive-item-column, 1)) * 0.2em);
+	}
+
+	/*
+	 * 分类筛选用 `hidden` 隐藏条目，但 `Archive.astro` 给 `.article-item` 写了
+	 * 作者级 `display: flex`——它优先级高于 UA 的 `[hidden] { display: none }`，
+	 * 于是 `el.hidden = true` 是个**空操作**（`.article-item` 由子组件渲染，
+	 * 带的是它自己的 cid，故后半段必须 :global()）。
+	 * 这与 `src/styles/prose.css:276-292` 记的是同一类问题。
+	 */
+	> .archive-list > :global(.article-item)[hidden] {
+		display: none;
+	}
+
+	/* archive.vue:138 —— &.hide-info :deep(.dim-hover) { display: none } */
+	&.hide-info :global(.dim-hover) {
+		display: none;
+	}
+}
+
+/*
+ * 密度面板（archive.vue:143-150）。`.z-slider` 由 `Slider.astro` 渲染，
+ * 带的是它自己的 cid，故必须 :global()。
+ */
+.archive-tuning {
+	position: sticky;
+	bottom: min(2em, 5%);
+
+	/*
+	 * 必须显式压住 `hidden`。`src/styles/reusable.css:2` 的
+	 * `.card { display: block }` 是作者级样式，优先级高于 UA 的
+	 * `[hidden] { display: none }`——面板会一直占位可见。
+	 * （`prose.css` 为同一类问题已经付过一次 2036px 的代价。）
+	 */
+	&[hidden] {
+		display: none;
+	}
+
+	> :global(.z-slider) {
+		margin: 0.5em 0.8em;
+	}
+}
+
+/*
+ * 列数 ≥ 3 时隐藏标题前的分类图标（archive.vue:93 的 `:show-category="column < 3"`）。
+ * 不能用 `hidden` 属性：`src/styles/main.css:87` 的 `:where(.iconify) { display: inline-block }`
+ * 是作者级样式，同样压过 UA 的 `[hidden]`。改由 `data-show-category` 显式控制。
+ */
+[data-show-category='0'] :global(.article-item .article-title .iconify) {
+	display: none;
+}
+
+.archive-title {
+	display: flex;
+	justify-content: space-between;
+	gap: 1em;
+	position: sticky;
+	opacity: 0.5;
+	top: 0;
+	font-size: min(1.5em, 5vw);
+	color: transparent;
+	transition: color 0.2s;
+
+	&::selection, :hover > & {
+		color: var(--c-text-3);
+	}
+
+	:hover > & .archive-age {
+		opacity: 0;
+	}
+
+	> .archive-year, > .archive-age {
+		margin-bottom: -0.3em;
+		mask-image: linear-gradient(#FFF 50%, transparent);
+		font-family: var(--font-stroke-free);
+		font-size: 3em;
+		font-variant-numeric: tabular-nums;
+		font-weight: 800;
+		line-height: 1;
+		z-index: -1;
+		-webkit-text-stroke: 1px var(--c-text-3);
+	}
+
+	> .archive-age {
+		position: absolute;
+		inset-inline-end: 0;
+		transition: opacity 0.2s;
+
+		> .age-label {
+			font-size: 0.5em;
+			vertical-align: super;
+		}
+	}
+
+	> .archive-info {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		column-gap: 0.5em;
+	}
+}
+</style>

@@ -1,0 +1,19 @@
+/**
+ * 全局样式入口。
+ *
+ * 引入顺序与源项目 `nuxt.config.ts` 的 `css` 数组完全一致（字母序）：
+ * 源项目是 Nuxt 打包时按数组顺序串联，这里靠 `@import` 保持同样的层叠顺序，
+ * 调整顺序会改变同名规则的胜负，不要随手重排。
+ *
+ * 源项目额外配置了 `postcss-nesting` 来展开原生 CSS 嵌套，
+ * Astro 侧由 Lightning CSS 原生支持，因此不需要任何 PostCSS 处理。
+ */
+@import './animation.css';
+@import './article.css';
+@import './color.css';
+@import './font.css';
+@import './main.css';
+@import './reusable.css';
+/* prose 增强层（ProsePre / ProseA / ProseP / ProseCode / ProseTable 的样式）。
+   放在最后：article.css 的 `blockquote > .z-codeblock` 需要能覆盖这里的块间距。 */
+@import './prose.css';

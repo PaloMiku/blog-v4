@@ -1,0 +1,246 @@
+---
+/**
+ * Article 组件（Astro 版）：文章卡片（首页 / 预览 / 归档页的列表项）。
+ *
+ * ═══ composable 依赖已内联为构建期计算（不重建 composable 体系）═══
+ * - `getCategoryIcon` / `getCategoryColor`：内联自 `app/utils/article.ts`，
+ *   数据取自根 `blog.config.ts`。
+ * - `isTimeDiffSignificant`：走 `src/lib/shared.ts`。
+ * - `formatNumber`：走 `src/lib/shared.ts`。
+ *
+ * ═══ 图片处理（已知降级）═══
+ * 原组件用 `<NuxtImg :src="image" :alt="title">`（@nuxt/image）。
+ * Astro 侧尚未接入 `astro:assets`（属 Phase 5），这里暂用裸 `<img>`：
+ * **没有 srcset / 尺寸优化 / 懒加载占位**，且远程图不经代理。
+ * Phase 5 接入后需要回头替换本组件（以及 ImgService 相关的 mirror 逻辑）。
+ *
+ * ═══ UtilDate 的处理 ═══
+ * 原组件用 `<UtilDate :date icon>` 渲染带图标的时间，现已收敛到 `util/Date.astro`。
+ * 此前这里内联过最小渲染（`<Icon>` + `<time datetime>`），不传 format 时
+ * `toZdtLocaleString` 会退化成 `full`，把卡片撑成
+ * 「2026年04月01日星期三 中国标准时间 14:00:00」，同时少了 Nuxt 版的图标后 nbsp。
+ * 时间文本、tooltip、图标与间距现在都由 `util/Date.astro` 按 NuxtTime 的规则出。
+ */
+import Icon from '../Icon.astro'
+import UtilDate from '../util/Date.astro'
+import blogConfig from '../../config/blog'
+import { formatNumber, isTimeDiffSignificant } from '../../lib/shared'
+
+interface Props {
+	title?: string
+	description?: string
+	date?: string
+	updated?: string
+	categories?: string[]
+	image?: string
+	path: string
+	readingTime?: { words?: number }
+
+	/** 用更新日期作为主日期 */
+	useUpdated?: boolean
+
+	/* 以下为原组件靠 fallthrough 接收 */
+	class?: string
+	style?: string | Record<string, string | number>
+	/** 入场动画延迟（秒），对应 Nuxt 侧的 getFixedDelay(index * 0.05) */
+	delay?: number
+	'data-list-key'?: string
+}
+
+const {
+	title = '',
+	description,
+	date,
+	updated,
+	categories,
+	image,
+	path,
+	readingTime,
+	useUpdated = false,
+	class: className,
+	style: styleProp,
+	delay,
+	'data-list-key': listKey,
+} = Astro.props
+
+/* —— 内联自 app/utils/article.ts —— */
+function getCategoryIcon(category?: string) {
+	return blogConfig.article.categories[category ?? '']?.icon ?? 'tabler:folder'
+}
+
+function getCategoryColor(category?: string) {
+	return blogConfig.article.categories[category ?? '']?.color
+}
+
+const showAllDate = isTimeDiffSignificant(date, updated)
+const showCreated = Boolean(date && (showAllDate || !useUpdated))
+const showUpdated = Boolean(updated && (showAllDate || useUpdated))
+const words = readingTime?.words
+const style = { '--delay': delay === undefined ? undefined : `${delay.toFixed(2)}s`, ...(typeof styleProp === 'object' ? styleProp : {}) }
+---
+
+<a
+	class:list={['article-card', 'card', 'upraise', className]}
+	href={path}
+	style={style}
+	data-transition-key={path}
+	data-list-key={listKey}
+	data-transition-enter
+>
+	{image && <img class="article-cover" src={image} alt={title} loading="lazy" />}
+	<article>
+		<h2 class="article-title text-creative">
+			{title}
+		</h2>
+
+		{description && (
+			<p class="article-description">
+				{description}
+			</p>
+		)}
+
+		<div class="article-info">
+			{showCreated && (
+				<UtilDate date={date} icon="tabler:pencil-minus" />
+			)}
+
+			{showUpdated && (
+				<UtilDate date={updated} class={useUpdated ? 'use-updated' : undefined} icon="tabler:clock-edit" />
+			)}
+
+			{categories && (
+				<span style={{ color: getCategoryColor(categories[0]) }}>
+					<Icon name={getCategoryIcon(categories[0])} />
+					{categories[0]}
+				</span>
+			)}
+
+			{words && (
+				<span class="article-words">
+					<Icon name="tabler:pilcrow" />
+					{formatNumber(words)}字
+				</span>
+			)}
+		</div>
+	</article>
+</a>
+
+<style>
+.article-card {
+	container-type: inline-size;
+	position: relative;
+	margin: 1em 0;
+	border-radius: 0.8em;
+	color: var(--c-text);
+	animation: float-in var(--motion-duration) var(--motion-easing) var(--delay, 0s) backwards;
+
+	/* <article> 由本组件渲染，同属一个 scope，不需要 :global() */
+	> article {
+		display: grid;
+		gap: 0.5em;
+		padding: 1em;
+	}
+}
+
+.article-info {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5em clamp(1em, 5%, 1.5em);
+	font-size: 0.8em;
+	color: var(--c-text-2);
+
+	&:empty {
+		display: none;
+	}
+
+	.use-updated {
+		order: -1;
+	}
+}
+
+/*
+ * 悬停卡片时提亮封面。
+ * 原组件写的是嵌套的 `:hover > &`：Nuxt 生产构建经 Lightning CSS 展平后
+ * 产物是 `:hover>.article-cover[data-v-…]`（已比对线上 CSS 确认）。
+ * 但 Astro 侧不展平嵌套，这种写法会原样输出成非法的 `[cid]:hover>&`，
+ * 故这里显式写成等价的祖先悬停规则（.article-card 是本组件根元素，同 scope）。
+ */
+.article-card:hover > .article-cover {
+	opacity: 1;
+}
+
+.article-title {
+	font-size: 1.2em;
+	color: var(--c-text);
+}
+
+.article-description {
+	display: -webkit-box;
+	overflow: hidden;
+	overflow-wrap: break-word;
+	font-size: 0.9em;
+	-webkit-line-clamp: 4; /* 最多展示 4 行 */
+	line-clamp: 4;
+	text-overflow: ellipsis;
+	color: var(--c-text-2);
+	-webkit-box-orient: vertical;
+}
+
+.article-cover {
+	position: absolute;
+	opacity: 0.8;
+	inset-inline-end: 0;
+	top: 0;
+	width: calc(40% + 2em);
+	height: 100%;
+	margin: 0;
+	mask-image: linear-gradient(to var(--end), transparent, #FFF 50%);
+	transition: opacity 0.2s;
+	object-fit: cover;
+
+	& + article {
+		position: relative;
+		width: 60%;
+	}
+
+	@media (max-width: 528px) {
+		position: revert;
+		width: 100%;
+		height: auto;
+		max-width: none;
+		max-height: 256px;
+		aspect-ratio: 2.4;
+		margin-bottom: -10%;
+		mask-image: linear-gradient(#FFF 50%, transparent);
+
+		& + article {
+			width: auto;
+
+			> .article-title {
+				text-shadow: 0 0 0.2em var(--ld-bg-card), 0 0 0.5em var(--ld-bg-card), 0 0 1em var(--ld-bg-card);
+			}
+		}
+	}
+}
+
+@container (max-width: 528px) {
+	.article-cover {
+		position: revert;
+		width: 100%;
+		height: auto;
+		max-width: none;
+		max-height: 256px;
+		aspect-ratio: 2.4;
+		margin-bottom: -10%;
+		mask-image: linear-gradient(#FFF 50%, transparent);
+
+		& + article {
+			width: auto;
+
+			> .article-title {
+				text-shadow: 0 0 0.2em var(--ld-bg-card), 0 0 0.5em var(--ld-bg-card), 0 0 1em var(--ld-bg-card);
+			}
+		}
+	}
+}
+</style>

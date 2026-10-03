@@ -1,0 +1,239 @@
+---
+import Icon from '../Icon.astro'
+import { getPromptLanguage } from '../../lib/shared'
+
+/**
+ * Copy 组件（Astro 版）：可编辑的命令行代码块（可复制、可改后复制、可撤销）。
+ *
+ * ⚠️ 语法高亮暂缺。
+ * 原组件 `onMounted` 里 `await shiki.mountPlain(codeInput, language)`，依赖 Nuxt 的
+ * `useShiki`（plain-shiki）。Astro 侧目前没有接入 shiki，且该能力需要**可编辑态下
+ * 重新高亮**（input 事件触发），只能在客户端做、无法在构建期烘焙。
+ * 这里保留纯文本渲染 + 全部交互（改写、撤销、复制、prompt、lang 提示），
+ * 高亮待 Phase 5 决定是否引入 shiki 后补齐。
+ */
+interface Props {
+	/** 提示符，传 `true` 表示不显示提示符 */
+	prompt?: string | boolean
+	code?: string
+	lang?: string
+	/** MDX 传入的 className；Astro 没有 attribute fallthrough，需显式接收后合并 */
+	class?: string
+}
+
+const { prompt = '$', code = '', lang, class: className } = Astro.props
+
+// prompt 传入空字符串会变成 true
+const showPrompt = prompt !== true
+const language = lang ?? getPromptLanguage(prompt)
+---
+
+<code class:list={['copy', className]}>
+	{showPrompt && (
+		<span class="prompt">{prompt}</span>
+	)}
+
+	<div
+		contenteditable="plaintext-only"
+		class="code scrollcheck-x"
+		spellcheck="false"
+		data-copy-code
+	>{code}</div>
+
+	{/* 撤销按钮：仅在内容被改过时出现，由脚本控制显隐 */}
+	<button class="operation" type="button" aria-label="恢复原始内容" title="恢复原始内容" data-copy-undo hidden>
+		<Icon name="tabler:arrow-back-up" />
+	</button>
+
+	{/*
+		原模板里还有一个 `<Icon v-show="false" name="tabler:check" />`：那是 @nuxt/icon
+		用来把图标登记进 SSR 产物、不实际显示的技巧。Astro 侧不需要——两个状态都在下面
+		真实渲染出来，由 CSS 按 `.is-copied` 挑一个显示。
+	*/}
+	<button class="operation" type="button" aria-label="复制" title="复制" data-copy-button>
+		{/*
+		 * 两个状态都在构建期渲染好（`tabler:copy` / `tabler:check`），
+		 * 显示哪一颗交给 CSS 按按钮上的 `.is-copied` 判定。
+		 *
+		 * ⚠️ 不能在客户端改 `data-icon`：astro-icon 构建期就把字形写死在
+		 * `<use href="#ai:tabler:copy">` 上了，改属性是 no-op（Nuxt 的 `@nuxt/icon`
+		 * 才有响应式 `:name`）。改 `<use href>` 指向本页 sprite 里没有的 symbol
+		 * 则是空白图标——比 no-op 更糟。两颗都渲染，symbol 必然齐全。
+		 */}
+		<Icon name="tabler:copy" class="icon-copy" />
+		<Icon name="tabler:check" class="icon-done" />
+	</button>
+</code>
+
+<script>
+	/*
+	 * 复制成功的反馈原本靠切换图标的 data-icon——astro-icon 之后那是 no-op。
+	 * 现在两个图标都在模板里，脚本只切按钮上的 `.is-copied` 类，显示逻辑在 CSS。
+	 * 复制的 legacy 行为对齐 @vueuse/useClipboard 的 `legacy: true`：
+	 * 剪贴板 API 不可用时回退 execCommand。
+	 */
+	const COPIED_DURATION = 1500
+
+	async function writeClipboard(text) {
+		if (navigator.clipboard?.writeText) {
+			await navigator.clipboard.writeText(text)
+			return
+		}
+		// legacy 回退
+		const ta = document.createElement('textarea')
+		ta.value = text
+		ta.setAttribute('readonly', '')
+		ta.style.position = 'fixed'
+		ta.style.opacity = '0'
+		document.body.appendChild(ta)
+		ta.select()
+		document.execCommand('copy')
+		ta.remove()
+	}
+
+	function initCopy(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.copyReady)
+			return
+		root.dataset.copyReady = '1'
+
+		const input = root.querySelector('[data-copy-code]')
+		const undoBtn = root.querySelector('[data-copy-undo]')
+		const copyBtn = root.querySelector('[data-copy-button]')
+		if (!input || !undoBtn || !copyBtn)
+			return
+
+		const original = input.textContent ?? ''
+
+		function preventLineBreak(event) {
+			const { data, inputType } = event
+			if (data?.includes('\n') || inputType === 'insertLineBreak')
+				event.preventDefault()
+		}
+
+		function undo() {
+			input.textContent = original
+			// 原版靠派发 input 触发 shiki 重绘；这里高亮缺席，仍派发以保持事件链完整
+			input.dispatchEvent(new Event('input', { bubbles: true }))
+			undoBtn.hidden = true
+		}
+
+		input.addEventListener('beforeinput', preventLineBreak)
+		input.addEventListener('input', () => {
+			undoBtn.hidden = input.textContent === original
+		})
+		undoBtn.addEventListener('click', undo)
+
+		let timer
+		copyBtn.addEventListener('click', async () => {
+			try {
+				await writeClipboard(input.textContent || '')
+			}
+			catch (err) {
+				console.error('[copy] 写入剪贴板失败\n', err)
+				return
+			}
+			// 图标翻转：只切类名，字形由 CSS 在两颗预渲染的图标之间选
+			copyBtn.classList.add('is-copied')
+			clearTimeout(timer)
+			timer = setTimeout(() => copyBtn.classList.remove('is-copied'), COPIED_DURATION)
+		})
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('.copy[data-copy-code]'))
+			initCopy(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.copy {
+	contain: paint;
+	display: flex;
+	overflow: auto; /* prompt 溢出时滚动 */
+	margin: 0.5rem 0;
+	border: 1px solid var(--c-border);
+	border-radius: 4px;
+	background-color: var(--ld-bg-card);
+	font-size: 0.8rem;
+	line-height: 2.5;
+	transition: border-color 0.2s;
+
+	&:focus-within {
+		border-color: var(--c-primary);
+		outline: 0.2em solid var(--c-primary-soft);
+
+		.prompt {
+			border-inline-end-color: var(--c-primary);
+			background-color: var(--c-primary-soft);
+			color: var(--c-primary);
+		}
+	}
+
+	.prompt {
+		flex-shrink: 0;
+		padding: 0 1em;
+		border-inline-end: 1px solid var(--c-border);
+		background-color: var(--c-bg-2);
+		color: var(--c-text-2);
+		transition: all 0.2s;
+	}
+
+	.code {
+		--fadeout-width: 3ch;
+		--scrollbar-height: 4px;
+
+		flex-grow: 1;
+		overflow: auto;
+		padding: 0 1em;
+		outline: none;
+		white-space: nowrap;
+		scrollbar-color: auto;
+		scrollbar-width: auto;
+
+		&::-webkit-scrollbar {
+			height: 4px;
+			background-color: transparent;
+		}
+	}
+
+	.operation {
+		flex-shrink: 0;
+		height: 2.5em;
+		margin-inline-start: -0.5em;
+		padding: 0.5em;
+		color: var(--c-text-2);
+		transition: color, 0.2s;
+
+		&:hover {
+			color: var(--c-primary);
+		}
+
+		/*
+		 * 复制成功 → 对勾：纯 CSS，零客户端 JS。
+		 *
+		 * `:global()` 必须写——`<Icon>` 是子组件，根元素只带子组件自己的 scope id。
+		 * 不用 `hidden` 属性：`.iconify { display:inline-block }` 是作者样式，
+		 * 压得过 UA 样式表里的 `[hidden] { display:none }`，`hidden` 会被吃掉。
+		 */
+		:global(.icon-done) {
+			display: none;
+		}
+
+		&.is-copied {
+			:global(.icon-copy) {
+				display: none;
+			}
+
+			:global(.icon-done) {
+				display: inline-block;
+			}
+		}
+	}
+}
+</style>

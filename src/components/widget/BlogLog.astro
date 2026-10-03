@@ -1,0 +1,22 @@
+---
+/**
+ * BlogLog 组件（Astro 版），对应 `app/components/widget/BlogLog.vue`。
+ * 纯静态列表。`size="large"` 在原 DlGroup 里没有对应 CSS（只有 .small/.medium），
+ * 这里照搬该行为。
+ */
+import BlogWidget from '../blog/BlogWidget.astro'
+import DlGroup, { type DlItem } from '../blog/DlGroup.astro'
+import blogConfig from '../../config/blog'
+
+const blogLog: DlItem[] = [
+	{ label: '2026-03-25', value: '博客整体轻量化重构，准备开源' },
+	{ label: '2025-08-20', value: '升级到 Nuxt 4 + Nuxt Content v3' },
+	{ label: '2025-05-11', value: '重构到 Nuxt 3 + Nuxt Content v2' },
+	{ label: '2023-05-24', value: '更换框架为 Hexo，升级博客' },
+	{ label: blogConfig.timeEstablished, value: '博客建立' },
+]
+---
+
+<BlogWidget card title="更新日志">
+	<DlGroup size="large" items={blogLog} />
+</BlogWidget>

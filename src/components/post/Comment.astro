@@ -1,0 +1,411 @@
+---
+/**
+ * Comment 组件（Astro 版）：Twikoo 评论区。
+ *
+ * 对应 `app/components/post/Comment.vue`。不做 Vue 岛：容器由 SSR 输出，
+ * 初始化与「评论区外链二次确认」浮层由原生 `<script>` 接管。
+ *
+ * ═══ twikoo 本体 ═══
+ * `twikoo.min.js` 由 `blogConfig.scripts` 注入 <head>（见 src/layouts/Base.astro），
+ * 本组件**不再重复引入**脚本，只负责 `Twikoo.init()`。
+ * 容器 id 固定为 `twikoo`（twikoo 会把挂载后的元素变为 #twikoo，
+ * 且 src/components/widget/Toc.astro 的「评论区」锚点指向 #twikoo）。
+ *
+ * ═══ 与 Nuxt 版的差异 ═══
+ * 1. vue-tippy 的 `<Tooltip interactive>`（外部链接的「复制链接前先确认」浮层）
+ *    → 换成一段原生脚本 + `position: absolute` 浮层，
+ *    类名沿用 `.tippy-box` / `.tippy-content`，让 src/styles/main.css 里
+ *    已有的 `.tippy-box` 样式继续生效（同 partial/Dropdown.astro 的做法）。
+ *    代价：浮层固定显示在链接下方，不做视口边缘翻转。
+ * 2. `appConfig.twikoo?.envId` → 直接取 `blogConfig.twikoo.envId`。
+ *    Nuxt 侧能读到是因为 `defineAppConfig({ ...blogConfig })` 展开过。
+ * 3. `envId` / `el` 与源组件完全一致，**没有**传 `path` / `lang` / `url`：
+ *    twikoo 默认用 `location.pathname` 作为评论路径，与源组件行为相同。
+ */
+import Icon from '../Icon.astro'
+import Button from '../partial/Button.astro'
+import blogConfig from '../../config/blog'
+---
+
+<section class="z-comment" data-comment data-twikoo-env={blogConfig.twikoo.envId}>
+	<h3 class="text-creative">
+		评论区
+	</h3>
+
+	{/*
+		外链二次确认浮层。Nuxt 侧 SSR 也会输出这层（tippy 传送到 section 内，默认隐藏），
+		故保留在模板里而不是脚本动态创建——`.popover-confirm` 的样式依赖本组件的 scope。
+	*/}
+	<div class="tippy-box comment-popover" aria-expanded="false" data-comment-popover hidden>
+		<div class="tippy-content">
+			<div class="popover-confirm">
+				<span
+					class="input"
+					contenteditable="plaintext-only"
+					spellcheck="false"
+					data-comment-input
+				/>
+
+				<button type="button" aria-label="恢复原始内容" data-comment-undo hidden>
+					<Icon name="tabler:arrow-back-up" />
+				</button>
+
+				{/*
+					访问按钮由 partial/Button.astro 渲染，脚本按 .z-button 定位（该 class 只有它有）。
+					显式补 primary：Button.astro 目前把 `primary` prop 解构出来后没有并进 class，
+					产物里只有 `z-button button`，与其自带的 `.button.primary` 样式规则不匹配。
+					（Button.astro 属既有文件，不在本任务可改范围内，故在此用 class 兜底。）
+				*/}
+				<Button primary class="primary" text="访问" />
+			</div>
+		</div>
+	</div>
+
+	<div id="twikoo">
+		<p>评论加载中...</p>
+	</div>
+</section>
+
+<script>
+	// 注：原先这里内联复刻了 `safelyDecodeUriComponent`，理由是 `lib/shared.ts` 会把
+	// 4.4 KB 站点配置拖进客户端 chunk。现已抽出 `lib/client.ts` 作为客户端安全入口，
+	// 故改为从那里 import。
+	import { safelyDecodeUriComponent } from '../../lib/client'
+
+	/** twikoo 脚本挂在 window 上，这里给出最小类型，避免污染全局声明 */
+	type Twikoo = {
+		init: (options: { envId: string, el: string }) => void
+	}
+
+	function getTwikoo(): Twikoo | undefined {
+		return (window as unknown as { twikoo?: Twikoo }).twikoo
+	}
+
+	/**
+	 * 等待 twikoo 全局就绪。
+	 *
+	 * 源组件在 onMounted 里直接 `window.twikoo?.init?.(...)`，靠的是
+	 * <head> 里的 defer 脚本先于 Vue bundle 执行。Astro 侧组件脚本会被打包成 module，
+	 * 它在文档中的位置不保证落在 head 的 defer 脚本之后，故先同步探测、
+	 * 未就绪再短轮询兜底（与 src/components/content/Mermaid.astro 的动态 import 同一思路）。
+	 */
+	function whenTwikooReady(callback: (twikoo: Twikoo) => void) {
+		const ready = getTwikoo()
+		if (ready?.init) {
+			callback(ready)
+			return
+		}
+		let tries = 0
+		const timer = setInterval(() => {
+			const twikoo = getTwikoo()
+			if (twikoo?.init) {
+				clearInterval(timer)
+				callback(twikoo)
+			}
+			else if (++tries > 200) {
+				// 约 10s 上限，CDN 不可用时静默放弃，保留「评论加载中...」占位
+				clearInterval(timer)
+			}
+		}, 50)
+	}
+
+	function initTwikoo(root) {
+		const env = root.dataset.twikooEnv
+		if (!env)
+			return
+		whenTwikooReady((twikoo) => {
+			// `twikoo.init()` 返回 promise，走的是 twikoo.sotkg.com。
+			// CDN 或后端抖动时它会 reject，而这里既不 await 也不 catch，
+			// 就会变成一条 unhandled rejection——无消息、无堆栈，
+			// 而且**只在冷加载偶发**（首次握手失败才会发生）。
+			// 现象上与页面缺陷无法区分，所以必须在这里接住：
+			// 失败时保留「评论加载中...」占位并告警，不让异常逃逸。
+			try {
+				const result = twikoo.init({
+					envId: env,
+					// twikoo 会把挂载后的元素变为 #twikoo
+					el: '#twikoo',
+				}) as unknown
+				if (result && typeof (result as Promise<unknown>).catch === 'function')
+					(result as Promise<unknown>).catch((error: unknown) => {
+						console.warn('[comment] twikoo init failed; keeping the placeholder', error)
+					})
+			}
+			catch (error) {
+				console.warn('[comment] twikoo init threw synchronously; keeping the placeholder', error)
+			}
+		})
+	}
+
+	function initComment(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.commentReady)
+			return
+		root.dataset.commentReady = '1'
+
+		const popover = root.querySelector('[data-comment-popover]')
+		const input = root.querySelector('[data-comment-input]')
+		const undoBtn = root.querySelector('[data-comment-undo]')
+		const openBtn = popover?.querySelector('.z-button')
+		if (!(popover instanceof HTMLElement) || !(input instanceof HTMLElement) || !undoBtn || !openBtn)
+			return
+
+		/** 链接原值，用于「恢复原始内容」与判断是否可撤销 */
+		let jumpTo = ''
+
+		function checkUndoable() {
+			undoBtn.hidden = input.textContent === jumpTo
+		}
+
+		function hide() {
+			popover.hidden = true
+			root.removeAttribute('data-popover-open')
+		}
+
+		function show(anchor) {
+			const sectionRect = root.getBoundingClientRect()
+			const rect = anchor.getBoundingClientRect()
+			// 先显示再量宽，否则 offsetWidth 恒为 0，无法做右边界收拢
+			popover.hidden = false
+			popover.style.top = `${rect.bottom - sectionRect.top + 4}px`
+			popover.style.left = `${Math.max(0, Math.min(rect.left - sectionRect.left, root.clientWidth - popover.offsetWidth))}px`
+			root.setAttribute('data-popover-open', 'true')
+		}
+
+		function confirmOpen() {
+			window.open(input.textContent, '_blank')
+		}
+
+		input.addEventListener('input', checkUndoable)
+		input.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter') {
+				e.preventDefault()
+				confirmOpen()
+			}
+		})
+		undoBtn.addEventListener('click', () => {
+			input.textContent = jumpTo
+			checkUndoable()
+		})
+		openBtn.addEventListener('click', confirmOpen)
+
+		/* 评论区链接守卫：twikoo 渲染出的外链一律先弹确认框，不直接打开 */
+		root.addEventListener('click', (e) => {
+			const target = e.target
+			if (!(target instanceof Element))
+				return
+
+			// 照搬源组件：点 twikoo 头像时不继续传播
+			if (target.matches('.tk-avatar-img'))
+				e.stopPropagation()
+
+			const link = target.closest('a[target="_blank"]')
+			if (!(link instanceof HTMLAnchorElement))
+				return
+
+			e.preventDefault()
+			hide()
+			jumpTo = safelyDecodeUriComponent(link.href)
+			input.textContent = jumpTo
+			checkUndoable()
+			show(link)
+		}, { capture: true })
+
+		// 浮层交互式：点外部或按 Esc 收起（对应 vue-tippy 的 focusin 触发语义）
+		document.addEventListener('pointerdown', (e) => {
+			if (!popover.hidden && !popover.contains(e.target))
+				hide()
+		})
+		document.addEventListener('keydown', (e) => {
+			if (e.key === 'Escape')
+				hide()
+		})
+
+		initTwikoo(root)
+	}
+
+	function initAllComment() {
+		for (const root of document.querySelectorAll('[data-comment]'))
+			initComment(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAllComment)
+	else
+		initAllComment()
+	document.addEventListener('astro:page-load', initAllComment)
+</script>
+
+<style>
+.z-comment {
+	/* 原版由 tippy 负责浮层定位（fixed），这里改为 absolute，需要一个定位参照 */
+	position: relative;
+	margin: 3rem 1rem;
+
+	> h3 {
+		margin-top: 3rem;
+		font-size: 1.25rem;
+	}
+}
+
+/* 原本是 `:deep() > [data-tippy-root] > .tippy-box`，浮层现在就在本组件内 */
+.z-comment > .tippy-box {
+	padding: 0;
+}
+
+.comment-popover {
+	position: absolute;
+	z-index: var(--z-index-popover);
+	max-width: 100%;
+
+	&[hidden] {
+		display: none;
+	}
+}
+
+.popover-confirm {
+	display: flex;
+	align-items: center;
+	overflow-wrap: anywhere;
+
+	> .input {
+		min-width: 0;
+		padding: 0.3em 0.6em;
+		outline: none;
+	}
+
+	/*
+	 * 访问按钮来自 partial/Button.astro，是独立 scope 的子组件，
+	 * 拿不到本组件的 scope 属性，必须 :global()（见 MIGRATION-BRIEF 陷阱 1/2）。
+	*/
+	:global(button) {
+		flex-shrink: 0;
+		align-self: stretch;
+		padding: 0.3em;
+		border-radius: 0 0.5em 0.5em 0;
+	}
+}
+
+/*
+ * 以下两段原本是 `:deep(...)`：twikoo 渲染出来的 DOM 拿不到本组件的 scope，
+ * 每一层都要单独 :global()，否则内层嵌套选择器会被加上永远匹配不上的 scope。
+ */
+:global(#twikoo) {
+	margin: 2em 0;
+}
+
+:global(#twikoo .tk-admin-container) {
+	position: fixed;
+	z-index: calc(var(--z-index-popover) + 1);
+}
+
+:global(#twikoo .tk-input) {
+	font-family: var(--font-monospace);
+}
+
+:global(#twikoo .tk-avatar) {
+	border-radius: 50%;
+}
+
+@supports (corner-shape: squircle) {
+	:global(#twikoo .tk-avatar) {
+		corner-shape: superellipse(1.2);
+	}
+}
+
+:global(#twikoo .tk-avatar.tk-clickable) {
+	cursor: auto;
+}
+
+:global(#twikoo .tk-time) {
+	color: var(--c-text-3);
+}
+
+/* 防止 a 被 overflow hidden */
+:global(#twikoo .tk-content) {
+	margin: -0.2em;
+	padding: 0.2em;
+}
+
+:global(#twikoo .tk-comments-title, #twikoo .tk-nick) {
+	font-family: var(--font-creative);
+}
+
+:global(#twikoo .tk-owo-emotion) {
+	width: auto;
+	height: 1.4em;
+	vertical-align: text-bottom;
+}
+
+:global(#twikoo .tk-extras, #twikoo .tk-footer) {
+	font-size: 0.7em;
+	color: var(--c-text-3);
+}
+
+:global(#twikoo .tk-replies:not(.tk-replies-expand)) {
+	mask-image: linear-gradient(to top, transparent, #FFF 4em);
+}
+
+:global(#twikoo .tk-expand) {
+	border-radius: 0.5em;
+	transition: background-color 0.1s;
+}
+
+:global(#twikoo .tippy-svg-arrow > svg) {
+	fill: inherit;
+	width: auto;
+	height: auto;
+}
+
+:global(:where(.tk-preview-container, .tk-content) pre) {
+	overflow: auto;
+	border-radius: 0.5em;
+	font-size: 0.85em;
+}
+
+:global(:where(.tk-preview-container, .tk-content) a) {
+	margin: -0.1em -0.2em;
+	padding: 0.1em 0.2em;
+	background: linear-gradient(var(--c-primary-soft), var(--c-primary-soft)) no-repeat center bottom / 100% 0.1em;
+	color: var(--c-primary);
+	transition: all 0.2s;
+}
+
+:global(:where(.tk-preview-container, .tk-content) a:hover) {
+	border-radius: 0.3em;
+	background-size: 100% 100%;
+}
+
+:global(:where(.tk-preview-container, .tk-content) p) {
+	margin: 0.2em 0;
+}
+
+:global(:where(.tk-preview-container, .tk-content) img) {
+	border-radius: 0.5em;
+}
+
+:global(:where(.tk-preview-container, .tk-content) menu),
+:global(:where(.tk-preview-container, .tk-content) ol),
+:global(:where(.tk-preview-container, .tk-content) ul) {
+	margin: 0.5em 0;
+	padding-inline-start: 1.5em;
+	font-size: 0.9rem;
+	list-style: revert;
+}
+
+:global(:where(.tk-preview-container, .tk-content) li) {
+	margin: 0.2em 0;
+}
+
+:global(:where(.tk-preview-container, .tk-content) li::marker) {
+	color: var(--c-primary);
+}
+
+:global(:where(.tk-preview-container, .tk-content) blockquote) {
+	margin: 0.5em 0;
+	padding: 0.2em 0.5em;
+	border-inline-start: 4px solid var(--c-border);
+	border-radius: 4px;
+	background-color: var(--c-bg-2);
+	font-size: 0.9em;
+}
+</style>

@@ -1,0 +1,22 @@
+{
+	"compilerOptions": {
+		"target": "es2022",
+		"module": "preserve",
+		"moduleResolution": "bundler",
+		"moduleDetection": "force",
+		"strict": true,
+		"skipLibCheck": true,
+		"isolatedModules": true,
+		"resolveJsonModule": true,
+		"allowJs": true,
+		"checkJs": false,
+		"noEmit": true,
+		"types": ["node"]
+	},
+	"include": [
+		"src/**/*.ts",
+		"scripts/**/*.mjs",
+		"astro.config.mjs",
+		".astro/content.d.ts"
+	]
+}

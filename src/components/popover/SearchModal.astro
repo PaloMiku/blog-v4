@@ -1,0 +1,527 @@
+---
+/**
+ * 搜索弹窗（Astro + 原生 JS），对应 `app/components/popover/Search.vue`
+ * 与 `app/components/popover/SearchItem.vue`。
+ *
+ * ## 为什么不用 Vue 岛
+ * 交互是「防抖输入 → MiniSearch 查询 → 重排 DOM」，约 150 行原生 JS；
+ * 而 Pinia 的 `useSearchStore` 在 Astro 侧没有对应物，
+ * 「侧栏状态 ↔ 弹窗」的联动改由 `subscribeLayout()` 直接承担。
+ *
+ * ## 数据来源的变化（必要且有意）
+ * Nuxt 侧 `queryCollectionSearchSections('content')` 直接查 sqlite 客户端索引，
+ * Astro 内容层没有这层运行时索引，改为构建期生成 `/search-index.json`
+ * （见 `src/pages/search-index.json.ts`），首次打开时 fetch 一次并常驻内存。
+ * 索引本身是构建期产物，**只在首次打开时下载**，未打开搜索框的访客不付这个体积。
+ *
+ * ## 焦点与无障碍
+ * - 打开：聚焦输入框（`data-modal-autofocus` 供 `modal.ts` 通用聚焦，
+ *   `modal:open` 监听负责「重复点击应聚焦而非叠开」的再次聚焦）
+ * - 关闭：`modal:close` 时调用 `closeLayout()`，与 Nuxt 侧
+ *   `modalStore.use(..., { onClose: layoutStore.close })` 同语义
+ * - 关闭后焦点归还触发元素：由 `src/lib/modal.ts` 统一处理
+ */
+import Icon from '../Icon.astro'
+import Key from '../content/Key.astro'
+import blogConfig from '../../config/blog'
+
+/** 与 Nuxt 侧 `appConfig.language` 同源，用于 `Intl.Segmenter` 分词 */
+const locale = blogConfig.language
+---
+
+<div
+	class="blog-search"
+	data-modal="search"
+	role="dialog"
+	aria-modal="true"
+	aria-label="站内搜索"
+	tabindex="-1"
+>
+	<form class="input" data-search-form>
+		{/*
+		 * Nuxt 侧用 `<Icon :name="status === 'pending' ? 'loading' : 'search'">` 切换。
+		 * Astro 脚本换不了组件（见 BlogPanel.astro 同样的处理），故两个都渲染、靠 hidden 切换。
+		 */}
+		<span class="nav-icon" data-search-icon="loading" hidden><Icon name="line-md:loading-alt-loop" /></span>
+		<span class="nav-icon" data-search-icon="search"><Icon name="tabler:search" /></span>
+
+		<input
+			data-search-input
+			data-modal-autofocus
+			type="search"
+			class="search-input"
+			placeholder="键入开始搜索"
+			autocomplete="off"
+		>
+	</form>
+
+	<div class="search-results" data-search-results>
+		<div class="result-content" data-search-content>
+			<div class="no-result" data-search-empty hidden>无结果</div>
+
+			<menu class="scrollcheck-y search-result" data-search-list />
+
+			<div class="tip" data-search-tip hidden>
+				<Key code="ArrowUp" prevent />
+				<Key code="ArrowDown" prevent />
+				切换&emsp;
+				<Key code="Enter" icon />
+				选择&emsp;
+				<Key code="Escape" icon={false} />
+				关闭
+			</div>
+		</div>
+	</div>
+
+	{/*
+	 * 结果项模板。条目数与标题层级数都是运行期才知道的，
+	 * 所以这里只放一份原型，由脚本 clone 填充——
+	 * 对应 Vue 侧的 `v-for` + `PopoverSearchItem`。
+	 */}
+	<template data-search-item>
+		<a class="search-item">
+			<hgroup class="text-creative">
+				<span class="title" />
+				<span class="title-icon" data-item-icon hidden><Icon name="tabler:file-text" /></span>
+			</hgroup>
+			<p class="content" />
+		</a>
+	</template>
+</div>
+
+<script>
+	import { escape, escapeRegExp } from 'es-toolkit/string'
+	import { closeModalByKey, getModalByKey, openModal, subscribeModals } from '../../lib/modal'
+	import { closeLayout, subscribeLayout } from '../../lib/layout-state'
+
+	/** 搜索索引的静态地址，由 `src/pages/search-index.json.ts` 在构建期生成 */
+	const INDEX_URL = '/search-index.json'
+	/** 与 Nuxt 侧 `refDebounced(word, 100)` 对齐 */
+	const DEBOUNCE_MS = 100
+	/** 与 `stores/search.ts` 传入 modalStore 的 duration 对齐 */
+	const DURATION = 200
+
+	const segmenter = Intl.Segmenter && new Intl.Segmenter(document.documentElement.lang || 'zh-CN', { granularity: 'word' })
+
+	/**
+	 * 与 `shared/utils/str.ts` 的 `highlightHtml` 行为逐字一致。
+	 *
+	 * 为什么不直接 `import { highlightHtml } from '../../lib/shared'`：
+	 * 那个模块经由 `shared/utils/str.ts` 依赖 `@vueuse/core`（只为了一个 `toArray`），
+	 * 会把框架依赖拖进客户端产物，而 `@vueuse/core` 并不是 astro-site 的依赖。
+	 * 这里只从直接依赖 `es-toolkit` 取 `escape` / `escapeRegExp`，其余照抄。
+	 */
+	function highlightHtml(text, words) {
+		const validTerms = (Array.isArray(words) ? words : [words])
+			.filter(t => t && String(t).trim())
+			.map(t => String(t).toLowerCase())
+		const source = String(text ?? '')
+		if (!validTerms.length)
+			return escape(source)
+
+		const re = new RegExp(`(${validTerms.map(escapeRegExp).join('|')})`, 'gi')
+		// 先按原文切分再逐段转义：反过来先转义会让正则命中 `&amp;` 这类实体内部
+		return source
+			.split(re)
+			.map(part => part && validTerms.includes(part.toLowerCase()) ? `<mark>${escape(part)}</mark>` : escape(part))
+			.join('')
+			.replace(/\n+/g, '<br>')
+	}
+
+	/** MiniSearch 索引只构建一次；失败时清空以便下次打开重试 */
+	let indexPromise = null
+
+	function loadIndex() {
+		if (!indexPromise) {
+			indexPromise = (async () => {
+				// minisearch 只有用到时才加载：不打开搜索框的访客不下载这段代码
+				const [{ default: MiniSearch }, response] = await Promise.all([
+					import('minisearch'),
+					fetch(INDEX_URL),
+				])
+				if (!response.ok)
+					throw new Error(`搜索索引加载失败: ${response.status}`)
+
+				const index = new MiniSearch({
+					fields: ['title', 'content'],
+					storeFields: ['title', 'titles', 'content', 'level'],
+					searchOptions: {
+						prefix: true,
+						fuzzy: 0.2,
+						combineWith: 'AND',
+						// `titles` 只在 storeFields 里、不是索引字段，这条 boost 实际不生效；
+						// 照抄 Nuxt 侧配置是为了保持两边行为完全一致
+						boost: { title: 3, titles: 2 },
+					},
+					processTerm: segmenter
+						? term => Array.from(segmenter.segment(term), seg => seg.segment.toLowerCase())
+						: undefined,
+				})
+				index.addAll(await response.json())
+				return index
+			})().catch((err) => {
+				indexPromise = null
+				throw err
+			})
+		}
+		return indexPromise
+	}
+
+	/* 键盘模式只判定「是否由键盘在操作列表」，原版用两个 useEventListener 维护。
+	   挂在模块作用域：全站只有这一个搜索弹窗，两个监听也只挂一份。 */
+	let keyboardMode = false
+	let keyboardModeBound = false
+
+	function bindKeyboardMode() {
+		if (keyboardModeBound)
+			return
+		keyboardModeBound = true
+		document.addEventListener('mousemove', () => {
+			keyboardMode = false
+		})
+		document.addEventListener('keydown', () => {
+			keyboardMode = true
+		})
+	}
+
+	function initSearch(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.searchReady)
+			return
+		root.dataset.searchReady = '1'
+
+		const input = root.querySelector('[data-search-input]')
+		const list = root.querySelector('[data-search-list]')
+		const results = root.querySelector('[data-search-results]')
+		const content = root.querySelector('[data-search-content]')
+		const empty = root.querySelector('[data-search-empty]')
+		const tip = root.querySelector('[data-search-tip]')
+		const itemTemplate = root.querySelector('[data-search-item]')
+		if (!input || !list || !results || !content || !empty || !tip || !itemTemplate?.content?.firstElementChild)
+			return
+
+		let word = ''
+		let debounceTimer
+		let pending = false
+		let failed = false
+		let activeIndex = 0
+		let selectedId
+
+		bindKeyboardMode()
+
+		function focusInput(allSelect = false) {
+			input.focus()
+			if (allSelect)
+				input.select()
+		}
+
+		/** 只平滑容器高度；结果节点和键盘选中状态仍即时更新（对应 useResizeObserver） */
+		const resizeObserver = new ResizeObserver(([entry]) => {
+			if (!entry)
+				return
+			const size = Array.isArray(entry.borderBoxSize) ? entry.borderBoxSize[0] : entry.borderBoxSize
+			results.style.height = `${size?.blockSize ?? entry.contentRect.height}px`
+		})
+		resizeObserver.observe(content)
+
+		function setActive(index, isKeyboard = false) {
+			focusInput()
+			const nodes = list.children
+			if (index < 0 || index >= nodes.length)
+				return
+			activeIndex = index
+			selectedId = nodes[index].dataset.resultId
+			for (const [i, node] of [...nodes].entries())
+				node.classList.toggle('active', i === index)
+			if (isKeyboard)
+				keyboardMode = true
+			// 鼠标划过时若不在键盘模式就不滚动，避免和用户自己的滚动打架
+			if (keyboardMode)
+				nodes[index].scrollIntoView({ block: 'nearest' })
+		}
+
+		function render(items) {
+			// 结果变化后尽量保留原来选中的那一项（对应 onResultsUpdated）
+			const retained = items.findIndex(item => item.id === selectedId)
+			activeIndex = Math.max(0, retained)
+			selectedId = items[activeIndex]?.id
+			if (retained < 0)
+				list.scrollTop = 0
+
+			const fragment = document.createDocumentFragment()
+			items.forEach((item, index) => {
+				const node = itemTemplate.content.firstElementChild.cloneNode(true)
+				node.href = item.id
+				node.dataset.resultId = item.id
+				node.classList.toggle('active', index === activeIndex)
+
+				const hgroup = node.querySelector('hgroup')
+				const icon = node.querySelector('[data-item-icon]')
+				const titleProto = hgroup.querySelector('.title')
+				// level === 1 表示这是文章自身而非某个小节，显示文章图标
+				icon.hidden = item.level !== 1
+
+				hgroup.textContent = ''
+				// 面包屑在前、自身标题在后，与 `v-for="heading in [...titles, title]"` 一致
+				// 逐个过滤掉空值：索引里出现脏数据时不该让整张列表渲染失败
+				for (const heading of [...(item.titles ?? []), item.title]) {
+					if (typeof heading !== 'string' || !heading.trim())
+						continue
+					const span = titleProto.cloneNode(true)
+					span.innerHTML = highlightHtml(heading, item.queryTerms)
+					hgroup.appendChild(span)
+				}
+				hgroup.appendChild(icon)
+
+				const paragraph = node.querySelector('.content')
+				if (item.content) {
+					paragraph.innerHTML = highlightHtml(item.content, item.queryTerms)
+				}
+				else {
+					paragraph.remove()
+				}
+
+				fragment.appendChild(node)
+			})
+			list.replaceChildren(fragment)
+
+			empty.hidden = !word.trim() || Boolean(items.length) || failed
+			empty.textContent = failed ? '搜索索引加载失败' : '无结果'
+			tip.hidden = !items.length
+		}
+
+		async function search() {
+			const query = word.trim()
+			if (!query) {
+				render([])
+				return
+			}
+			try {
+				const index = await loadIndex()
+				failed = false
+				pending = false
+				render(index.search(query))
+			}
+			catch (err) {
+				console.error(err)
+				failed = true
+				pending = false
+				render([])
+			}
+		}
+
+		function scheduleSearch() {
+			word = input.value
+			clearTimeout(debounceTimer)
+			pending = Boolean(word.trim())
+			// 索引还没就绪时先转圈，和 Nuxt 侧 status === 'pending' 一致
+			root.querySelector('[data-search-icon="loading"]')?.toggleAttribute('hidden', !pending || Boolean(indexPromise))
+			root.querySelector('[data-search-icon="search"]')?.toggleAttribute('hidden', pending && !indexPromise)
+			debounceTimer = setTimeout(search, DEBOUNCE_MS)
+		}
+
+		input.addEventListener('input', scheduleSearch)
+
+		// 悬停切换选中项。用 mouseover 而非原版的 mousemove：
+		// 行为等价，但只在进入条目时触发一次，不必每个像素都跑一遍
+		list.addEventListener('mouseover', (e) => {
+			const item = e.target.closest('[data-result-id]')
+			if (item)
+				setActive([...list.children].indexOf(item))
+		})
+
+		// Key.astro 已把按键命中派发成同名 DOM 事件，这里统一按 data-key-code 分发
+		tip.addEventListener('press', (e) => {
+			const code = e.target.closest('[data-key-root]')?.dataset.keyCode
+			if (code === 'ArrowUp')
+				setActive(activeIndex - 1, true)
+			else if (code === 'ArrowDown')
+				setActive(activeIndex + 1, true)
+			else if (code === 'Enter')
+				list.children[activeIndex]?.click()
+			// Escape 不在这里处理：由 modal.ts 的全局 Esc 统一关闭，避免关两次
+		})
+
+		tip.addEventListener('click', () => focusInput())
+
+		/* ---------- 与布局状态的双向联动（对应 stores/search.ts 的 watch） ---------- */
+		subscribeLayout((state) => {
+			if (state !== 'search') {
+				closeModalByKey('search')
+				return
+			}
+			// 选中文本直接作为搜索词（对应 useTextSelection().text.trim() || word）
+			const selection = String(window.getSelection?.() ?? '').trim()
+			if (selection && selection !== word) {
+				word = selection
+				input.value = selection
+				scheduleSearch()
+			}
+			openModal({ key: 'search', unique: true, duration: DURATION })
+		})
+
+		/* ---------- 显隐与层级：只读模态栈，不参与打开/关闭 ---------- */
+		subscribeModals(() => {
+			const entry = getModalByKey('search')
+			root.style.setProperty('--modal-duration', `${entry?.duration ?? DURATION}ms`)
+			root.style.zIndex = String(entry?.zIndex ?? 510)
+			root.toggleAttribute('data-show', Boolean(entry))
+			// 退场期间保留 data-show，让 CSS 播完淡出再由出栈隐藏
+			root.toggleAttribute('data-closing', entry?.status === 'closing')
+		})
+
+		// 打开（含 unique 命中的再次聚焦）：对应 whenever(() => props.open, focusInput)
+		document.addEventListener('modal:open', (e) => {
+			if (e.detail?.key !== 'search')
+				return
+			focusInput()
+			// 预热索引，等价于 Nuxt 侧 useLazyAsyncData 在组件挂载时就开始取数
+			loadIndex().catch(() => {})
+		})
+
+		// 关闭时把布局态一并复位，等价于 `onClose: layoutStore.close`
+		document.addEventListener('modal:close', (e) => {
+			if (e.detail?.key === 'search')
+				closeLayout()
+		})
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('[data-modal="search"]'))
+			initSearch(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+/* ---- 对应 Search.vue 的 scoped 样式 ---- */
+.blog-search {
+	--float-distance: 20vh;
+
+	contain: paint;
+	position: fixed;
+	inset: 0;
+	width: 90%;
+	height: fit-content;
+	max-width: 768px;
+	margin: auto;
+	border: 1px solid var(--c-primary);
+	border-radius: 1em;
+	box-shadow: var(--box-shadow-2), var(--box-shadow-3);
+	outline: 0.2em solid var(--c-primary-soft);
+	background-color: var(--ld-bg-card);
+
+	/* ---- 显隐：等价于原版 <Transition name="float-in"> 的 enter/leave ---- */
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+	transition:
+		opacity var(--modal-duration, 200ms) var(--motion-easing, ease-out),
+		transform var(--modal-duration, 200ms) var(--motion-easing, ease-out);
+}
+
+.blog-search[data-show]:not([data-closing]) {
+	opacity: 1;
+	visibility: visible;
+	pointer-events: auto;
+	animation: float-in var(--motion-duration, 0.3s) var(--motion-easing, ease-out);
+}
+
+.blog-search[data-closing] {
+	opacity: 0;
+	transform: translateY(var(--float-distance, 12px));
+}
+
+.input {
+	display: flex;
+	align-items: center;
+	gap: 1em;
+	position: relative;
+	padding: 0 1em;
+
+	.nav-icon {
+		display: flex;
+		flex-shrink: 0;
+		font-size: 1.2em;
+		color: var(--c-text-2);
+	}
+
+	> .search-input {
+		width: 100%;
+		padding: 1em 0;
+		outline: none;
+	}
+}
+
+.search-results {
+	overflow: clip;
+	transition: height var(--motion-duration, 0.3s) var(--motion-easing, ease-out);
+}
+
+.result-content {
+	display: flow-root;
+}
+
+.no-result {
+	max-height: 5em;
+	line-height: 5em;
+	text-align: center;
+	color: var(--c-text-3);
+}
+
+.search-result {
+	max-height: 75vh;
+	max-height: 75dvh;
+	scroll-padding: var(--fadeout-height);
+}
+
+.tip {
+	max-height: 1rem;
+	margin: 0 1em 0.5rem;
+	font-size: 0.8em;
+	text-align: center;
+	color: var(--c-text-3);
+}
+
+/* ---- 对应 SearchItem.vue 的 scoped 样式 ---- */
+.search-item {
+	display: block;
+	margin: 0.5em;
+	padding: 0.5em 0.8em;
+	border-radius: 0.5em;
+	transition: background-color 0.2s;
+
+	&.active {
+		background-color: var(--c-bg-soft);
+	}
+}
+
+.title:not(:first-child) {
+	opacity: 0.5;
+	transition: opacity 0.2s;
+
+	.active & {
+		opacity: 1;
+	}
+
+	&::before {
+		content: " > ";
+		opacity: 0.5;
+	}
+}
+
+.title + .title-icon {
+	margin-inline-start: 0.2em;
+}
+
+.content {
+	margin-top: 0.2em;
+	font-size: 0.8em;
+	white-space: pre-wrap;
+	color: var(--c-text-2);
+}
+</style>

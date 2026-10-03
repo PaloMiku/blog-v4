@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import type { FeedEntry } from '../../app/types/feed'
+import type { FeedEntry } from '../../src/lib/types/feed'
 import process from 'node:process'
 import { cancel, intro, isCancel, outro, select, text } from '@clack/prompts'
 import { mapValues } from 'es-toolkit/object'

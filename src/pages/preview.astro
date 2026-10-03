@@ -1,0 +1,242 @@
+---
+/**
+ * 预览页 —— 列出 `content/previews/**` 下未发布的文章。
+ *
+ * 对应 `app/pages/preview.vue`。
+ * 数据链路：Nuxt 是 `queryArticleIndex('previews/%')`（stem LIKE），
+ * Astro 侧用 `entry.id.startsWith('previews/')` 达到同一效果。
+ *
+ * ## 与 Nuxt 版的差异
+ * 1. **多了一层 `UtilListTransition`**。`app/pages/preview.vue:33` 的 `<menu>` 是裸的，
+ *    没有 FLIP 包装——这里按任务要求给三个列表页统一接上，好让排序也有过渡动画。
+ *    两层 wrapper 都不参与高度（`.list-transition-content` 只是 `display: flow-root`），
+ *    对页高门禁无影响。
+ *    **别把它删掉去「对齐线上」**：`scripts/check-list-controls.mjs` 把这段标记当成
+ *    不变式（还有一条负控：摘掉 wrapper 必须让该门禁变红）。
+ * 2. **条目仍包在 `<li>` 里**。`Article.astro` 不接受任意 `data-*`
+ *    （Astro 没有 attribute fallthrough），而页面脚本要靠 `data-date` / `data-category`
+ *    排序与筛选，只能由外层 `<li>` 承接。Nuxt 侧是卡片直接挂在 `<menu>` 下。
+ * 3. **`useUpdated` 的两种形态各存一份**（`<template>` 里），原因同 `index.astro`：
+ *    `Article.astro:75-77` 的 `showCreated` / `showUpdated` 是**结构**差异，
+ *    客户端切 class 还原不了，而 `<time>` 的措辞由构建机 locale 决定，只能预先渲染。
+ */
+import Blog from '../layouts/Blog.astro'
+import BlogLog from '../components/widget/BlogLog.astro'
+import OrderToggle from '../components/post/OrderToggle.astro'
+import Article from '../components/post/Article.astro'
+import ListTransition from '../components/util/ListTransition.astro'
+import UtilLink from '../components/blog/UtilLink.astro'
+import Icon from '../components/Icon.astro'
+import { categorizeArticles, getAllContent, sortArticles, toPath } from '../lib/content'
+																import blogConfig from '../config/blog'
+
+const all = await getAllContent()
+const previews = all.filter(e => e.id.startsWith('previews/'))
+
+const { sorted, sortOrder, isAscending } = sortArticles(previews)
+const { categories, byCategory } = categorizeArticles(sorted)
+const list = byCategory(undefined)
+
+const listStates = ['date', 'updated'] as const
+---
+
+<Blog title="预览" hasAside description={`${blogConfig.title}的文章预览。`}>
+	{/* 同 archive.astro：`Blog.astro` 已提供 `<main id="main-content">`，不再嵌套。 */}
+	<div class="preview">
+		<div class="preview-header">
+			{/*
+			 * 返回首页的箭头链接对应 `app/pages/preview.vue:19-23`。
+			 * 此前这里只写了裸文本「预览」——`UtilLink` + `Icon` 整个漏掉了，
+			 * 线上 HTML 是 `<h1 data-v-77ae54c9><a href="/" class="hide-above-mobile"
+			 * title="返回首页"><span class="iconify i-tabler:chevron-left"></span></a>预览</h1>`。
+			 * `/preview` 从未被任何门禁量过（robots `Disallow`，不在 sitemap 里），
+			 * 所以这个缺失一直没被发现。
+			 */}
+			<h1>
+				<UtilLink class="hide-above-mobile" to="/" title="返回首页">
+					<Icon name="tabler:chevron-left" />
+				</UtilLink>预览
+			</h1>
+			<OrderToggle
+				sortOrder={sortOrder}
+				isAscending={isAscending}
+				categories={categories}
+			/>
+		</div>
+		<p>勇敢的人探索世界。这里是一些还未发布的文章。</p>
+
+		<ListTransition id="preview-list">
+			<menu
+				class="proper-height"
+				data-preview-list
+				data-default-order={sortOrder}
+				data-default-ascending={String(isAscending)}
+			>
+				{list.map(article => (
+					<li
+						data-article-item
+						data-date={article.data.date ?? ''}
+						data-updated={article.data.updated ?? article.data.date ?? ''}
+						data-category={article.data.categories?.[0] ?? ''}
+					>
+						<Article
+							title={article.data.title}
+							description={article.data.description}
+							date={article.data.date}
+							updated={article.data.updated}
+							categories={article.data.categories}
+							image={article.data.image}
+							path={toPath(article)}
+							readingTime={article.data.readingTime}
+							useUpdated={sortOrder === 'updated'}
+							data-list-key={toPath(article)}
+						/>
+					</li>
+				))}
+			</menu>
+		</ListTransition>
+
+		{/* 惰性数据源：两种 useUpdated 形态各一份，客户端按 sortOrder 挑。
+		    包装成 `<div data-preview-entry>` 是为了让每个形态带上身份——
+		    `Article.astro` 不接受任意 `data-*`，而卡片本身要保持逐字不动（cid 靠它）。 */}
+		<template data-preview-dataset>
+			{list.flatMap(article => listStates.map(state => (
+				<div
+					data-preview-entry
+					data-preview-key={toPath(article)}
+					data-preview-state={state}
+				>
+					<Article
+						title={article.data.title}
+						description={article.data.description}
+						date={article.data.date}
+						updated={article.data.updated}
+						categories={article.data.categories}
+						image={article.data.image}
+						path={toPath(article)}
+						readingTime={article.data.readingTime}
+						useUpdated={state === 'updated'}
+						data-list-key={toPath(article)}
+					/>
+				</div>
+			)))}
+		</template>
+	</div>
+
+	<Fragment slot="aside">
+		<BlogLog />
+	</Fragment>
+</Blog>
+
+<script>
+	/**
+	 * 预览页控制器。
+	 *
+	 * `OrderToggle` 派发的 `partial:change` 带 `{ category, sortOrder, isAscending }`
+	 * **三个**字段，此前本页只读 `category`、把排序与方向丢掉后按构建期默认值重排，
+	 * 于是排序按钮与方向按钮都是死的。现在三个字段全部参与。
+	 *
+	 * 比较器 = `orderBy(list, [sortOrder, 'date'], [isAscending ? 'asc' : 'desc'])`。
+	 */
+	function initPreviewList() {
+		const list = document.querySelector('[data-preview-list]')
+		if (!(list instanceof HTMLElement) || list.dataset.sortReady)
+			return
+		list.dataset.sortReady = '1'
+
+		const dataset = document.querySelector('[data-preview-dataset]')
+		const flip = document.querySelector('#preview-list')
+		if (!list.children.length || !(dataset instanceof HTMLTemplateElement))
+			return
+
+		/** path → { date: 包装节点, updated: 包装节点 }；外层 `<li>` 保持不动，只换里面的卡片 */
+		const pool = new Map()
+		for (const node of dataset.content.querySelectorAll('[data-preview-entry]')) {
+			const key = node.dataset.previewKey
+			if (!key)
+				continue
+			let item = pool.get(key)
+			if (!item) {
+				item = {}
+				pool.set(key, item)
+			}
+			item[node.dataset.previewState] = node
+		}
+
+		const items = [...list.querySelectorAll('[data-article-item]')]
+
+		/** es-toolkit `compareAscending` 的字符串分支：无 localeCompare */
+		function compareValues(a, b) {
+			if (a < b) return -1
+			if (a > b) return 1
+			return 0
+		}
+
+		function apply(order, ascending, category) {
+			/*
+			 * 关键顺序：先量旧位置，再改 DOM。
+			 * MutationObserver 在变更**之后**的微任务里才回调，那时新位置已落布局，
+			 * 拿不到 before rect；引擎只能靠位置缓存，所以必须手动 refresh()。
+			 */
+			flip?.listTransition?.refresh()
+
+			const state = order === 'updated' ? 'updated' : 'date'
+			const dir = ascending ? 1 : -1
+
+			// 换成对应 useUpdated 形态的卡片（`data-list-key` 不变，FLIP 仍接得上）
+			for (const item of items) {
+				const current = item.querySelector('[data-list-key]')
+				const key = current?.dataset.listKey
+				const want = key ? pool.get(key)?.[state]?.firstElementChild : undefined
+				if (want && current !== want)
+					current?.replaceWith(want.cloneNode(true))
+			}
+
+			const sorted = [...items].sort((a, b) => {
+				const p = compareValues(a.dataset[order] || '', b.dataset[order] || '')
+				return p !== 0 ? p * dir : compareValues(a.dataset.date || '', b.dataset.date || '') * dir
+			})
+			for (const el of sorted)
+				list.appendChild(el)
+
+			for (const el of items)
+				el.hidden = Boolean(category) && el.dataset.category !== category
+		}
+
+		document.addEventListener('partial:change', (e) => {
+			const d = e.detail || {}
+			// OrderToggle：三个字段全部参与，不再回退到构建期默认值
+			if (d.category !== undefined || d.sortOrder !== undefined || d.isAscending !== undefined) {
+				apply(
+					d.sortOrder ?? list.dataset.defaultOrder ?? 'date',
+					d.isAscending ?? (list.dataset.defaultAscending === 'true'),
+					d.category ?? '',
+				)
+			}
+		})
+
+		window.__applyPreviewSort = apply
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initPreviewList)
+	else
+		initPreviewList()
+	document.addEventListener('astro:page-load', initPreviewList)
+</script>
+
+<style>
+.preview {
+	margin: 1rem;
+}
+
+.preview-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+
+	h1 {
+		mask-image: linear-gradient(#FFF, transparent);
+	}
+}
+</style>

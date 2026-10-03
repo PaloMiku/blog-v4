@@ -1,0 +1,177 @@
+---
+/**
+ * Blog 布局 —— 三栏外壳。
+ *
+ * 对应 `app/layouts/default.vue`。结构与 class/id 名必须逐字一致，
+ * 因为 CSS 依赖 `:has(> .blog-aside-track > :global(#blog-aside):not(.is-empty))`
+ * 决定是否收成两栏。改名会静默破坏响应式布局。
+ */
+import BlogAside from '../components/blog/BlogAside.astro'
+import BlogFooter from '../components/blog/BlogFooter.astro'
+import BlogPanel from '../components/blog/BlogPanel.astro'
+import BlogSidebar from '../components/blog/BlogSidebar.astro'
+import SkipToContent from '../components/blog/SkipToContent.astro'
+import Base from './Base.astro'
+import ModalHost from '../components/ModalHost.astro'
+import '../styles/index.css'
+
+interface Props {
+	title: string
+	/** 是否有具名 aside 插槽（对应 Nuxt 的 provideLayoutSlots().aside） */
+	hasAside?: boolean
+	/**
+	 * 以下三项只往 Base.astro 透传，让各页自己声明 SEO 数据。
+	 *
+	 * 为什么需要：源项目的 unhead `useSeoMeta` 是**逐页声明**的
+	 * （`app/pages/index.vue:5-8`、`link.vue:12-16` 等），
+	 * 不在 `app/app.vue` 里。若不给页面传值的通道，
+	 * `Base.astro` 就只能按 pathname 硬编码一张映射表——
+	 * 那是把页面自己的数据搬到布局里，与源项目结构相反。
+	 */
+	description?: string
+	image?: string
+	ogType?: 'website' | 'article' | 'profile'
+	noindex?: boolean
+	/** 透传给 Base.astro：省掉 description / og:image / canonical（见 Base 的注释） */
+	minimalSeo?: boolean
+	/** 透传给 Base.astro 的内容页结构化数据节点 */
+	jsonLd?: Record<string, unknown>[]
+}
+
+const { title, hasAside = false, description, image, ogType, noindex, minimalSeo, jsonLd } = Astro.props
+---
+
+<Base title={title} description={description} image={image} ogType={ogType} noindex={noindex} minimalSeo={minimalSeo} jsonLd={jsonLd}>
+	{/*
+	 * 键盘用户的「跳到正文」入口。对应 `app/layouts/default.vue` 里
+	 * `<BlogSkipToContent />` 的位置（BlogSidebar 之前）。
+	 * 组件早就写好了、也与基线逐字一致，只是先前没有任何布局引用它——
+	 * 静态 HTML 与浏览器实测里都找不到 `a.skip-link`，
+	 * 于是一条无障碍通路在迁移中静默丢失，且因为「没报错」一直没人发现。
+	 */}
+	<SkipToContent />
+
+	<BlogSidebar />
+
+	<main id="main-content">
+		<slot />
+	</main>
+
+	{/* 与正文同高的容器限制侧栏 sticky 边界，让页脚进入视口时将侧栏向上顶走。 */}
+	<div class="blog-aside-track">
+		{/*
+		 * `hasAside` 必须显式传下去，否则 BlogAside 会退回
+		 * `Astro.slots.has('default')` 推断——而下面这个 `<slot name="aside" />`
+		 * **无论页面有没有提供 aside 都会被塞进默认 slot**，推断恒为 true，
+		 * 于是 `<aside>` 永远拿不到 `is-empty`，
+		 * `#blog-root:not(:has(> … #blog-aside:not(.is-empty)))` 永不成立，
+		 * 无侧栏的页面（如 /link）也会按三栏排版，正文被压窄 296px。
+		 */
+		}
+		<BlogAside hasAside={hasAside || Astro.slots.has('aside')}>
+			<slot name="aside" />
+		</BlogAside>
+	</div>
+
+	<BlogFooter />
+	<BlogPanel hasAside={hasAside} />
+
+	{/* 模态栈宿主：搜索、灯箱等弹窗的唯一挂载点（@bikariya/modals 的替代） */}
+	<div id="modal-root">
+		<ModalHost />
+	</div>
+</Base>
+
+<style>
+	:global(#blog-root) {
+		--aside-width: 280px;
+		--sidebar-width: var(--aside-width);
+
+		display: grid;
+		grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--aside-width);
+		align-items: start;
+		column-gap: 1rem;
+		width: 100%;
+		min-width: 0;
+		max-width: calc(var(--aside-width) + 1rem + 1080px);
+		margin-inline: auto;
+
+		&:not(:has(> .blog-aside-track > :global(#blog-aside):not(.is-empty))) {
+			grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+		}
+
+		@media (max-width: 1080px) {
+			--sidebar-width: clamp(240px, 25vw, var(--aside-width));
+
+			&, &:not(:has(> .blog-aside-track > :global(#blog-aside):not(.is-empty))) {
+				grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+			}
+		}
+
+		@media (max-width: 768px) {
+			&, &:not(:has(> .blog-aside-track > :global(#blog-aside):not(.is-empty))) {
+				grid-template-columns: minmax(0, 1fr);
+			}
+		}
+	}
+
+	:global(#blog-sidebar),
+	:global(#blog-aside) {
+		position: sticky;
+		top: 0;
+		height: 100vh;
+		height: 100dvh;
+		min-width: 0;
+		scrollbar-width: thin;
+	}
+
+	:global(#blog-sidebar) {
+		grid-area: 1 / 1;
+	}
+
+	:global(#main-content) {
+		grid-area: 1 / 2;
+		/* 保留语义 main 和可见溢出，不影响正文内的 sticky 元素。 */
+		min-width: 0;
+
+		@media (max-width: 768px) {
+			grid-column: 1;
+		}
+	}
+
+	.blog-aside-track {
+		display: contents;
+
+		@media not (max-width: 1080px) {
+			&:has(> :global(#blog-aside):not(.is-empty)) {
+				display: block;
+				grid-area: 1 / 3;
+				align-self: stretch;
+				min-width: 0;
+			}
+		}
+	}
+
+	/*
+	 * 整个选择器必须包进一个 :global()。
+	 *
+	 * 写成 `:global(#blog-root) > .blog-footer` 时，Astro 只把 `#blog-root`
+	 * 变成全局，**组合符后面的 `.blog-footer` 仍然被 scoped**，产物里出来是：
+	 *   #blog-root > .blog-footer[data-astro-cid-<Blog.astro 的 cid>]
+	 * 而 `.blog-footer` 是 BlogFooter.astro 渲染的，带的是它自己的 cid，
+	 * 于是这条规则**永远不匹配**——页脚因此不是 grid item，宽度从
+	 * 1048px 塌成 248px（shrink-to-fit），三栏被挤成纵向。
+	 * 实测代价：每个有页脚的页面都多出 349~582px 高度。
+	 *
+	 * 同理，`.blog-aside-track` 之所以能裸写，是因为它确实由本组件的
+	 * 模板渲染；凡是不在本组件模板里的元素，选择器就得整体 global。
+	 */
+	:global(#blog-root > .blog-footer) {
+		grid-area: 2 / 2 / auto / -1;
+		min-width: 0;
+
+		@media (max-width: 768px) {
+			grid-column: 1 / -1;
+		}
+	}
+</style>

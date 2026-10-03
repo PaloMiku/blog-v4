@@ -1,0 +1,112 @@
+---
+/**
+ * ListTransition 组件（Astro 版），对应 `app/components/util/ListTransition.vue`。
+ *
+ * ## 结构
+ * 与原组件逐字一致：`.list-transition`（更新后带 `data-list-updated`）
+ * > `.list-transition-content`（`display: flow-root`）> 默认 slot。
+ * `data-list-updated` **不在服务端渲染**——原版 `updated` 初值是 `false`，
+ * 只在第一次更新后为真，所以首屏产物里不该有这个属性。
+ *
+ * ## 动画引擎不在本文件
+ * 全部逻辑在 `src/lib/list-transition.ts`。信号来源从 Vue 的
+ * `watch(() => [props.items, props.state])` 换成 `MutationObserver`：
+ * Astro 只构建一次，没有响应式运行时，靠 prop 变化触发在静态站里永远不会发生。
+ * 详见该文件头注（含「before 的 rect 早于 DOM 变更」这个前提怎么保住）。
+ *
+ * ## 页面契约
+ * 1. 动画条目 = slot 内容里带 `data-list-key` 的元素。
+ *    `/` 用 `<Article data-list-key={toPath(entry)} />`；
+ *    `/archive` 用 `<Archive data-list-key={toPath(article)} />`
+ *    （**注意**：当前 `archive.astro` 只给 `.archive-title` 加了 `data-list-key`，
+ *    条目本身还没有——不补上的话归档页只有年份标题参与 FLIP）。
+ * 2. 重排由页面自己的脚本做（`OrderToggle` 派发 `partial:change`，
+ *    页面重排 DOM）。组件**不**排序、不过滤、不写 URL。
+ * 3. 组件不渲染 `items` / `state` 两个 prop——静态渲染下没有对应的运行时状态。
+ *    「排序方式变了」这件事由第 2 条的 DOM 变更自然体现，无需显式传。
+ * 4. 根元素带 `data-list-transition-root`，页面可用它定位（脚本内部也用它）。
+ *
+ * ## 作用域陷阱（MIGRATION-BRIEF §3）
+ * - 陷阱 1：Astro 无 attribute fallthrough，故显式声明 `class` / `style` / `id` 并用
+ *   `class:list` 合并。
+ * - 陷阱 3：`:global()` 不传播。面向 slot 内容的层级选择器要**逐层**写 `:global()`。
+ *   `.article-card` / `.article-item` 来自 `Article.astro` / `Archive.astro`（各自的 cid），
+ *   写成 `.list-transition[data-list-updated] .article-card` 会被要求命中本页 cid，
+ *   编译通过但**永不匹配**。故后代部分必须 `:global()`，
+ *   且因为要覆盖两个 class，摊平成逗号并列的扁平选择器、不用原生嵌套。
+ */
+interface Props {
+	/** 合并到根元素（对应 Vue 的 attribute fallthrough） */
+	class?: string
+	style?: string | Record<string, string | number>
+	id?: string
+}
+
+const { class: className, style, id } = Astro.props
+---
+
+<div class:list={['list-transition', className]} style={style} id={id} data-list-transition-root>
+	<div class="list-transition-content" data-list-transition-content>
+		<slot />
+	</div>
+</div>
+
+<script>
+	import type { ListTransitionHandle } from '../../lib/list-transition'
+	import { initListTransition } from '../../lib/list-transition'
+
+	/* 暴露给页面脚本的类型；挂在 DOM 节点上，页面无需 import 也能取到 */
+	type ListRoot = HTMLElement & { listTransition?: ListTransitionHandle }
+
+	/*
+	 * 原生脚本会被 Astro 去重合并，用 data 属性定位各个实例；
+	 * `data-list-transition-ready` 保证同一节点重复 init 时直接返回
+	 * （astro:page-load 与 DOMContentLoaded 都可能先到）。
+	 */
+	function initAll() {
+		for (const node of document.querySelectorAll('[data-list-transition-root]')) {
+			if (!(node instanceof HTMLElement))
+				continue
+			const outer = node as ListRoot
+			if (outer.dataset.listTransitionReady)
+				continue
+			const inner = outer.querySelector(':scope > [data-list-transition-content]')
+			if (!(inner instanceof HTMLElement))
+				continue
+			outer.dataset.listTransitionReady = '1'
+			// 供页面在自己改 DOM 之前手动刷新位置缓存（见头注第 3 条）
+			outer.listTransition = initListTransition(outer, inner)
+		}
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.list-transition-content {
+	/* 包含首尾条目的 margin，测量高度与真实占位保持一致。 */
+	display: flow-root;
+}
+
+.list-transition[data-changing] {
+	overflow: clip;
+	overflow-anchor: none;
+}
+
+/*
+ * 原版是 `.list-transition[data-list-updated] :deep(:is(.article-card, .article-item))`，
+ * 作用是：一旦发生过一次更新，就关掉条目自带的入场动画，把动画权交给 FLIP
+ * （否则两者叠加，卡片会先淡入一次再被 FLIP 接管）。
+ * `.article-card` / `.article-item` 由 Article.astro / Archive.astro 渲染，
+ * 带的是**它们自己的** cid，故必须 :global()（陷阱 3）。
+ * 摊平成两条扁平选择器：`:global()` 在原生嵌套里不传播，嵌着写会漏掉 cid。
+ */
+.list-transition[data-list-updated] :global(.article-card),
+.list-transition[data-list-updated] :global(.article-item) {
+	animation: none;
+}
+</style>

@@ -1,0 +1,158 @@
+---
+/**
+ * BlogHeader 组件（站点外壳版，Astro），对应 `app/components/blog/BlogHeader.global.vue`。
+ *
+ * ## 只有这一份 BlogHeader
+ * 仓库曾并存两份同名同职责的 `BlogHeader.astro`：根级 `src/components/BlogHeader.astro`
+ * 按「内容组件」定位，只有 MDX 传来的 className、没有 `to` prop。注释曾称它
+ * 「已登记在 `src/lib/content-components.ts`」——**那是错的，它从未被登记**，
+ * 该孤儿已删除。现在 MDX 的 `::blog-header` 与侧栏的 `<BlogHeader to="/" />`
+ * 都指向**本文件**：`src/lib/content-components.ts:49` import 它、`:78` 登记为
+ * `BlogHeader`。本文件 props 是超集——多一个 `to`；不传时根元素仍是 `<span>`
+ * （`UtilLink` 不传 `to` 的既有语义），所以两处调用都能用同一份。
+ *
+ * ## 迁移差异（与 Nuxt 版）
+ * 1. `NuxtImg` → 裸 `<img>`（astro:assets 属 Phase 5）
+ * 2. `getFixedDelay` 来自 `app/utils/anim.ts`，该文件顶部 import 了 `@vueuse/core`，
+ *    跨项目引用会把 Vue 生态拖进 Astro 构建，故内联那一行算式。
+ * 3. 原模板用 `<component :is="tag">` 动态标签；Astro 模板语法不支持字符串动态标签，
+ *    这里只分支出实际会用到的两种（`h1` 与默认 `div`）。
+ * 4. `@font-face` 里的字体文件已于 2026-10-01 从源项目 `public/fonts/` 原样复制到
+ *    `astro-site/public/fonts/`（17,048 B，SHA256 `442EF7A1…`），与 Nuxt 基线一致。
+ *    此前 Astro 构建产物里没有 `fonts/`，标题字体与 Atom 样式都静默回退到 Noto Sans SC。
+ */
+import { appConfig } from '../../lib/app-config'
+import { currentPageHref } from '../../lib/shared'
+
+interface Props {
+	/** 链接目标；不传则根元素是 `<span>`（与 UtilLink 的分支语义一致） */
+	to?: string
+	/** 标题所用的标签名 */
+	tag?: string
+	/** MDX / 布局层传入的 className；Astro 没有 attribute fallthrough，需显式接收后合并 */
+	class?: string
+}
+
+const { to, tag = 'div', class: className } = Astro.props
+
+const { header, title } = appConfig
+
+/** 等价于 getFixedDelay((i + 1) * .1) */
+function getFixedDelay(s: number, fixed = 2) {
+	return `--delay:${s.toFixed(fixed)}s`
+}
+
+const Target = to === undefined ? 'span' : 'a'
+
+/*
+ * `NuxtLink` 会给指向当前页的链接自动加 `aria-current="page"`，这里补上。
+ * 首页与 `/link` 的 h1 站名、侧栏站名都走本组件，缺了它就少这几处标记。
+ * 语义与边界见 `lib/shared/link.ts` 的 `currentPageHref`。
+ */
+const ariaCurrent = currentPageHref(to, Astro.url.pathname)
+---
+
+<Target class:list={['blog-header', className]} href={to} aria-current={ariaCurrent}>
+	<img
+		src={header.logo}
+		class:list={['blog-logo', 'round-cobblestone', { circle: header.showTitle }]}
+		alt={title}
+	/>
+
+	{header.showTitle && (
+		<div class="blog-text">
+			{tag === 'h1' ? (
+				<h1 class="header-title">
+					{[...title].map((char, charIndex) => (
+						<span class="split-char" style={getFixedDelay((charIndex + 1) * .1)}>{char}</span>
+					))}
+				</h1>
+			) : (
+				<div class="header-title">
+					{[...title].map((char, charIndex) => (
+						<span class="split-char" style={getFixedDelay((charIndex + 1) * .1)}>{char}</span>
+					))}
+				</div>
+			)}
+
+			<div class="header-subtitle">
+				{header.subtitle}
+			</div>
+		</div>
+	)}
+</Target>
+
+<style>
+/*
+ * `:global()` 是必须的，原因是**动态标签**。
+ *
+ * 模板里 `const Target = to === undefined ? 'span' : 'a'`，然后 `<Target class="blog-header">`。
+ * Astro 在**编译期**决定 scope 属性，认不出 `Target` 最终是哪个标签，
+ * 于是渲染出的 `<a>` 只带**调用方**的 cid：
+ *   astro  <a href="/" data-astro-cid-cgl6nrfz class="blog-header">
+ * 而本组件的 `.blog-header` 会编译成 `.blog-header[data-astro-cid-3mf7hpah]`，
+ * 永远匹配不上。
+ *
+ * Vue 侧没有这个问题：`<component :is>` 在**运行时**解析，会给渲染出的根元素
+ * 补上当前组件的 scope id，所以线上那个 `<a>` 带着两个 `data-v`。
+ *
+ * 组件内部的 `.blog-logo` / `.blog-text` / `.header-title` 都在静态标签上，
+ * 照常被 scope，无需处理。
+ * 见 docs/astro-phase1-findings.md §50。
+ */
+:global(.blog-header) {
+	contain: layout;
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	position: relative;
+	margin: clamp(1rem, 2rem, 5vh) 1rem min(1rem, 5vh);
+	line-height: 1.4;
+	color: var(--c-text);
+	user-select: none;
+}
+
+.blog-logo {
+	height: 3em;
+
+	&.circle {
+		width: 3em;
+		border-radius: 50%;
+		box-shadow: var(--box-shadow-1), var(--box-shadow-3);
+	}
+}
+
+@font-face {
+	font-family: LXGWWenKai;
+	src: url("/fonts/LXGWWenKai.woff2");
+}
+
+.header-title {
+	font-family: "LXGW WenKai Screen", "LXGW WenKai", "Noto Sans SC", sans-serif;
+	font-size: 1.5em;
+	font-synthesis: none;
+	font-variation-settings: "wght" 600, "BEVL" 100;
+
+	> .split-char {
+		animation: 3.14s infinite alternate vf-weight, 2.72s infinite alternate vf-bevel;
+		animation-delay: var(--delay);
+		animation-play-state: paused;
+	}
+}
+
+.header-subtitle {
+	opacity: 0.5;
+	font-size: 0.75em;
+}
+
+@keyframes vf-weight {
+	0% { font-weight: 600; }
+	38.2% { font-weight: 300; }
+	100% { font-weight: 900; }
+}
+
+@keyframes vf-bevel {
+	from { font-variation-settings: "BEVL" 100; }
+	to { font-variation-settings: "BEVL" 1; }
+}
+</style>

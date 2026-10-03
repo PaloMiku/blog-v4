@@ -1,0 +1,299 @@
+---
+/**
+ * Pagination 组件（Astro 版）。原生脚本自管页码，**不做 Vue 岛**。
+ *
+ * ═══ defineModel 的 API 决策（Astro 无对应物）═══
+ * 与 Toggle/Slider/Expand 统一：单向 `value`（构建期初始页码）
+ * + 组件自管运行时状态 + 两个读取通道：
+ *   1. 根元素 `data-value`（当前页码）
+ *   2. 冒泡的 `CustomEvent('partial:change', { detail: { value: number } })`
+ *
+ * 调用方 `app/pages/index.vue:70`：`<ZPagination v-model="page" sticky avoid :total-pages="totalPages" />`。
+ * Astro 侧改为监听 `partial:change` 后自行替换列表内容（列表分页属页面级逻辑）。
+ *
+ * ═══ 能力降级 ═══
+ * 1. `useAvoidTarget(el, avoid)`（app/composables/useAvoid.ts）—— 「躲避」逻辑**未移植**。
+ *    `avoid` prop 仍声明并写到 `data-avoid`，但没有行为。
+ *    已用 CDP 实测确认这在当前站点上**不可观测**：注册本组件的首页上，
+ *    `.panel-anchor` 与 sticky 分页条在 1600×1000 / 390×844 两个视口、
+ *    四个滚动状态下都永不重叠，线上 `#blog-panel` 的 transform 恒为 `none`。
+ *    数字与逐状态几何见 `components/blog/BlogPanel.astro` 顶部注释。
+ * 2. `useEventBus('page-transition')`（Nuxt 内置）—— 页面切换期间的分页快照
+ *    （`data-pagination-snapshot` + `--pagination-offset`）**未移植**，
+ *    因为 Astro 没有对应的页面过渡事件总线。CSS 钩子保留在 <style> 里，
+ *    等 Phase 4 的 view transition 方案落地后再接。
+ * 3. `useElementVisibility(anchorEl)`（@vueuse/core）→ 用原生 IntersectionObserver
+ *    复现（给根元素加 `.expand` class）。**注意极性**：`useElementVisibility` 返回的是
+ *    「可见=true」，所以锚点**进入**视口才展开。本轮曾把它写成 `!isIntersecting`，
+ *    四种滚动状态全部与线上镜像相反，详见 <script> 里的注释。
+ * 4. `getPaginationIndicator` 从 `app/composables/usePagination.ts` 内联到 frontmatter
+ *    （不重建 composable 体系），逻辑逐字照搬。
+ */
+import Button from './Button.astro'
+import Icon from '../Icon.astro'
+
+interface Props {
+	totalPages: number
+	/** 当前页码两边的展开范围，默认 2 */
+	expandPages?: number
+	sticky?: boolean
+	avoid?: boolean
+	/** 构建期初始页码（原 `v-model` 的初值） */
+	value?: number
+}
+
+const { totalPages, expandPages = 2, sticky = false, avoid = false, value = 1 } = Astro.props
+
+/** 内联自 app/composables/usePagination.ts（逐字照搬） */
+function getPaginationIndicator(current: number, total: number, expand = 2) {
+	const pages: number[] = [1]
+	const start = Math.max(2, current - expand)
+	const end = Math.min(total - 1, current + expand)
+	if (start > 2)
+		pages.push(-1) // -1 means ellipsis
+	for (let i = start; i <= end; i++) pages.push(i)
+	if (end < total - 1)
+		pages.push(-1)
+	if (total > 1)
+		pages.push(total)
+	return pages
+}
+
+const pageArr = getPaginationIndicator(value, totalPages, expandPages)
+---
+
+<nav
+	class:list={['pagination', { sticky }]}
+	aria-label={`第${value}页，共${totalPages}页`}
+	style={{ '--collapsed-width': `${pageArr.length * 2 + 6}em` }}
+	data-pagination-root
+	data-value={String(value)}
+	data-total-pages={totalPages}
+	data-avoid={avoid ? '' : undefined}
+	data-sticky={sticky ? '' : undefined}
+>
+	{/*
+	 * 上一页 / 下一页必须走 `Button`，不能手写 `<button>`。
+	 *
+	 * 原版这里是 `<ZButton class="pagination-button rtl-flip" icon="tabler:arrow-left">`，
+	 * ZButton 渲染出来是：
+	 *     <button class="z-button button pagination-button rtl-flip" …>
+	 *       <div class="button-main"><svg/></div>
+	 *     </button>
+	 * 也就是说「翻页按钮」同时带了两层样式：`Button` 给底子
+	 * （border / background / padding / border-radius / box-shadow / cursor），
+	 * `.pagination-button` 只把其中 border、border-radius、box-shadow 抹掉。
+	 *
+	 * 手写 `<button class="pagination-button">` 的后果是：那些被抹掉的属性
+	 **再也回不来了** —— 按钮没有底色、没有内边距、没有圆角，
+	 * 图标也不在 `button-main` 的 flex 居中里。
+	 * 实测线上 `.button[data-v-…]{border:…;background-color:…;padding:.4em .6em;…}`，
+	 * Astro 产物里 `.button` 规则一条都没有（首页根本没引用用到 Button 的页面，
+	 * 那份样式压根没被产出），首页与归档页的翻页按钮因此是**裸的**。
+	 */}
+	<Button
+		class="pagination-button rtl-flip"
+		icon="tabler:arrow-left"
+		aria-label="上一页"
+		disabled={value <= 1}
+		data-page-prev
+	/>
+
+	{pageArr.map((i) => (
+		Number.isFinite(i)
+			? (
+				<button
+					class="pagination-num"
+					class:list={{ active: i === value }}
+					aria-label={`第${i}页`}
+					data-page-num={i}
+				>
+					{i}
+				</button>
+			)
+			: (
+				/* TODO: 点击后自主选择目标页面 */
+				<button class="pagination-num" disabled>…</button>
+			)
+	))}
+
+	<Button
+		class="pagination-button rtl-flip"
+		icon="tabler:arrow-right"
+		aria-label="下一页"
+		disabled={value >= totalPages}
+		data-page-next
+	/>
+</nav>
+{/* 占位锚点：用于判断分页条是否进入视口（复现 useElementVisibility） */}
+<div data-pagination-anchor />
+
+<script>
+	// 原生脚本会被 Astro 去重合并，故用 data 属性定位各个实例
+	function initPagination(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.paginationReady)
+			return
+		root.dataset.paginationReady = '1'
+
+		const totalPages = Number(root.dataset.totalPages)
+		const nums = [...root.querySelectorAll('[data-page-num]')]
+
+		function goto(page) {
+			if (page < 1 || page > totalPages)
+				return
+			root.dataset.value = String(page)
+			root.setAttribute('aria-label', `第${page}页，共${totalPages}页`)
+			for (const btn of nums)
+				btn.classList.toggle('active', Number(btn.dataset.pageNum) === page)
+			const prev = root.querySelector('[data-page-prev]')
+			const next = root.querySelector('[data-page-next]')
+			if (prev)
+				prev.disabled = page <= 1
+			if (next)
+				next.disabled = page >= totalPages
+			root.dispatchEvent(new CustomEvent('partial:change', {
+				bubbles: true,
+				detail: { value: page },
+			}))
+		}
+
+		root.addEventListener('click', (e) => {
+			if (e.target.closest?.('[data-page-prev]')) {
+				goto(Number(root.dataset.value) - 1)
+				return
+			}
+			if (e.target.closest?.('[data-page-next]')) {
+				goto(Number(root.dataset.value) + 1)
+				return
+			}
+			const num = e.target.closest?.('[data-page-num]')
+			if (num)
+				goto(Number(num.dataset.pageNum))
+		})
+
+		/*
+		 * 复现 `useElementVisibility(anchorEl)`（Pagination.vue:14）。
+		 *
+		 * ⚠️ 极性：`.expand` 是**锚点可见时**加，不是不可见时加。
+		 * `useElementVisibility` 返回的是「元素是否可见」，Vue 那边
+		 * `:class="{ sticky, expand }"` 直接用它，于是语义是：
+		 *   锚点进入视口 → 展开成整行（752px）
+		 *   锚点离开视口 → 收成 `--collapsed-width` 药丸（14em = 224px）
+		 * 之前这里写成 `!entry.isIntersecting`，四个滚动状态全部与线上镜像相反。
+		 *
+		 * 症状很隐蔽：`.expand` 一位之差打掉 `&:not(.expand){max-width:var(--collapsed-width)}`，
+		 * 分页条从 224px 变 752px；free space 从 ~2px 变 483px，于是
+		 * `&:first-child{margin-inline-end:auto}` / `&:last-child{margin-inline-start:auto}`
+		 * 这两条 auto 外边距从 0px 变成 240.625px。**页高完全不变**（横向差异），
+		 * 只有按属性采样的样式对比才抓得到。
+		 */
+		const anchor = root.nextElementSibling
+		if (anchor?.matches?.('[data-pagination-anchor]') && 'IntersectionObserver' in window) {
+			new IntersectionObserver(([entry]) => {
+				root.classList.toggle('expand', entry.isIntersecting)
+			}, { threshold: 0 }).observe(anchor)
+		}
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('[data-pagination-root]'))
+			initPagination(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.pagination {
+	display: flex;
+	max-width: calc(100vw);
+	margin: 1rem auto;
+	border: 1px solid var(--c-border);
+	border-radius: 0.5rem;
+	box-shadow: var(--box-shadow-1);
+	background-color: var(--ld-bg-card);
+	transition: max-width 0.2s var(--max-bezier-to-full);
+	font-variant-numeric: tabular-nums;
+
+	/*
+	 * 以下两个块对应 Nuxt 侧挂在 `useEventBus('page-transition')` 上的分页快照逻辑。
+	 * Astro 侧尚无该事件总线（Phase 4），保留 CSS 钩子待接入。
+	 */
+	:root[data-article-transition] & {
+		transition: none !important;
+		view-transition-name: article-pagination;
+
+		/* 保留布局占位，避免移动端快照按大视口重新定位 sticky。 */
+		&[data-pagination-snapshot] {
+			position: relative;
+			bottom: auto;
+			translate: 0 var(--pagination-offset, 0px);
+		}
+	}
+
+	&.sticky {
+		position: sticky;
+		bottom: min(2em, 5%);
+
+		&:not(.expand) {
+			max-width: var(--collapsed-width);
+			transition-timing-function: var(--max-bezier-to-collapse);
+		}
+	}
+
+	/*
+	 * `:global()` 是必须的：`.pagination-button` 现在由 `<Button>` 渲染，
+	 * 元素带的是 **Button 的 cid**，不是本组件的。
+	 * Vue 那边能匹配是因为子组件根元素**同时**带父 scope id，Astro 没有这个机制。
+	 * （这条是改成走 `Button` 之后立刻被 audit-dead-scope 报出来的死规则，
+	 *   不是理论推演。）
+	 */
+	> :global(.pagination-button) {
+		border: none;
+		border-radius: 0;
+		box-shadow: none;
+
+		&:first-child {
+			margin-inline-end: auto;
+			border-radius: 0.5rem 0 0 0.5rem;
+		}
+
+		&:last-child {
+			margin-inline-start: auto;
+			border-radius: 0 0.5rem 0.5rem 0;
+		}
+	}
+
+	> .pagination-num {
+		width: 3em;
+		transition: background-color 0.2s;
+
+		&:hover { background-color: var(--c-border); }
+
+		&:disabled { pointer-events: none; }
+
+		&.active {
+			background-color: var(--c-primary-soft);
+			color: var(--c-primary);
+		}
+	}
+}
+
+/*
+ * 原本是两条 `:global(::view-transition-*)` 规则，用于关掉分页条的过渡动画。
+ * Astro 里同层嵌套的 :global 不会传播给内部选择器（见 MIGRATION-BRIEF 陷阱 3），
+ * 故每条都单独写全。
+ */
+:global(::view-transition-group(article-pagination)),
+:global(::view-transition-new(article-pagination)) {
+	animation: none;
+}
+
+:global(::view-transition-old(article-pagination)) {
+	display: none;
+}
+</style>

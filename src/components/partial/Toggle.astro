@@ -1,0 +1,148 @@
+---
+/**
+ * Toggle 组件（Astro 版），对应 `app/components/partial/Toggle.vue`。
+ *
+ * ## 命名说明
+ * Nuxt 的 `partial/*` 目录由 `components/` 自动导入并加 `Z` 前缀，
+ * 所以原组件在模板里写作 `<ZToggle>`。Astro 没有自动导入，
+ * 引用方式为 `import Toggle from '../partial/Toggle.astro'`。
+ *
+ * ## class 名一字不改
+ * `.z-toggle` / `.input-toggle` 必须保持原样：样式门禁是把 Astro 产物
+ * 与 Nuxt 基线**按选择器**比对的，改名等于让该门禁整组失效。
+ *
+ * ## `v-model` → 自管状态 + 冒泡事件
+ * 原组件是 `defineModel<boolean>()`，由父组件双向绑定。Astro 组件的 prop
+ * 不能携带函数，无法「把回调传进组件」，故沿用本仓库既有约定
+ * （与 `OrderToggle.astro` / `Slider.astro` 一致）：
+ *   1. `checked` 是**单向 prop**，只作为构建期初始态；
+ *   2. 组件自管运行时状态，checkbox 的 `checked` 由脚本同步；
+ *   3. 每次变化从**根元素**派发冒泡的
+ *      `CustomEvent('partial:change', { detail: { checked: boolean } })`。
+ * 页面只需 `document.addEventListener('partial:change', e => …)`。
+ *
+ * ## Enter 键
+ * 原版有 `@keypress.enter="modelValue = !modelValue"`：裸 checkbox 在
+ * Enter 键下不会切换（Enter 只在 `<form>` 提交语境下有意义），
+ * 少了这一行键盘用户就完全无法操作这个开关，故必须保留。
+ * 改用 `keydown` + `preventDefault()`：`keypress` 已被浏览器标记为废弃。
+ *
+ * ## 作用域
+ * 模板与样式都只涉及本组件渲染的元素（slot 传入的文本节点除外，
+ * 且不对其设任何样式），因此无需 `:global()`。
+ */
+interface Props {
+	/** slot 为空时的兜底文案 */
+	label?: string
+	/** 构建期初始勾选状态（对应原 `v-model` 的初值） */
+	checked?: boolean
+	/** 合并到根元素 */
+	class?: string
+	style?: string | Record<string, string | number>
+}
+
+const { label, checked = false, class: className, style } = Astro.props
+---
+
+<label class:list={['z-toggle', className]} style={style} data-toggle-root data-checked={String(checked)}>
+	<input class="input-toggle" name="toggle" type="checkbox" checked={checked} data-toggle-input>
+	{/* 默认 slot 内容对应 `<slot><span v-if="label" v-text="label" /></slot>`：没有 label 就不渲染 span */}
+	<slot>{label ? <span>{label}</span> : null}</slot>
+</label>
+
+<script>
+	/*
+	 * 原生脚本会被 Astro 去重合并，用 data 属性定位各个实例；
+	 * `data-toggle-ready` 保证同一节点重复 init 时直接返回。
+	 */
+	function initAll() {
+		for (const node of document.querySelectorAll('[data-toggle-root]')) {
+			if (!(node instanceof HTMLElement) || node.dataset.toggleReady)
+				continue
+			node.dataset.toggleReady = '1'
+
+			const input = node.querySelector('[data-toggle-input]')
+			if (!(input instanceof HTMLInputElement))
+				continue
+
+			// 键盘可达性：裸 checkbox 不响应 Enter
+			input.addEventListener('keydown', (e) => {
+				if (e.key !== 'Enter')
+					return
+				// 冒泡到 label 会再触发一次 click，必须在这里拦掉
+				e.preventDefault()
+				input.click()
+			})
+
+			input.addEventListener('change', () => {
+				node.dataset.checked = String(input.checked)
+				node.dispatchEvent(new CustomEvent('partial:change', {
+					bubbles: true,
+					detail: { checked: input.checked },
+				}))
+			})
+		}
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.z-toggle {
+	user-select: none;
+}
+
+.input-toggle {
+	position: relative;
+	appearance: none;
+
+	&::before {
+		content: "";
+		display: inline-block;
+		position: relative;
+		width: 2em;
+		height: 1.2em;
+		border-radius: 1em;
+		outline: 1px solid var(--c-text-1);
+		outline-offset: -1px;
+		vertical-align: text-bottom;
+		transition: background-color 0.2s, outline-color 0.2s;
+	}
+
+	&::after {
+		content: "";
+		position: absolute;
+		inset-inline-start: 0.2em;
+		top: calc(50% - 0.4em);
+		height: 0.8em;
+		aspect-ratio: 1;
+		border-radius: 50%;
+		background-color: var(--c-text-1);
+		transition: all 0.2s;
+	}
+
+	&:hover > &::after {
+		filter: contrast(0.6);
+	}
+
+	&:not(:last-child) {
+		margin-inline-end: 0.5em;
+	}
+
+	&:checked {
+		&::before {
+			outline-color: transparent;
+			background-color: var(--c-primary);
+		}
+
+		&::after {
+			background-color: var(--c-bg-1);
+			transform: var(--transform-end-far);
+		}
+	}
+}
+</style>

@@ -1,0 +1,212 @@
+---
+import Badge from './Badge.astro'
+import Icon from '../Icon.astro'
+
+/**
+ * ResourceList 组件（Astro 版）：资源下载列表。
+ *
+ * 纯静态：数据全部来自 `items` prop，构建期渲染，无客户端脚本。
+ */
+interface ResourceItem {
+	id?: string | number
+	title: string
+	subtitle?: string
+	tags?: string[]
+	link?: string
+	summary?: string
+	extractPassword?: string
+	downloadPassword?: string
+}
+
+interface Props {
+	items: ResourceItem[]
+	/** MDX 传入的 className；Astro 没有 attribute fallthrough，需显式接收后合并 */
+	class?: string
+}
+
+const { items, class: className } = Astro.props
+---
+
+<ol class:list={['resource-list', className]}>
+	{items.map(item => (
+		<li class="resource-item card">
+			<div class="resource-content">
+				<div>
+					<div class="resource-title">
+						{item.title}
+					</div>
+					{item.subtitle && (
+						<p class="resource-subtitle">
+							{item.subtitle}
+						</p>
+					)}
+					{item.summary && (
+						<p class="resource-summary">
+							{item.summary}
+						</p>
+					)}
+				</div>
+
+				<div class="resource-meta">
+					{(item.extractPassword || item.downloadPassword) && (
+						<div class="passwords">
+							{item.extractPassword && <span>解压: {item.extractPassword}</span>}
+							{item.downloadPassword && <span>下载: {item.downloadPassword}</span>}
+						</div>
+					)}
+					<div class="tags">
+						{item.tags?.map(tag => <Badge text={tag} />)}
+					</div>
+				</div>
+			</div>
+
+			{item.link
+				? (
+					<a
+						class="download-btn"
+						href={item.link}
+						aria-label="下载资源"
+						title="下载资源"
+						target="_blank"
+						rel="noopener"
+					>
+						<Icon name="tabler:download" />
+					</a>
+				)
+				: (
+					<button
+						class="download-btn"
+						type="button"
+						disabled
+						aria-label="下载资源"
+						title="下载资源"
+					>
+						<Icon name="tabler:download" />
+					</button>
+				)}
+		</li>
+	))}
+</ol>
+
+<style>
+.resource-list {
+	display: grid;
+	gap: 1em;
+	margin: 0;
+	padding: 0;
+
+	@media (max-width: 528px) {
+		gap: 0.75em;
+	}
+}
+
+.resource-item {
+	display: flex;
+	align-items: center;
+	gap: 1em;
+	padding: 1em;
+
+	@media (max-width: 528px) {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.5em;
+		padding: 0.75em;
+	}
+}
+
+.resource-content {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 0.75em;
+	min-width: 0;
+
+	> div {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3em;
+	}
+}
+
+.resource-title {
+	font-size: 1.05em;
+	font-weight: 700;
+	color: var(--c-text);
+}
+
+.resource-subtitle,
+.resource-summary {
+	margin: 0;
+	font-size: 0.9em;
+}
+
+.resource-subtitle {
+	color: var(--c-text-2);
+}
+
+.resource-summary {
+	color: var(--c-text-1);
+}
+
+.resource-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5em;
+	font-size: 0.8em;
+
+	@media (max-width: 528px) {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+}
+
+.passwords span {
+	padding: 0.2em 0.4em;
+	border-radius: 0.3em;
+	background: var(--c-bg-2);
+	color: var(--c-text-2);
+}
+
+.passwords,
+.tags {
+	display: flex;
+	flex-wrap: wrap;
+}
+
+.passwords {
+	gap: 0.5em;
+}
+
+.tags {
+	gap: 0.25em;
+}
+
+.download-btn {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	width: 2.4em;
+	height: 2.4em;
+	border-radius: 0.5em;
+	background: var(--c-primary);
+	font-size: 1.1em;
+	color: white;
+	transition: all 0.2s;
+
+	&:hover:not(:disabled) {
+		box-shadow: 0 0.5em 1em var(--ld-shadow);
+		transform: translateY(-2px);
+	}
+
+	&:disabled {
+		opacity: 0.5;
+	}
+
+	@media (max-width: 528px) {
+		width: 2.2em;
+		height: 2.2em;
+		font-size: 1em;
+	}
+}
+</style>

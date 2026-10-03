@@ -1,0 +1,262 @@
+---
+/**
+ * Collection 组件（Astro 版）—— 文章所属合集的折叠列表。
+ *
+ * 数据来源：Nuxt 侧是
+ *   queryCollection('content').where('collection', '=', key).order('date', 'ASC')
+ * Astro 内容层没有 SQL，等价实现见 `src/lib/content.ts` 的 `getByCollection()`。
+ *
+ * 合集显示设置来自 `app/collections.ts`（Nuxt 侧），Astro 侧暂从
+ * `blogConfig` 读不到，需保留一份等价配置——见下方的 COLLECTION_SETTINGS。
+ * 未登记的 key 仍会正常展示，标题回退为 key 本身（与原实现一致）。
+ *
+ * 日期原版是 `<UtilDate class="date" :date>`（不传 format，走 NuxtTime 默认形态：
+ * 「4月1日」/「25年5月19日」）。此前这里手写
+ * `toLocaleDateString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit' })`，
+ * 既多出年份又少了 `<time>`，现收敛到 `util/Date.astro`。
+ */
+import Icon from '../Icon.astro'
+import UtilDate from '../util/Date.astro'
+import { getByCollection, toPath } from '../../lib/content'
+
+interface CollectionSetting {
+	title: string
+	description?: string
+	icon?: string
+	color?: string
+}
+
+/** 对应 `app/collections.ts`，该文件属于 Nuxt 侧，暂在此镜像 */
+const COLLECTION_SETTINGS: Record<string, CollectionSetting> = {
+	'galgame-notes': {
+		title: 'Galgame',
+		description: 'Galgame 相关合集测试',
+		icon: 'tabler:device-gamepad-2',
+		color: '#f6a',
+	},
+}
+
+interface Props {
+	/** 当前文章的 entry id */
+	currentId: string
+	/** 当前文章 frontmatter 的 collection 字段 */
+	collectionKey?: string
+}
+
+const { currentId, collectionKey } = Astro.props
+
+const items = await getByCollection(collectionKey)
+const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
+---
+
+{collectionKey && items.length > 0
+	? (
+		<section class="post-collection">
+			{/* 原生折叠：无 JS 状态，键盘与无障碍支持由浏览器提供 */}
+			<details class="collection" open>
+				<summary class="collection-header">
+					<Icon
+						class="collection-icon"
+						name={setting?.icon || 'tabler:folder'}
+						style={setting?.color ? `color: ${setting.color}` : undefined}
+					/>
+					<span class="header-text">
+						<strong class="title text-creative">{setting?.title || collectionKey}</strong>
+						{setting?.description && <span class="description">{setting.description}</span>}
+					</span>
+					<span class="separator" />
+					<span class="count">{items.length} 篇</span>
+					<Icon class="chevron" name="tabler:chevron-down" />
+				</summary>
+				<div class="collection-body">
+					<ul class="collection-list">
+						{items.map(item => (
+							<li
+								class="collection-item"
+								class:list={{ current: item.id === currentId }}
+							>
+								<a class="collection-link" href={toPath(item)}>
+									<span class="article-title text-creative">{item.data.title}</span>
+									{item.data.date && <UtilDate class="date" date={item.data.date} />}
+									{item.id === currentId && <span class="current-tag">当前</span>}
+								</a>
+							</li>
+						))}
+					</ul>
+				</div>
+			</details>
+		</section>
+	)
+	: null}
+
+<style>
+.post-collection {
+	margin: 2rem 0.5rem 0;
+	border: 1px solid var(--c-border);
+	border-radius: 0.5em;
+	box-shadow: var(--box-shadow-1);
+	background-color: var(--c-bg-2);
+	transition: box-shadow 0.2s, transform 0.2s;
+
+	&:hover {
+		box-shadow: var(--box-shadow-3);
+		transform: translateY(-2px);
+	}
+}
+
+.collection-header {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.85rem 1.25rem;
+	border-radius: 0.5em;
+	font-size: 0.9rem;
+	color: var(--c-text-2);
+	transition: background-color 0.2s;
+
+	/* 隐藏原生 details 标记符，使用自绘 chevron */
+	list-style: none;
+	cursor: pointer;
+
+	&::-webkit-details-marker {
+		display: none;
+	}
+
+	&:hover {
+		background-color: var(--c-bg-soft);
+	}
+
+	/*
+	 * 下面两条的 `:global()` 是必须的：`.collection-icon` / `.chevron` 是经
+	 * `<Icon class="…" />` 传给子组件的，元素最终由 astro-icon 渲染、带着它自己的
+	 * cid；写在这里却会被编译成 `…[data-astro-cid-<Collection 的 cid>]` 而永不匹配。
+	 * 父选择器 `.collection-header` 是本组件渲染的，保持 scoped 即可——
+	 * 所以影响面仍然限定在 Collection 的 header 内。
+	 * 见 docs/astro-phase1-findings.md §50。
+	 */
+	> :global(.collection-icon) {
+		display: flex;
+		flex: none;
+		font-size: 1.6em;
+	}
+
+	> .header-text {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		min-width: 0;
+
+		> .title {
+			font-size: 1.1rem;
+			font-weight: 550;
+			color: var(--c-text);
+		}
+
+		> .description {
+			font-size: 0.8rem;
+			line-height: 1.4;
+			color: var(--c-text-3);
+		}
+	}
+
+	> .separator {
+		flex: 1;
+	}
+
+	> .count {
+		flex: none;
+		font-size: 0.8em;
+	}
+
+	> :global(.chevron) {
+		flex: none;
+		opacity: 0.5;
+		font-size: 1.2em;
+		transition: transform 0.2s;
+
+		/* 展开时箭头朝上；`&` 含父锚点，`.collection` 是本组件渲染的，保持 scoped */
+		.collection[open] & {
+			transform: rotate(180deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		> :global(.chevron) {
+			transition: none;
+		}
+	}
+}
+
+.collection-body {
+	display: none;
+	padding: 0 1.25rem 1rem;
+}
+
+/* 显式声明折叠，不依赖浏览器对 <details> 内容的 UA 隐式隐藏 */
+.collection[open] .collection-body {
+	display: block;
+}
+
+.collection-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.collection-item {
+	position: relative;
+	border-radius: 0.5em;
+
+	&.current::before {
+		content: "";
+		position: absolute;
+		inset-block: 20%;
+		inset-inline-start: 0.15rem;
+		width: 0.2rem;
+		border-radius: 999px;
+		background-color: var(--c-primary);
+	}
+
+	&.current .collection-link {
+		color: var(--c-primary);
+	}
+}
+
+.collection-link {
+	display: flex;
+	align-items: baseline;
+	gap: 0.8em;
+	padding: 0.45em 0.7em;
+	border-radius: 0.5em;
+	transition: background-color 0.2s;
+
+	.article-title {
+		flex: 1;
+		overflow: hidden;
+		min-width: 0;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	.date {
+		flex: none;
+		font-size: 0.8em;
+		color: var(--c-text-3);
+	}
+
+	.current-tag {
+		flex: none;
+		padding: 0.05em 0.5em;
+		border: 1px solid var(--c-primary);
+		border-radius: 999px;
+		font-size: 0.7em;
+	}
+
+	&:hover {
+		background-color: var(--c-bg-soft);
+	}
+}
+</style>

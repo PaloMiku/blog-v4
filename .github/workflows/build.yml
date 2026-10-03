@@ -1,9 +1,35 @@
+# Build and Deploy
+#
+# 唯一的部署流水线。2026-10-03 起 Astro 接管仓库根（`src/` `public/` `astro.config.mjs`
+# 都在根），Nuxt 流水线与其源码树一并退役——`build-astro.yml` 的「双轨、只手动触发」
+# 前提已不成立，那是为了「先不切断现役流水线」而存在的过渡设计。
+#
+# push main 即发布。若想先看构建结果再发，把 on.push 去掉、只留 workflow_dispatch。
+#
+# 这里**不**跑 acceptance.ps1：它是 PowerShell 入口、需要未入库的 Nuxt 冻结基线
+# （`baseline/nuxt/`，见 scripts/freeze-baseline.mjs）、并且要拿 headless Chrome 打线上站，
+# 三者在干净 CI checkout 里都不成立。下面这 9 道是能在 CI 跑的**无浏览器**子集，
+# 每一道都对应一个曾经悄悄上线过的失效模式：
+#
+#   check-self-contained  import 逃出仓库 / 引入已删除的 Nuxt 运行时依赖
+#   check-mdc-eval        MDC 组件被当字符串吐进 HTML（<linkcard> 出现在产物里）
+#   check-heading-ids     标题 id 与 Nuxt 的 github-slugger+三步后处理不一致（锚点不可达）
+#   check-text-literal    构建改写正文字面（smartypants 改字形，页高与计算样式都看不见）
+#   check-scope-anchors   顶层 :global() 丢了 scope 锚点 → 样式在不该生效的地方生效
+#   check-aria-current    aria-current 缺失或过标（屏幕阅读器播报内容，视觉与几何都无感）
+#   check-icon-box        .nav-icon 里的 svg 退回 inline，贴基线漂 1.7px
+#   audit-css-blocks      <style> 块被批量改写损坏（构建照绿，规则被静默丢弃）
+#   check-ci-triggers     本文件自身的 YAML 可解析 + 触发器形状正确
+#
+# interaction-check.mjs 不在这里跑：它在流水线里不可靠而单跑可靠，
+# 理由与实测数据见 docs/astro-phase1-findings.md。单跑：node scripts/interaction-check.mjs
+
 name: Build and Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
 
 env:
   PNPM_VERSION: ''
@@ -16,16 +42,18 @@ jobs:
       - name: Checkout source repo
         uses: actions/checkout@v4
 
-      - name: Read pnpm version from package.json
+      # 站点根就是仓库根，pnpm 版本从根 package.json 的 packageManager 读。
+      - name: Read pnpm version
         id: pnpm-version
         run: |
-          PNPM_VERSION=$(node -p "const pj = require('./package.json'); (pj.packageManager || '').split('@')[1] || ''")
+          PNPM_VERSION=$(node -p "(require('./package.json').packageManager || '').split('@')[1] || ''")
           if [ -z "$PNPM_VERSION" ]; then
             echo "No pnpm version found in package.json.packageManager, fallback to latest"
             PNPM_VERSION=latest
           fi
           echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
 
+      # engines: node ^22.19 || ^24.11 || >=26。`node-version: 24` 取最新 24.x，满足 ^24.11。
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -50,33 +78,61 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-modules-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-node-modules-
-
+      # --frozen-lockfile 是这一行的全部意义：它是「提交的 lockfile 仍与 package.json
+      # 一致」这项检查。去掉它，一个漂移的 lockfile 会静默装上没人审过的东西。
+      # 根 .gitignore 里有 baseline/，所以 Nuxt 冻结基线不在 checkout 里——
+      # 依赖它的 7 道离线门禁只能本地跑，这个 skip 是有意的。
       - name: Install dependencies with pnpm
         run: pnpm install --frozen-lockfile --prefer-offline
 
-      - name: Cache .nuxt directory
-        uses: actions/cache@v4
-        with:
-          path: .nuxt
-          key: ${{ runner.os }}-nuxt-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-nuxt-
+      - name: Typecheck
+        run: pnpm typecheck
 
       - name: Build static files
-        run: pnpm generate --no-clear
+        run: pnpm build
+
+      # Step names contain a colon, so they must be quoted. An unquoted
+      # `- name: Gate: x` is a YAML parse error, not a cosmetic issue: the
+      # workflow then never runs at all. `check-ci-triggers.mjs` re-parses
+      # this file for exactly that reason, and it caught this exact mistake
+      # the first time it was run.
+      - name: "Gate: self-contained"
+        run: node scripts/check-self-contained.mjs
+
+      - name: "Gate: MDC components were evaluated"
+        run: node scripts/check-mdc-eval.mjs
+
+      - name: "Gate: heading ids"
+        run: node scripts/check-heading-ids.mjs
+
+      - name: "Gate: body text literals not rewritten"
+        run: node scripts/check-text-literal.mjs
+
+      - name: "Gate: scope anchors kept"
+        run: node scripts/check-scope-anchors.mjs
+
+      - name: "Gate: aria-current"
+        run: node scripts/check-aria-current.mjs
+
+      - name: "Gate: icon box"
+        run: node scripts/check-icon-box.mjs
+
+      - name: "Gate: style blocks intact"
+        run: node scripts/audit-css-blocks.mjs
+
+      - name: "Gate: CI triggers"
+        run: node scripts/check-ci-triggers.mjs
 
       - name: Deploy to GitHub Public
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: main
-          folder: .output/public
+          folder: dist
           repository-name: PaloMiku/blog-public
           ssh-key: ${{ secrets.DEPLOY_KEY }}
-          commit-message: Deploy to GitHub Public Repository
+          commit-message: Deploy build to GitHub Public Repository
+          # 默认 clean:true。首次 Astro 部署正是靠它退休 blog-public 里残留的
+          # _nuxt/ __nuxt_content/ __sitemap__/ _studio-app/ 与 200.html SPA 壳。
+          # CNAME 例外：万一将来自定义域名是以文件形式配的，action 会把它一起删掉。
+          clean-exclude: |
+            CNAME

@@ -1,0 +1,116 @@
+---
+/**
+ * Chat 组件（Astro 版）。
+ *
+ * 与 Nuxt 版的差异（必要且有意）：
+ * 原 Vue 实现通过 `(node.children as any)?.default?.()[0].children` 反射
+ * Vue 内部 slot vnode 结构来区分 caption 段与 body 段——这是非标准的，
+ * 源码里自带 WARN 注释，在 Astro/MDX 下会 100% 失效且**静默失效**
+ * （类型判断不成立时全部退化成 body，`{caption}` 消失）。
+ *
+ * 因此改为由 codemod 直接产出分组形状的 `items`。
+ *
+ * items 契约（由 codemod 从 Markdown 的 `{caption}` 段落约定生成）：
+ *   { caption, control, body }
+ * - `caption` 定义了该字段即渲染 `<dt class="chat-caption">`（原 Vue 版会渲染空 dt，
+ *   这是 `.chat-myself` 能通过 `& + .chat-body` 影响下一条样式的关键）
+ * - `body` 非空时渲染 `<dd class="chat-body">`
+ * - `control` 是 caption 上的前缀，决定 caption 的类名：
+ *     '.' → chat-myself（自己发的，会让紧随其后的 body 右对齐并换配色）
+ *     ':' → chat-system（系统消息，居中）
+ *     无   → 普通对方消息
+ */
+interface ChatItem {
+	caption?: string
+	/** '.' = 自己，':' = 系统，无前缀 = 对方 */
+	control?: string
+	body?: string
+}
+
+interface Props {
+	items?: ChatItem[]
+}
+
+const { items = [] } = Astro.props
+
+function controlClass(control?: string) {
+	if (control === '.')
+		return 'chat-myself'
+	if (control === ':')
+		return 'chat-system'
+	return ''
+}
+---
+
+{items.length === 0
+	? <span>无会话内容</span>
+	: (
+		<dl class="chat">
+			{items.map((item) => (
+				<Fragment>
+					{item.caption !== undefined
+						&& <dt class:list={['chat-caption', controlClass(item.control)]}>{item.caption}</dt>}
+					{item.body && <dd class="chat-body">{item.body}</dd>}
+				</Fragment>
+			))}
+		</dl>
+	)}
+
+<style>
+	/*
+	 * ⚠️ 这四条 `> .chat-*` 规则**必须留在 `.chat` 内部**（花括号深度 1），
+	 * 不能挪回顶层。原因见 `PostSurround.astro:95` 的同款写法与
+	 * `scripts/check-dropped-css.mjs`：
+	 *
+	 * 顶层（深度 0）的裸子代选择器 `> .chat-body { … }` 是**非法**的顶层 CSS。
+	 * 浏览器与压缩器在顶层遇到 `>` 会直接丢弃整条规则，**报错都没有**：
+	 * 那时编译产物里只剩 `.chat{…}`，而 `audit-dead-scope.mjs` 之类的
+	 * 「产物里有没有这条选择器」的门禁**抓不到**——它压根不在产物里，
+	 * 不是写错了选择器，而是整条消失。
+	 *
+	 * 当时的实测代价：`dd.chat-body` 的 padding / max-width / margin-bottom
+	 * 全是初始值，会话体不换行（688px 恒宽），一个页面凭空多出 267px。
+	 * 同样的写法在深度 1 会被编译成 `& > .chat-body[data-astro-cid-…]`
+	 * （实测 @astrojs/compiler-rs 0.5.1 的输出就是带空格这个形状；
+	 * PostSurround.astro 那条则是 `&>.surround-text`，两种都正常存活），
+	 * 正常存活。
+	 */
+	.chat {
+		margin-inline: 2vw;
+		font-size: 0.9em;
+
+		> .chat-caption {
+			opacity: 0.8;
+			font-size: 0.9em;
+		}
+
+		> .chat-body {
+			overflow: hidden; /* BFC */
+			width: fit-content;
+			max-width: 90%;
+			margin-bottom: 1em;
+			padding: 0 1em;
+			border-radius: 1em;
+			border-start-start-radius: 0.2em;
+			background-color: var(--c-bg-2);
+			/* body 内的反斜杠换行（`\` 结尾）依赖 pre-wrap */
+			white-space: pre-wrap;
+		}
+
+		> .chat-system {
+			margin-bottom: 1em;
+			text-align: center;
+		}
+
+		> .chat-myself {
+			text-align: end;
+
+			& + .chat-body {
+				margin-inline-start: auto;
+				border-radius: 1em;
+				border-start-end-radius: 0.2em;
+				background-color: var(--c-primary-soft);
+			}
+		}
+	}
+</style>

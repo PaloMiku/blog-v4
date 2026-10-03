@@ -1,0 +1,75 @@
+---
+/**
+ * 渲染 `metaSlots[*].content`（frontmatter 里的一段 MDX 字符串）。
+ *
+ * ## 为什么需要一个组件
+ *
+ * `rehype-meta-slots` 在 Nuxt 侧把正文里的 `::meta-aside-xxx` 整块抽进
+ * `file.data.slots`（存 AST），`useWidgets()` 用
+ * `h(ContentRenderer, { value: slotsTree })` **求值**渲染。
+ * Astro 侧 codemod 产出的是**字符串**，而 `BlogWidget.astro` 原来
+ * `set:html` 把它当 HTML 吐出去 ⇒ `<LinkCard … />` 变成浏览器不认识的未知元素，
+ * 整个侧栏 widget 空白。
+ *
+ * 实测 `/previews/example`：线上有 `a.link-card[href$="/docs/files/markdown"]`，
+ * 本地是原样输出的 `<linkcard title="…" …></linkcard>`。
+ * 语义探针为此报出的**两条**差异（`a|/docs/files/markdown|` 与
+ * `img|/favicon.ico|`）同源于此。
+ *
+ * 现在走「解析（`src/lib/meta-slot.ts`）→ 动态组件 → 真实 DOM」，
+ * 与 Nuxt 侧的结果一致。
+ *
+ * ## 为什么这里不需要递归
+ *
+ * 解析器**拒绝**「组件里再嵌已注册组件」——那种形态的样式与 slot 语义
+ * 都与 Nuxt 侧不同，与其半吊子支持不如构建期报错。
+ * 所以组件的 children 只可能是纯文本，一层就够。
+ *
+ * ## 作用域
+ *
+ * `contentComponents` 里每个组件带自己的 scope id，本组件不加。
+ * 渲染出的根元素**不会**带本组件的 `data-astro-cid-*`，
+ * 所以 `BlogWidget.astro` 里面向 slot 内容的层级选择器
+ * （`.widget-card :global(p)` 等）必须继续 `:global()`——
+ * 与该文件顶部注释第 3 条同源。
+ */
+import { contentComponents } from '../../lib/content-components'
+import { parseMetaSlotContent } from '../../lib/meta-slot'
+
+interface Props {
+	/** frontmatter 里的 `metaSlots.<name>.content` 原文 */
+	content: string
+}
+
+const { content } = Astro.props
+
+// 解析在组件实例内做：抛错直接冒到构建，不会渲染出空壳
+const nodes = parseMetaSlotContent(content, name => Object.hasOwn(contentComponents, name))
+
+/** 文本节点来自内容文件，不是可信 HTML，必须转义 */
+function escapeText(value: string): string {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+}
+---
+
+{
+	nodes.map((node) => {
+		if (node.kind === 'text')
+			return <Fragment set:html={escapeText(node.value)} />
+
+		// 解析器已保证 name 在 contentComponents 里
+		const Cmp = contentComponents[node.name as keyof typeof contentComponents]
+		// 解析器拒绝组件嵌组件，所以 children 只可能是纯文本
+		const children = node.children.map(c => (c.kind === 'text' ? escapeText(c.value) : '')).join('')
+		// `set:html` 是元素指令，组件上要用 `<Fragment set:html>` 才能把已转义的
+		// HTML 送进默认 slot；直接写 `{children}` 会被二次转义成字面量
+		return (
+			<Cmp {...node.attrs}>
+				<Fragment set:html={children} />
+			</Cmp>
+		)
+	})
+}

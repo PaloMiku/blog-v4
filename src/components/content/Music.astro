@@ -1,0 +1,221 @@
+---
+import Icon from '../Icon.astro'
+/**
+ * Music 组件（Astro 版）：带图标的音乐链接卡片。
+ *
+ * 纯静态：URL 解析全部在构建期完成，没有客户端脚本。
+ * 与 Nuxt 版的唯一行为差异见 `title` prop 的注释。
+ */
+interface Props {
+	url?: string
+	name?: string
+	artist?: string
+	/**
+	 * 兼容项：`content/previews/example.md` 的文档示例误传了 `title`
+	 * （真实文章用的是 `name`），codemod 两侧都原样透传。
+	 * Nuxt 侧未声明该 prop，靠 attribute fallthrough 变成 `<a title="…">`，
+	 * 这里显式接住以保持渲染结果一致。
+	 */
+	title?: string
+	/** MDX 传入的 className；Astro 没有 attribute fallthrough，需显式接收后合并 */
+	class?: string
+}
+
+const { url = '', name = '', artist = '', title, class: className } = Astro.props
+
+const URL_REGEX = /^https?:\/\//
+
+function parseUrl(raw: string) {
+	const fallback = { provider: 'raw', id: '', link: raw }
+	if (!raw)
+		return fallback
+
+	let parsed: URL
+	try {
+		const normalized = URL_REGEX.test(raw) ? raw : `https://${raw}`
+		parsed = new URL(normalized)
+	}
+	catch {
+		return fallback
+	}
+
+	const host = parsed.hostname.toLowerCase()
+	const hash = parsed.hash
+
+	if (host.includes('music.163.com')) {
+		const sid
+			= parsed.searchParams.get('id')
+				|| new URLSearchParams(hash.slice(1)).get('id')
+				|| ''
+		return { provider: 'netease', id: sid, link: raw }
+	}
+
+	if (host.includes('qq.com')) {
+		const sid
+			= parsed.searchParams.get('id')
+				|| parsed.pathname.split('/').filter(Boolean).pop()
+				|| ''
+		return { provider: 'qq', id: sid, link: raw }
+	}
+
+	if (host.includes('spotify.com')) {
+		const sid = parsed.pathname.split('/').filter(Boolean).pop() || ''
+		return { provider: 'spotify', id: sid, link: raw }
+	}
+
+	if (host.includes('music.apple.com')) {
+		const sid = parsed.searchParams.get('i') || ''
+		return { provider: 'apple', id: sid, link: raw }
+	}
+
+	return fallback
+}
+
+// @keep-sorted
+const known = {
+	netease: {
+		label: '网易云音乐',
+		icon: 'simple-icons:neteasecloudmusic',
+	},
+	qq: {
+		label: 'QQ 音乐',
+		icon: 'simple-icons:qq',
+	},
+	spotify: {
+		label: 'Spotify',
+		icon: 'simple-icons:spotify',
+	},
+	apple: {
+		label: 'Apple Music',
+		icon: 'simple-icons:applemusic',
+	},
+	raw: {
+		label: '音频链接',
+		icon: 'simple-icons:music',
+	},
+} as const
+
+const parsed = parseUrl(url)
+const providerMeta = parsed.provider in known
+	? known[parsed.provider as keyof typeof known]
+	: { label: parsed.provider, icon: 'tabler:music' }
+
+const meta = {
+	provider: providerMeta.label,
+	icon: providerMeta.icon,
+	id: parsed.id,
+	link: parsed.link,
+}
+
+const titleText = name
+	|| (meta.id ? `${meta.provider} 音乐 - ${meta.id}` : `${meta.provider} 音乐`)
+
+const subtitleText = artist
+	|| (meta.id ? `id: ${meta.id}` : meta.link || '无效音乐链接')
+---
+
+{meta.link
+	? (
+		<a
+			href={meta.link}
+			class:list={['music-embed', className]}
+			target="_blank"
+			rel="noopener noreferrer"
+			title={title}
+		>
+			<span class="music-embed-icon">
+				<Icon name={meta.icon} />
+			</span>
+			<span class="music-embed-single-line">{titleText}，{subtitleText}</span>
+		</a>
+	)
+	: (
+		<div class:list={['music-embed-empty', className]}>
+			无效音乐链接
+		</div>
+	)}
+
+<style>
+.music-embed {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	min-height: 3rem;
+	padding: 0.65rem 0.8rem;
+	border: 1px solid var(--c-border);
+	border-radius: 0.8rem;
+	background-color: var(--c-bg-2);
+	text-decoration: none;
+	color: var(--c-text-1);
+	transition:
+		box-shadow 0.2s ease,
+		border-color 0.2s ease,
+		color 0.2s ease;
+
+	/*
+	 * article 由页面（MDX）渲染，带的是父级 scope class，永远拿不到本组件的 scope，
+	 * 所以必须 :global()，否则规则不匹配（与 LinkCard 同理）。
+	 */
+	:global(article) & {
+		width: min(100%, 720px);
+		max-width: 100%;
+		margin: 1rem auto;
+	}
+
+	&:hover {
+		border-color: var(--c-primary);
+		box-shadow: var(--box-shadow-2);
+		color: var(--c-primary);
+	}
+}
+
+.music-embed-icon {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	width: 2rem;
+	height: 2rem;
+	border-radius: 50%;
+	background-color: var(--c-bg-3);
+}
+
+/* svg 由 Icon 组件渲染，Icon 目前是占位实现（Phase 4 换成 astro-icon） */
+.music-embed-icon :global(svg) {
+	width: 1.2rem;
+	height: 1.2rem;
+}
+
+/* 原模板只用了 .music-embed-single-line，以下两条在 Nuxt 侧同样没有对应元素 */
+
+.music-embed-text {
+	display: grid;
+	flex: 1;
+	row-gap: 0.15rem;
+	overflow: hidden;
+	min-width: 0;
+}
+
+.music-embed-subtitle {
+	opacity: 0.72;
+	font-size: 0.85em;
+}
+
+.music-embed-single-line {
+	flex: 1;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.music-embed-empty {
+	width: min(100%, 720px);
+	margin: 1rem auto;
+	padding: 0.65rem 0.8rem;
+	border: 1px dashed var(--c-border);
+	border-radius: 0.8rem;
+	background-color: var(--c-bg-2);
+	text-align: center;
+	color: var(--c-text-3);
+}
+</style>

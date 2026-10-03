@@ -1,0 +1,171 @@
+---
+/**
+ * DlGroup 组件（Astro 版），对应 `app/components/partial/DlGroup.vue`
+ * （Nuxt 靠目录层级 + `partials` 配置注册成 `ZDlGroup`）。
+ *
+ * 与 Nuxt 版的差异：原实现的 `value` 是 `VNodeChild`，允许塞任意 VNode
+ * （BlogTech 用它渲染 `h(Icon)` + 文本）。Astro 没有 VNode，
+ * 故把「图标」拆成显式的 `icon?: string` 字段，图标由本组件自己渲染：
+ *   { label: '图片存储', icon: 'devicon:cloudflare', value: ' R2' }
+ * 这比 `set:html` 拼字符串安全，也不需要跨组件传 HTML。
+ *
+ * `size="large"` 在原组件里**没有对应 CSS**（只有 `.small` / `.medium`），
+ * BlogLog 一直传的就是 `large`，这里照搬该行为。
+ *
+ * ## `size="stack"`：本项目新增的第四种尺寸
+ * BlogTech 的「构建信息」要改成「一行一项、每项带图标」（用户 2026-10-02 定的版式）。
+ * 原有三种都做不到：
+ *   `.small`  = flex wrap，**多项挤在一行**；
+ *   `.medium` = 两列 grid，label 与 value **并排**；
+ *   `large`   = 无 CSS，走默认 block 流，**label 一行、value 再一行**（两行一项）。
+ * `stack` 一行一项，且把图标**提到 `dt` 之前**占住第一列，于是每项形如
+ * `[图标] label …… value`。其余三种尺寸的 DOM 与 CSS 一字未动。
+ *
+ * ⚠️ 图标位置是**条件分支**而不是纯 CSS：`dd` 在 DOM 里排在 `dt` 之后，
+ * 靠 `order` 换不过去（`display: contents` 之后文本节点又变成匿名 grid/flex item，
+ * 匿名项排不了序）。所以只能让模板在 stack 下多渲染一个 `.dl-icon`。
+ */
+import Icon from '../Icon.astro'
+
+export interface DlItem {
+	label: string
+	/** 纯文本值；原版是 VNode，这里收窄为 string + 可选 icon */
+	value?: string
+	/** 值前面的图标（Icon 名称，iconify 集） */
+	icon?: string
+	/**
+	 * 值前面的图标（http 图片 URL）。
+	 * BlogTech 的「构建平台」会命中 `ciIcons` 里少数几个以 http 开头的条目
+	 * （GitHub Actions 等的 logo），原版对这类走 `h('img', …)` 分支。
+	 * 与 `icon` 二选一，`iconImg` 优先。
+	 */
+	iconImg?: string
+	/** 悬停 title */
+	tip?: string
+}
+
+interface Props {
+	items: DlItem[]
+	size?: 'small' | 'medium' | 'large' | 'stack'
+	class?: string
+}
+
+const { items, size = 'medium', class: className } = Astro.props
+---
+
+<dl class:list={['dl-group', size, className]}>
+	{items.map((item) => {
+		/*
+		 * 图标**内容**与它**落在哪一层**是两件事，故先抽出来再按尺寸决定位置：
+		 * stack 提到 dt 之前当第一列，其余三种留在 dd 内紧贴值（原样照搬）。
+		 * 抽成变量后 `item.icon!` 的非空断言也一并没了——`item.icon &&` 已经收窄。
+		 */
+		const icon = item.iconImg
+			? <img src={item.iconImg} alt="" loading="lazy" />
+			: item.icon && <Icon name={item.icon} />
+
+		return (
+			<div>
+				{size === 'stack' && <span class="dl-icon">{icon}</span>}
+				<dt>{item.label}</dt>
+				<dd title={item.tip}>
+					{size !== 'stack' && icon && <span class="dl-icon">{icon}</span>}
+					{item.value}
+				</dd>
+			</div>
+		)
+	})}
+</dl>
+
+<style>
+.dl-group > div {
+	padding: 0.2em 0;
+
+	> dt {
+		font-size: 0.9em;
+		color: var(--c-text-2);
+	}
+}
+
+/* 图标跟随 dd 的字号，只需一个 inline 包装层 */
+.dl-icon {
+	display: inline-block;
+	vertical-align: sub;
+}
+
+.dl-group.small {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5em 1em;
+	text-align: center;
+
+	> div {
+		flex: 1;
+		white-space: nowrap;
+	}
+}
+
+.dl-group.medium {
+	display: grid;
+	grid-template-columns: auto auto;
+	gap: 0.4em 8%;
+	padding: 0.2em 0;
+
+	> div {
+		display: contents;
+
+		> dt {
+			font-size: inherit;
+			text-align: end;
+		}
+	}
+}
+
+/*
+ * stack：一行一项的三列 flex —— 图标 | label | value。
+ * 基线 `.dl-group > div > dt { font-size: .9em; color: var(--c-text-2) }`
+ * 那套「label 缩小变灰」是为 medium 的并排两列调的；竖列里 label 是主语，
+ * 应当回到正文级，灰的那一端交给 value。
+ */
+.dl-group.stack {
+	> div {
+		display: flex;
+		align-items: center;
+		column-gap: 0.5em;
+
+		/*
+		 * 图标槽：固定 1.2em 宽，让所有 label 左对齐成一条直线。
+		 * 无图标的项也渲染一个空 span（见模板），否则它的 label 会左移半格。
+		 */
+		> .dl-icon {
+			flex: none;
+			width: 1.2em;
+			line-height: 1;
+
+			/*
+			 * ⚠️ 内层 iconify 必须 block —— 与 BlogSidebar 侧栏图标同形的一类坑。
+			 * 本行的行高由 dt/dd 的文本决定；若 svg 保持 inline，它会按 baseline
+			 * 贴到行盒基线上而偏下（侧栏那条实测 1.72px）。改成 block 之后 svg
+			 * 填满 .dl-icon 自己的盒，再由 align-items: center 在行内居中，
+			 * 位置不再依赖任何一侧的行高。
+			 * 内层 svg 带的是 Icon 组件的 scope，必须 :global()（陷阱 2/3）。
+			 */
+			> :global(.iconify) {
+				display: block;
+			}
+		}
+
+		> dt {
+			flex: 1;
+			min-width: 0;
+			font-size: inherit;
+			color: inherit;
+		}
+
+		> dd {
+			flex: none;
+			color: var(--c-text-2);
+		}
+	}
+}
+</style>

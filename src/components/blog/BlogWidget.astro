@@ -1,0 +1,231 @@
+---
+/**
+ * BlogWidget 组件（Astro 版），对应 `app/components/blog/BlogWidget.vue`。
+ * 小组件容器：三个具名 slot（title / action / 默认）。
+ *
+ * ## 关键差异
+ * 1. `NuxtImg` → 裸 `<img>`（astro:assets 属 Phase 5）
+ * 2. `defineExpose({ body })` 已删除。原版是给 `Toc.vue` 用的：
+ *    `useTemplateRef('toc')` 拿到本组件实例后读 `.body` 拿滚动容器。
+ *    Astro 没有组件实例，Toc 直接在自己的 `<script>` 里
+ *    `root.querySelector('.widget-body')` 即可，不需要暴露。
+ * 3. **作用域**：slot 传入内容（图标、图片、链接、`<p>`）由调用方渲染，
+ *    带的是**调用方**的 scope 属性，本组件的 scope 不会落在它们身上，
+ *    所以每一条面向 slot 内容的层级选择器都必须单独 `:global()`（陷阱 2/3）。
+ *    反过来 `#blog-aside` 是本组件**祖先**上的元素，同理要 `:global()`。
+ *
+ * `data-transition-enter` 是 `app/plugins/article-transition.client.ts` 的
+ * 钩子标记（该插件尚未移植），此处原样保留 DOM 契约。
+ *
+ * ## meta-aside-* 具名槽位
+ * 传入 `metaName`（`meta-aside-foo`）与 `metaSlots`（frontmatter 记录）后，
+ * 组件按 `app/composables/useWidgets.ts` 的 `renderMetaSlots` 语义自渲染：
+ * props 覆盖同名 prop，`card` 缺省值由槽位是否存在决定，
+ * body 由 `MetaSlotContent` **求值渲染**（不是 `set:html` 注入）。
+ * 调用方是 `BlogAside.astro`（`[...slug].astro` 不在本次改动范围内）。
+ */
+import type { MetaSlot, MetaSlots } from '../../content.config'
+import MetaSlotContent from './MetaSlotContent.astro'
+
+interface Props {
+	title?: string
+	card?: boolean
+	shrink?: boolean
+	grayscale?: boolean
+	dim?: boolean
+	bgImg?: string
+	bgAside?: boolean
+	class?: string
+	/** 透传到根元素的内联样式（Toc 用它设 minHeight） */
+	style?: string
+	/**
+	 * `meta-aside-*` 具名槽位名（**含** `meta-` 前缀），对应 Nuxt 侧的 `WidgetName`。
+	 * 给出时组件从 `metaSlots` 里取内容渲染，取代默认 slot。
+	 */
+	metaName?: string
+	/** frontmatter 的 `metaSlots` 记录（codemod 产物，全库仅 `previews/example.mdx` 有） */
+	metaSlots?: MetaSlots
+}
+
+const {
+	title: titleProp,
+	card: cardProp,
+	shrink: shrinkProp,
+	grayscale: grayscaleProp,
+	dim: dimProp,
+	bgImg: bgImgProp,
+	bgAside: bgAsideProp,
+	class: className,
+	style: styleProp,
+	metaName,
+	metaSlots,
+} = Astro.props
+
+/*
+ * meta 槽位解析，语义对齐 `app/composables/useWidgets.ts` 的 renderMetaSlots：
+ *   metaSlots[metaName.slice('meta-'.length)]
+ *   BlogWidget 收到 `{ card: !slotsTree, ...slotsTree?.props }`
+ * 即 **props 覆盖同名显式 prop**，且 `card` 的缺省值由「槽位是否存在」决定。
+ */
+const meta: MetaSlot | undefined = metaName && metaSlots
+	? metaSlots[metaName.replace(/^meta-/, '')]
+	: undefined
+const metaProps = meta?.props ?? {}
+
+const title = (metaProps.title as string | undefined) ?? titleProp
+const card = metaName ? Boolean(metaProps.card ?? !meta) : cardProp
+const shrink = (metaProps.shrink as boolean | undefined) ?? shrinkProp
+const grayscale = (metaProps.grayscale as boolean | undefined) ?? grayscaleProp
+const dim = (metaProps.dim as boolean | undefined) ?? dimProp
+const bgImg = (metaProps.bgImg as string | undefined) ?? bgImgProp
+const bgAside = (metaProps.bgAside as boolean | undefined) ?? bgAsideProp
+
+const hasAction = Astro.slots.has('action')
+---
+
+<section
+	class:list={['blog-widget', { shrink, grayscale, dim }, className]}
+	style={styleProp}
+	data-transition-enter=""
+>
+	<hgroup class="widget-header text-creative">
+		<slot name="title">{title}</slot>
+		{hasAction && <span class="seperator" />}
+		<slot name="action" />
+	</hgroup>
+
+	<div
+		class:list={['widget-body', {
+			'widget-card': card,
+			'with-bg': bgImg,
+			'scrollcheck-y scrollbar-hidden': shrink,
+		}]}
+	>
+		{bgImg && (
+			<img
+				class:list={['bg-img', { 'bg-right': bgAside }]}
+				src={bgImg}
+				alt=""
+				loading="lazy"
+			/>
+		)}
+		{/*
+			meta 槽位的内容是**内容层 codemod 自己产出的 MDX 片段字符串**。
+
+			⚠️ 这里**不能**用 `set:html={meta.content}`：那会把片段当 HTML 原样吐出，
+			里面的 `<LinkCard … />` 变成浏览器不认识的未知元素，**整个 widget 空白**。
+			实测 `/previews/example`：线上有 `a.link-card[href$="/docs/files/markdown"]`，
+			本地是原样输出的 `<linkcard title="…" …></linkcard>`——
+			语义探针为此报出的 `a|/docs/files/markdown|` 与 `img|/favicon.ico|`
+			两条差异同源于此。详见 `src/lib/meta-slot.ts` 的文件头。
+
+			改由 `MetaSlotContent` 解析成节点树后走**真实组件**，与 Nuxt 侧
+			`h(ContentRenderer, { value: slotsTree })` 的结果一致。
+			槽位缺失时的占位文案与 Nuxt 侧 `` `${widgetName} 不存在` `` 一致。
+		*/}
+		{metaName
+			? (meta
+				? <MetaSlotContent content={meta.content} />
+				: `${metaName} 不存在`)
+			: <slot />}
+	</div>
+</section>
+
+<style>
+.blog-widget {
+	flex-shrink: 1;
+	font-size: 0.9em;
+
+	&.shrink {
+		display: flex;
+		flex-direction: column;
+		overflow: auto;
+	}
+
+	/* 槽位内容里的图标与图片由调用方渲染，需 :global() */
+	&.grayscale :global(:where(.iconify, img)) {
+		transition: filter 0.2s;
+		filter: grayscale(0.8);
+	}
+
+	/* #blog-aside 是祖先，落在别的组件里，必须 :global() */
+	:global(#blog-aside):hover &.grayscale :global(:where(.iconify, img)),
+	&.grayscale :global(:where(.iconify, img)):focus-within,
+	:global(#blog-aside.show) &.grayscale :global(:where(.iconify, img)) {
+		filter: grayscale(0);
+	}
+
+	&.dim {
+		opacity: 0.3;
+		transition: opacity 0.2s;
+
+		:global(#blog-aside:hover) &,
+		&:focus-within,
+		:global(#blog-aside.show) & {
+			opacity: 1;
+		}
+	}
+}
+
+.widget-header {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem;
+	color: var(--c-text-2);
+
+	&:empty {
+		display: none;
+	}
+
+	> .seperator {
+		flex-grow: 1;
+	}
+
+	/* action slot 里是调用方渲染的链接 */
+	> :global(a) {
+		transition: color 0.2s;
+	}
+
+	> :global(a[href]:hover) {
+		color: var(--c-primary);
+	}
+}
+
+.widget-body {
+	overscroll-behavior: contain;
+
+	&.with-bg {
+		contain: paint; /* overflow hidden + position relative */
+		z-index: 0;
+
+		> .bg-img {
+			position: absolute;
+			opacity: 0.2;
+			inset: 0;
+			width: 100%;
+			height: 100%;
+			object-fit: cover;
+			pointer-events: none;
+			z-index: -1;
+
+			&.bg-right {
+				inset-inline-start: 50%;
+				width: 50%;
+				mask-image: linear-gradient(to var(--end), transparent, #FFF 50%);
+			}
+		}
+	}
+
+	&.widget-card {
+		padding: 0.5rem 0.8rem;
+		border-radius: 0.8rem;
+		background-color: var(--c-bg-2);
+
+		/* 默认 slot 内容里的 <p> 由调用方渲染 */
+		:global(p) {
+			padding: 0.2em 0;
+		}
+	}
+}
+</style>

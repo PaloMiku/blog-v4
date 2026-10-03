@@ -1,0 +1,93 @@
+---
+/**
+ * BlogStats 组件（Astro 版），对应 `app/components/widget/BlogStats.vue`。
+ *
+ * ## 数据来源（重要）
+ * 原组件用 `useFetch('/api/stats')` 在客户端拉取。Astro 侧该端点已存在于
+ * `src/pages/api/stats.ts` 且 `prerender = true`，产物是构建期写出的静态 JSON
+ * （`/api/stats`）。**客户端 fetch 在部署后同源可达时是能工作的**
+ * （GitHub Pages / EdgeOne 下 `/api/stats` 就是那个 JSON 文件），
+ * 但这会让统计数字晚于首屏出现，且构建失败时静默降级。
+ *
+ * 采纳任务指定的方案：**由布局层把数据作为 prop 传入**。
+ * 布局层调用 `src/lib/stats.ts` 的 `getStats()`，与 `/api/stats` 端点同一份实现，
+ * 因此页面上的数字与公开 JSON 永远一致。首页与归档页均已注入。
+ * 未传 `stats` 时显示 `--`，与原版 stats 为空时一致（仅作兜底，非预期用法）。
+ *
+ * ## 其他差异
+ * - `timeElapse` / `formatNumber` 来自 `shared/utils/*`，Astro 侧经 `src/lib/shared.ts` 转出。
+ * - `UtilDate`（`app/components/util/Date.vue`）内联在此：原版用 `NuxtTime relative`
+ *   输出「几天前」并带 `title` 绝对时间；这里用 `<time datetime>` 输出绝对日期，
+ *   再由脚本改写成相对文本（见下方 `<script>`）。
+ * - `v-tip` 属 Phase 4（与 `content/Tip.astro` 一致），title 保留。
+ */
+import BlogWidget from '../blog/BlogWidget.astro'
+import DlGroup, { type DlItem } from '../blog/DlGroup.astro'
+import { appConfig } from '../../lib/app-config'
+import { formatNumber, timeElapse } from '../../lib/shared'
+import { formatRelative } from '../../lib/relative-time'
+
+/** 与 `src/lib/stats.ts` 的 `BlogStats` 结构对应 */
+export interface BlogStatsData {
+	total: { posts: number, words: number }
+	annual: Record<string | number, { posts: number, words: number }>
+}
+
+interface Props {
+	/** 由布局层注入的统计数据（`getStats()` 的返回值）；不传则显示 `--` */
+	stats?: BlogStatsData
+	class?: string
+}
+
+const { stats, class: className } = Astro.props
+
+const yearlyTip = Object
+	.entries(stats?.annual ?? {})
+	.reverse()
+	.map(([year, item]) => `${year}年：${item.posts}篇，${item.words}字`)
+	.join('\n') || '数据获取失败'
+
+/*
+ * 构建时间：静态站每次构建都会重新求值，等价于 Nuxt 侧
+ * `runtimeConfig.public.buildTime = Temporal.Now.zonedDateTimeISO()`。
+ * 可由布局层传入覆盖（例如复用某个统一的构建时间戳）。
+ */
+const buildTime = new Date().toISOString()
+
+const blogStats: DlItem[] = [
+	{
+		label: '运营时长',
+		value: timeElapse(appConfig.timeEstablished),
+		tip: `博客于${appConfig.timeEstablished}上线`,
+	},
+	{
+		label: '上次更新',
+		// 构建期算好，不走客户端改写：`DlGroup` 只吃字符串，塞不进组件，
+		// 原实现是「先渲染绝对日期、再用脚本把 dd 文本改掉」——首屏会先闪一下
+		// 错误文案，且文案依赖 JS 执行。与线上 Nuxt 侧的
+		// `h(UtilDate, { relative: true, tipPrefix: '构建于' })` 对齐到这里。
+		value: formatRelative(buildTime),
+		tip: `构建于 ${buildTime}`,
+	},
+	{
+		label: appConfig.stats.includePaths.length ? '文章字数' : '总字数',
+		value: formatNumber(stats?.total?.words) || '--',
+		tip: yearlyTip,
+	},
+]
+---
+
+<BlogWidget card title="博客统计" class={className}>
+	<DlGroup size="small" items={blogStats} class="blog-stats" />
+</BlogWidget>
+
+<style>
+/*
+ * DlGroup 是独立组件，带它自己的 scope；
+ * .blog-stats 这个 class 由 BlogWidget/DlGroup 显式接收后落根元素上，
+ * 但其内部 dd/time 由 DlGroup 渲染、不带本组件 scope，故需要 :global()。
+ */
+.blog-stats :global(dd time) {
+	font-variant-numeric: tabular-nums;
+}
+</style>

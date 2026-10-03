@@ -1,0 +1,108 @@
+---
+/**
+ * 友链页（基线路径 `/link`），对应 `app/pages/link.vue`。
+ *
+ * ## ⚠️ 与 `content/link.md` 的路由冲突及解法
+ * `content.config.ts` 的 `generateId` 把 `content-mdx/link.mdx` 映射成条目 id `link`，
+ * 于是 `[...slug].astro` 的 `getStaticPaths` 也会为 `/link` 产出一条路由，
+ * 与本文件的静态路由**指向同一个输出文件** `dist/link/index.html`。
+ * 实测（Astro 7.3.5）：构建**不报错**，静态路由 `link.astro` 优先，
+ * 产物为本页（两次构建结果一致，见交付报告）。
+ *
+ * 采纳「走内容路由 + 合并渲染」的方案：`link.md` 的正文（申请友链要求）作为
+ * `Tab` 的第二个面板渲进来，与 `link.vue` 的友链列表合到同一页。
+ * 这样既满足基线的可见文本（正文 + 列表），也不必改动共享的
+ * `content.config.ts` 或 `[...slug].astro`（二者均属其他 agent 的范围）。
+ * `link.mdx` 仍留在内容集合里，MDX 渲染、aside 插槽等能力不丢。
+ *
+ * ## 与 Nuxt 版的差异
+ * 1. **`ContentRenderer`** → `render(entry)` 得到的 `<Content components={contentComponents} />`。
+ *    `link.mdx` 里用到 `<Tip>`，映射表已含。
+ * 2. **`PostComment` 已改为复用 `post/Comment.astro`**（Twikoo 初始化在组件内），
+ *    与基线 `link.vue` 的 `<PostComment />` 对应。
+ * 3. 页面 `description` 走 `Blog.astro` → `Base.astro`（本批次未加 description 槽），
+ *    SEO meta 待 SEO 层统一处理。
+ */
+import { getEntry, render } from 'astro:content'
+import BlogHeader from '../components/blog/BlogHeader.astro'
+import Comment from '../components/post/Comment.astro'
+import Copy from '../components/content/Copy.astro'
+import FeedCard from '../components/content/FeedCard.astro'
+import FeedGroup from '../components/content/FeedGroup.astro'
+import Tab from '../components/content/Tab.astro'
+import Blog from '../layouts/Blog.astro'
+import { appConfig } from '../lib/app-config'
+import { contentComponents } from '../lib/content-components'
+import { myFeed } from '../config/blog'
+import feeds from '../lib/feeds'
+import blogConfig from '../config/blog'
+
+/* 对应 queryCollection('content').path('/link').first() */
+const postLink = await getEntry('content', 'link')
+const { Content } = postLink ? await render(postLink) : { Content: undefined }
+
+const copyFields = {
+	博主: myFeed.author,
+	标题: myFeed.title,
+	介绍: myFeed.desc,
+	网址: myFeed.link,
+	头像: myFeed.avatar,
+}
+---
+
+<Blog title="友链" description={`${blogConfig.title}的友链页面，收集了添加他为友链的网站和他订阅的网站列表。`} ogType="profile">
+	<div class="hide-above-mobile">
+		<BlogHeader to="/" tag="h1" />
+	</div>
+
+	{feeds.map(group => (
+		<FeedGroup
+			name={group.name}
+			desc={group.desc}
+			entries={group.entries}
+			shuffle={appConfig.link.randomInGroup}
+		/>
+	))}
+
+	<Tab tabs={['我的博客信息', '申请友链']} center>
+		<div slot="tab1" class="link-tab">
+			<FeedCard {...myFeed} />
+			{Object.entries(copyFields).map(([prompt, code]) => (
+				<Copy prompt={prompt} code={code} />
+			))}
+		</div>
+
+		<div slot="tab2">
+			{postLink
+				? (
+					<article class="article">
+						<Content components={contentComponents} />
+					</article>
+				)
+				: (
+					<p class="text-center">
+						可于 link.md 配置友链补充说明。
+					</p>
+				)}
+		</div>
+	</Tab>
+
+	{/* 评论区：改用已移植的 Comment 组件（Twikoo 初始化在其中） */}
+	<Comment />
+</Blog>
+
+<style>
+	/*
+	 * 只有 `.link-tab` 需要本页样式。
+	 *
+	 * 这里原先还留着一条 `.z-comment { margin: 2em 1em }`——它写于
+	 * `post/Comment.astro` 落地之前，注释也如实写着「随组件一起待移植」。
+	 * 组件落地后它就成了**全局覆盖**：`<style>` 没写 scoped，
+	 * 这条规则会把 Comment.astro 自己的 `margin: 3rem 1rem` 顶掉。
+	 * 因为边距与相邻块合并，页高差恰好被抵消成 0，肉眼与页高对比都看不出来——
+	 * 但规则本身是错的，且与基线不符（link.vue 的 scoped 样式里只有 `.link-tab`）。
+	 */
+	.link-tab {
+		margin: 1rem;
+	}
+</style>

@@ -1,0 +1,273 @@
+---
+import Icon from '../Icon.astro'
+
+/**
+ * Mermaid 组件（Astro 版）：渲染 ```mermaid 代码块。
+ *
+ * 不做成 Vue 岛：构建期只输出空容器 + 原始代码，mermaid 由原生 `<script>`
+ * 在接近视口时动态 import（包体大，沿用原版的懒加载策略）。
+ *
+ * 与 Nuxt 版的适配差异：
+ * 1. `useColorMode` → 直接读根元素的 `.dark` 类名（`@nuxtjs/color-mode` 的约定，
+ *    全站样式如 Tab 的 `.dark &` 也是这么写的）。
+ * 2. vue-tippy 的 `Tooltip` + `ZButton` → 换成一个常驻的小按钮。
+ *    它的唯一作用就是切换「适应宽度 / 横向滚动」，用 tippy 包一层没有收益。
+ * 3. `<ProsePre :code language="mermaid">`（错误态的代码回显）→ 静态 `<pre>`，
+ *    避免把代码高亮组件拖进本组件的依赖。
+ */
+interface Props {
+	code: string
+	/** MDX 传入的 className；Astro 没有 attribute fallthrough，需显式接收后合并 */
+	class?: string
+}
+
+const { code, class: className } = Astro.props
+---
+
+<div class:list={['mermaid-diagram', className]} data-mermaid data-code={code}>
+	{/* 宽度切换按钮：仅在图表渲染成功后由脚本显示 */}
+	<button class="mermaid-toggle" type="button" hidden data-mermaid-toggle>
+		{/*
+		 * 两个状态都在构建期渲染好，显示哪一颗交给 CSS 按 `data-scroll` 判定。
+		 *
+		 * ⚠️ 不能在客户端改 `data-icon`：astro-icon 构建期就把字形写死在
+		 * `<use href="#ai:tabler:arrows-minimize">` 上了，改属性是 no-op；
+		 * 而改 `<use href>` 指向本页 sprite 里没有的 symbol（`tabler:arrows-horizontal`
+		 * 就属于这一类：只有真的渲染过才会进 sprite）会直接渲染成空白。
+		 * 两颗都渲染出来，symbol 必然齐全。
+		 */}
+		<Icon name="tabler:arrows-minimize" class="icon-fit" />
+		<Icon name="tabler:arrows-horizontal" class="icon-scroll" />
+		<span data-mermaid-toggle-text>适应宽度</span>
+	</button>
+
+	<div class="scrollcheck-x" tabindex="0" role="region" aria-label="Mermaid 图表" data-mermaid-scroll>
+		<div data-mermaid-canvas />
+	</div>
+
+	{/*
+		错误态容器留在模板里：脚本动态创建的节点拿不到本组件的 scope class，
+		.mermaid-error 的样式就永远匹配不上。脚本只负责填 pre 的文本并显示它。
+		（`<ProsePre>` 高亮回显改为静态 pre，见文件头注释。）
+	*/}
+	<details class="mermaid-error" hidden data-mermaid-error>
+		<summary>图表渲染失败，查看错误详情</summary>
+		<pre data-mermaid-error-text />
+	</details>
+</div>
+
+<script>
+	/*
+	 * mermaid 会移除 DOM 中同 id 的旧图，故每次渲染另起 id，避免切换主题时高度塌陷。
+	 * 隐藏容器（如 Tab 内）不渲染，避免量取到 0 尺寸——原版用 useElementVisibility，
+	 * 这里用等价的 IntersectionObserver（rootMargin 50%）。
+	 */
+	let renderCount = 0
+
+	function cssVar(name) {
+		return getComputedStyle(document.documentElement).getPropertyValue(name)
+	}
+
+	async function renderMermaid(root) {
+		if (root.dataset.mermaidRendering)
+			return
+		root.dataset.mermaidRendering = '1'
+
+		const canvas = root.querySelector('[data-mermaid-canvas]')
+		if (!canvas)
+			return
+
+		try {
+			const { default: mermaid } = await import('mermaid')
+			// 等待字体就绪——否则量出的文本宽度偏窄、图形错位
+			if (document.fonts)
+				await document.fonts.ready
+
+			const darkMode = document.documentElement.classList.contains('dark')
+
+			mermaid.initialize({
+				fontFamily: 'inherit',
+				// 须在 load 事件前关闭，否则 mermaid 会自行扫描并接管页面元素
+				startOnLoad: false,
+				suppressErrorRendering: true,
+				// themeVariables 仅对 base 主题生效，其余主题会重算这些颜色
+				theme: 'base',
+				themeVariables: {
+					darkMode,
+					// 不指定则深色下连线被推导为近黑色、边标签被推导为绿色
+					background: cssVar('--c-bg'),
+					edgeLabelBackground: cssVar('--c-bg-2'),
+					// 仅把自带主题的紫色换成博客主题色，其余配色仍由 mermaid 推导
+					primaryBorderColor: cssVar('--c-primary'),
+					primaryColor: cssVar('--c-primary-soft'),
+					primaryTextColor: cssVar('--c-text-1'),
+					textColor: cssVar('--c-text-1'),
+				},
+			})
+
+			const { svg } = await mermaid.render(`mermaid-${renderCount++}`, root.dataset.code ?? '')
+			// 用原始画布宽度保留字号，超宽图表在容器内滚动
+			const width = new DOMParser()
+				.parseFromString(svg, 'image/svg+xml')
+				.querySelector('svg')?.viewBox.baseVal.width
+
+			if (Number.isFinite(width))
+				canvas.style.minWidth = `${width}px`
+			canvas.innerHTML = svg
+
+			root.querySelector('[data-mermaid-toggle]')?.removeAttribute('hidden')
+		}
+		catch (error) {
+			showError(root, error instanceof Error ? error.message : String(error))
+		}
+	}
+
+	function showError(root, message) {
+		const details = root.querySelector('[data-mermaid-error]')
+		const text = root.querySelector('[data-mermaid-error-text]')
+		const scroll = root.querySelector('[data-mermaid-scroll]')
+		if (!details || !text || !scroll)
+			return
+		text.textContent = message
+		details.removeAttribute('hidden')
+		scroll.setAttribute('hidden', '')
+	}
+
+	function initToggle(root) {
+		const btn = root.querySelector('[data-mermaid-toggle]')
+		const label = btn?.querySelector('[data-mermaid-toggle-text]')
+		const canvas = root.querySelector('[data-mermaid-canvas]')
+		if (!btn || !label || !canvas)
+			return
+		// 默认自适应：加 min-width 即为横向滚动
+		let scroll = true
+		// 图标的显隐由 CSS 按这个类判定（见文件末尾），脚本不再碰 data-icon
+		btn.classList.add('is-scroll')
+		btn.addEventListener('click', () => {
+			scroll = !scroll
+			canvas.style.minWidth = scroll ? canvas.dataset.mermaidWidth ?? '' : ''
+			label.textContent = scroll ? '适应宽度' : '横向滚动'
+			btn.classList.toggle('is-scroll', scroll)
+		})
+	}
+
+	function initMermaid(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.mermaidReady)
+			return
+		root.dataset.mermaidReady = '1'
+
+		// 可见后即锁定，避免滚出视口时图表被清空
+		const io = new IntersectionObserver((entries) => {
+			if (!entries.some(e => e.isIntersecting))
+				return
+			io.disconnect()
+			renderMermaid(root).then(() => {
+				// 记下原始宽度，供「适应宽度」还原
+				const canvas = root.querySelector('[data-mermaid-canvas]')
+				if (canvas?.style.minWidth)
+					canvas.dataset.mermaidWidth = canvas.style.minWidth
+				initToggle(root)
+			})
+		}, { rootMargin: '50%' })
+		io.observe(root)
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('[data-mermaid]'))
+			initMermaid(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+/* 不可命名为 .mermaid：mermaid 会按此类名自动扫描并接管元素 */
+.mermaid-diagram {
+	margin: 0.5em 0;
+
+	/* mermaid 在 <body> 下量取文本，此处需与根元素排版一致，否则图形错位 */
+	line-height: 1.4;
+}
+
+.mermaid-toggle {
+	display: flex;
+	align-items: center;
+	gap: 0.3em;
+	margin: 0.3em auto;
+	padding: 0.2em 0.6em;
+	border: 1px solid var(--c-border);
+	border-radius: 0.4em;
+	background-color: var(--c-bg-2);
+	font-size: 0.75em;
+	color: var(--c-text-2);
+	transition: all 0.2s;
+	cursor: pointer;
+
+	&:hover {
+		border-color: var(--c-primary);
+		color: var(--c-primary);
+	}
+
+	&[hidden] {
+		display: none;
+	}
+}
+
+/*
+ * 「适应宽度 / 横向滚动」的字形翻转：纯 CSS，零客户端 JS。
+ *
+ * `.is-scroll` 为真 = 横向滚动中，显示 arrows-horizontal。
+ * `:global()` 必须写——`<Icon>` 是子组件，它的根元素只带子组件自己的 scope id。
+ * 不用 `hidden` 属性：`.iconify { display:inline-block }` 是作者样式，压得过 UA 的
+ * `[hidden] { display:none }`。
+ */
+.mermaid-toggle {
+	:global(.icon-scroll) {
+		display: none;
+	}
+
+	&.is-scroll {
+		:global(.icon-fit) {
+			display: none;
+		}
+
+		:global(.icon-scroll) {
+			display: block;
+		}
+	}
+}
+
+/*
+ * svg / p 由 mermaid 运行时注入（文本标签用 foreignObject 承载，会继承段落样式），
+ * 拿不到本组件的 scope class，所以这两条要 :global()。
+ */
+.mermaid-diagram :global(svg) {
+	display: block;
+	height: auto;
+	max-width: 100%;
+	margin-inline: auto;
+}
+
+.mermaid-diagram :global(p) {
+	margin: 0;
+}
+
+.mermaid-error {
+	font-size: 0.85em;
+	color: var(--c-text-2);
+
+	summary {
+		color: var(--c-error);
+		cursor: pointer;
+	}
+
+	pre {
+		overflow-wrap: anywhere;
+		white-space: pre-wrap;
+	}
+}
+</style>

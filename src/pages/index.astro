@@ -1,0 +1,506 @@
+---
+/**
+ * 首页（基线路径 `/`），对应 `app/pages/index.vue`。
+ *
+ * ## 路由说明
+ * 内容集合里没有根路径条目：`content/games/index.md` 经 `generateId` 映射为 `games`
+ * 而不是空串，所以 `/` 只由本文件提供，与 `[...slug].astro` 无冲突。
+ *
+ * ## 数据来源
+ * 排序 / 分类 / 精选三段计算都走 `src/lib/content.ts` 的共享辅助层
+ * （`sortArticles` / `categorizeArticles` / `getRecommended`），不在页面里重复实现。
+ *
+ * ## 排序 / 分类 / 分页：静态站里怎么活起来
+ * Nuxt 是三个响应式 composable 串起来的一条链：
+ *   `useArticleSort` → `useArticleCategory` → `usePagination`
+ * 静态站没有响应式运行时，**同一个链搬过来永远收不到信号**——控制条照常派发
+ * `partial:change`，页面却毫无反应（这正是迁移时整块功能静默消失的原因）。
+ * 所以这里把链拆成两半：
+ *   - **构建期**（本文件 frontmatter）：算出首屏那一页，与基线逐字一致；
+ *   - **客户端**（本页 `<script>`）：读全量数据、按事件重排 DOM。
+ *
+ * ### 全量数据放在哪
+ * 放在 `<template data-post-dataset>` 里。选它而不是 `<script type="application/json">`
+ * 有两个硬理由：
+ *   1. **`<template>` 的内容是惰性的**（HTML 规范：`template { display: none }`，
+ *      其内容在独立的 DocumentFragment 里），不占布局、不加载图片。
+ *      而全局 `.card` 之类作者级 `display` 也够不到它——它在文档树里不是渲染盒。
+ *   2. **卡片必须由服务端渲染**。`Article.astro` 的样式是 scoped 的，
+ *      元素身上带 `data-astro-cid-*`；客户端用 JS 拼出来的卡片没有这个属性，
+ *      于是 Article 的**整组 scoped CSS 全成死规则**（卡片会彻底散架）。
+ *      克隆 `<template>` 里的构建期产物则一个属性都不丢。
+ *
+ * ### 每个条目为什么有两份
+ * Nuxt 的 `:use-updated="state === 'updated'"` 会让卡片在**创建日期**与
+ * **更新时间**之间切换（`Article.astro:75-77` 的 `showCreated` / `showUpdated`，
+ * 且 `isTimeDiffSignificant` 为真时两个都显示、只交换顺序）。
+ * 那是**结构**差异（`UtilDate` 节点出现 / 消失），不是属性差异，
+ * 客户端没法靠切 class 还原——所以两种 state 各存一份卡片。
+ * 客户端按当前 `sortOrder` 挑那一份克隆。
+ *
+ * ## 与 Nuxt 版的差异
+ * 1. **查询参数只能单向**：`?sort=` / `?asc=` / `?category=` / `?page=` 在**加载时**
+ *    读取并生效，变化时用 `history.replaceState` 写回；
+ *    但 URL 里的参数不会在静态产物里改变服务器返回的 HTML（那需要为每种组合预渲染，
+ *    属路由策略决策）。深链接只能靠客户端补齐首屏，这是静态站的天花板，不是实现取舍。
+ * 2. **`page` 越界时的行为**：Nuxt 的 `transformPage` 只在**从路由读**时校验页码，
+ *    纯排序变化不会重新校验（`@update:category="page = 1"` 只覆盖分类）。
+ *    但排序不改变条目数，`total` 恒定，所以「越界」只在分类变化时可达——
+ *    那条路径本文件已照抄 `@update:category="page = 1"`。
+ *    客户端仍对 `page` 做了 clamp，纯属兜底，不改变可达行为。
+ * 3. **`WidgetBlogStats` 的 `stats` 改为构建期注入**：原组件在客户端
+ *    `useFetch('/api/stats')`，静态站里那会让统计数字晚于首屏出现。这里改为
+ *    `await getStats()`（`src/lib/stats.ts`）算好后作为 prop 传入，
+ *    与 `/api/stats` 端点共用同一份实现，数字在首屏即到位。
+ * 4. **`useSeoMeta({ title: page > 1 ? '第N页' : '' })`**：多页标题在静态站无意义，
+ *    故 `title` 恒为空串（`Base.astro` 会退回纯站点标题，与基线 `/` 一致）。
+ * 5. **`PostSlide` 的 `v-if` 条件**（`page === 1 && !category`）未复现：轮播由
+ *    `Slide.astro` 渲染，本页拿不到它的根节点来切显隐。见交付报告的「已知差异」。
+ */
+import Article from '../components/post/Article.astro'
+import BlogHeader from '../components/blog/BlogHeader.astro'
+import Icon from '../components/Icon.astro'
+import OrderToggle from '../components/post/OrderToggle.astro'
+import Pagination from '../components/partial/Pagination.astro'
+import Secret from '../components/partial/Secret.astro'
+import Slide from '../components/post/Slide.astro'
+import UtilLink from '../components/blog/UtilLink.astro'
+import BlogStats from '../components/widget/BlogStats.astro'
+import BlogTech from '../components/widget/BlogTech.astro'
+import CommGroup from '../components/widget/CommGroup.astro'
+import ListTransition from '../components/util/ListTransition.astro'
+import Blog from '../layouts/Blog.astro'
+import { appConfig } from '../lib/app-config'
+import { categorizeArticles, getAllContent, getRecommended, sortArticles, toPath } from '../lib/content'
+import { getStats } from '../lib/stats'
+
+const all = await getAllContent()
+
+/* 博客统计：与 /api/stats 同源，构建期算出后作为 prop 注入侧栏 */
+const stats = await getStats()
+
+/* 排序：构建期固定为 useArticleSort 的初始态（倒序、最新在前） */
+const { sorted: listSorted, sortOrder, isAscending } = sortArticles(
+	all.filter(entry => entry.data.isPost),
+	{ initialOrder: appConfig.pagination.sortOrder },
+)
+
+/* 分类：构建期无选中分类，故取全量 */
+const { categories, byCategory } = categorizeArticles(listSorted)
+const listCategorized = byCategory(undefined)
+
+/* 分页：构建期取第 1 页 */
+const perPage = appConfig.pagination.perPage
+const totalPages = Math.ceil(listCategorized.length / perPage) || 1
+const listPaged = listCategorized.slice(0, perPage)
+
+/**
+ * `<template>` 里要存的两种 `useUpdated` 形态。
+ * `date` = Nuxt 排序方式为创建日期时的样子，`updated` = 按更新日期排时的样子。
+ * 与 Nuxt 的 `state === 'updated'` 逐字对应。
+ */
+const listStates = ['date', 'updated'] as const
+
+/* 精选：对应 `listRecommended`，构建期恒满足 page === 1 && !category */
+const listRecommended = await getRecommended()
+const slideList = listRecommended.map(entry => ({
+	title: entry.data.title,
+	description: entry.data.description,
+	date: entry.data.date,
+	image: entry.data.image,
+	path: toPath(entry),
+}))
+
+/* 预览文章数：对应 queryCollection('content').where('stem','LIKE','previews/%').count() */
+const previewCount = all.filter(entry => entry.id.startsWith('previews/')).length
+---
+
+<Blog title="" hasAside>
+	<BlogHeader class="hide-above-mobile" to="/" tag="h1" />
+
+	<Slide list={slideList} />
+
+	<div
+		class="post-list"
+		data-post-list
+		data-per-page={perPage}
+		data-default-order={sortOrder}
+		data-default-ascending={String(isAscending)}
+	>
+		<OrderToggle categories={categories}>
+			{previewCount > 0 && (
+				<Secret>
+					<UtilLink to="/preview" class="preview-entrance">
+						<Icon name="tabler:shield-lock" />
+						查看预览文章
+					</UtilLink>
+				</Secret>
+			)}
+		</OrderToggle>
+
+		<ListTransition>
+			{/* 基线里 PostArticle 是 <menu> 的直接子元素，没有 <li> 包裹 */}
+			<menu class="proper-height" data-post-menu>
+				{listPaged.map((entry, index) => (
+					<Article
+						title={entry.data.title}
+						description={entry.data.description}
+						date={entry.data.date}
+						updated={entry.data.updated}
+						categories={entry.data.categories}
+						image={entry.data.image}
+						path={toPath(entry)}
+						readingTime={entry.data.readingTime}
+						useUpdated={sortOrder === 'updated'}
+						delay={index * 0.05}
+						data-list-key={toPath(entry)}
+					/>
+				))}
+			</menu>
+		</ListTransition>
+
+		<Pagination totalPages={totalPages} sticky avoid />
+
+		{/*
+		 * 全量数据。`<template>` 惰性：不参与布局、不加载图片、不进无障碍树，
+		 * 所以首屏可见 DOM 与页高都不受影响（页高门禁 4px 容差）。
+		 * 客户端按 key 取出对应 state 的那一枚克隆进 <menu>。
+		 */}
+		<template data-post-dataset>
+			{listCategorized.flatMap(entry => listStates.map(state => (
+				<div
+					data-post-entry
+					data-post-key={toPath(entry)}
+					data-post-state={state}
+					data-post-date={entry.data.date ?? ''}
+					data-post-updated={entry.data.updated ?? ''}
+					data-post-category={entry.data.categories?.[0] ?? ''}
+				>
+					<Article
+						title={entry.data.title}
+						description={entry.data.description}
+						date={entry.data.date}
+						updated={entry.data.updated}
+						categories={entry.data.categories}
+						image={entry.data.image}
+						path={toPath(entry)}
+						readingTime={entry.data.readingTime}
+						useUpdated={state === 'updated'}
+						data-list-key={toPath(entry)}
+					/>
+				</div>
+			)))}
+		</template>
+	</div>
+
+	<Fragment slot="aside">
+		<BlogStats stats={stats} />
+		<BlogTech />
+		<CommGroup />
+	</Fragment>
+</Blog>
+
+<script>
+	/**
+	 * 首页列表控制器：把 `OrderToggle` / `Pagination` 派发的 `partial:change`
+	 * 接到「排序 → 分类 → 分页」这条链上，重排既有 DOM。
+	 *
+	 * 逐条对应 Nuxt 侧：
+	 *   - 比较器 = `orderBy(list, [sortOrder, 'date'], [isAscending ? 'asc' : 'desc'])`
+	 *     （es-toolkit 的 `compareValues` 用的是 `<` / `>`，**不是** `localeCompare`；
+	 *      构建期 `src/lib/content.ts` 的 `sortArticles` 用的是 `localeCompare`，
+	 *      两者对 ISO 日期串结果一致，见交付报告）
+	 *   - 分类 = `!category || item.categories?.[0] === category`（「全部分类」即 category 为空）
+	 *   - 分页 = `Math.ceil(len / perPage) || 1`，`slice((page - 1) * perPage, …)`
+	 *   - `@update:category="page = 1"`
+	 *   - `getFixedDelay(index * 0.05)` = `--delay: ${(index * 0.05).toFixed(2)}s`
+	 */
+	function initPostList() {
+		const root = document.querySelector('[data-post-list]')
+		if (!(root instanceof HTMLElement) || root.dataset.postListReady)
+			return
+		const dataset = root.querySelector('[data-post-dataset]')
+		const menu = root.querySelector('[data-post-menu]')
+		if (!(dataset instanceof HTMLTemplateElement) || !(menu instanceof HTMLElement))
+			return
+		root.dataset.postListReady = '1'
+
+		const perPage = Number(root.dataset.perPage) || 1
+		const defaultOrder = root.dataset.defaultOrder || 'date'
+		const defaultAscending = root.dataset.defaultAscending === 'true'
+		const pager = root.querySelector('[data-pagination-root]')
+		const toggle = root.querySelector('[data-order-toggle-root]')
+		/* FLIP 句柄由 ListTransition.astro 挂在根节点上；改 DOM 之前必须先 refresh() */
+		const flip = root.querySelector('[data-list-transition-root]')
+
+		/**
+		 * key → { date/updated: 排序用的字符串, category, byState: { date: 包装节点, updated: 包装节点 } }
+		 *
+		 * ⚠️ 排序字段必须叫 `date` / `updated`（`a[order]` 要按 `sortOrder` 索引），
+		 * 所以 DOM 节点必须换一组键名。第一版图省事写成 `item[state] = node`，
+		 * 结果 `a['date']` 拿到的是**节点**，`compareValues` 恒返回 0——
+		 * 「按更新日期排」会静默退化成「按创建日期排」，而任何门禁都看不见。
+		 */
+		const entries = new Map()
+		for (const node of dataset.content.querySelectorAll('[data-post-entry]')) {
+			const key = node.dataset.postKey
+			if (!key)
+				continue
+			let item = entries.get(key)
+			if (!item) {
+				item = {
+					date: node.dataset.postDate || '',
+					updated: node.dataset.postUpdated || '',
+					category: node.dataset.postCategory || '',
+					byState: {},
+				}
+				entries.set(key, item)
+			}
+			item.byState[node.dataset.postState] = node
+		}
+
+		let order = defaultOrder
+		let ascending = defaultAscending
+		let category = ''
+		let page = 1
+
+		/** es-toolkit `compareAscending` 的字符串分支：无 localeCompare */
+		function compareValues(a, b) {
+			if (a < b) return -1
+			if (a > b) return 1
+			return 0
+		}
+
+		/** orderBy(list, [sortOrder, 'date'], [isAscending ? 'asc' : 'desc']) */
+		function compareBy(a, b) {
+			const dir = ascending ? 1 : -1
+			const primary = compareValues(a[order] || '', b[order] || '')
+			return primary !== 0
+				? primary * dir
+				: compareValues(a.date, b.date) * dir
+		}
+
+		/** `usePagination` 的 `getPaginationIndicator`，逐字照搬；-1 表示省略号 */
+		function indicator(current, total, expand = 2) {
+			const pages = [1]
+			const start = Math.max(2, current - expand)
+			const end = Math.min(total - 1, current + expand)
+			if (start > 2) pages.push(-1)
+			for (let i = start; i <= end; i++) pages.push(i)
+			if (end < total - 1) pages.push(-1)
+			if (total > 1) pages.push(total)
+			return pages
+		}
+
+		function currentTotal() {
+			let n = 0
+			for (const item of entries.values()) {
+				if (!category || item.category === category)
+					n++
+			}
+			return Math.max(1, Math.ceil(n / perPage))
+		}
+
+		/**
+		 * 重画分页条。
+		 *
+		 * `Pagination.astro` 的页码数组是**构建期**算的（`getPaginationIndicator` 逐字
+		 * 照搬自 composable），所以筛选改变了 `totalPages` 之后，页码按钮会与实际页数
+		 * 对不上——Nuxt 侧是响应式的，这里必须由页面自己重排。
+		 * 只动 prev / next 之间的那段，两侧的翻页按钮保持原位（CSS 的
+		 * `:first-child` / `:last-child` 自动外推间距依赖它们的位置）。
+		 */
+		function syncPager(total) {
+			if (!(pager instanceof HTMLElement))
+				return
+			pager.dataset.totalPages = String(total)
+			pager.dataset.value = String(page)
+			pager.setAttribute('aria-label', `第${page}页，共${total}页`)
+
+			const prev = pager.querySelector('[data-page-prev]')
+			const next = pager.querySelector('[data-page-next]')
+			if (!prev || !next)
+				return
+			// 摘掉 prev 与 next 之间的全部旧页码
+			for (let n = prev.nextElementSibling; n && n !== next;) {
+				const doomed = n.nextElementSibling
+				n.remove()
+				n = doomed
+			}
+
+			const arr = indicator(page, total, 2)
+			for (const p of arr) {
+				const btn = document.createElement('button')
+				btn.className = 'pagination-num'
+				if (p === -1) {
+					btn.disabled = true
+					btn.textContent = '…'
+				}
+				else {
+					btn.dataset.pageNum = String(p)
+					btn.setAttribute('aria-label', `第${p}页`)
+					btn.classList.toggle('active', p === page)
+					btn.textContent = String(p)
+				}
+				pager.insertBefore(btn, next)
+			}
+
+			// 折叠宽度跟着页码个数走（Pagination.astro 在构建期写死成 `--collapsed-width`）
+			pager.style.setProperty('--collapsed-width', `${arr.length * 2 + 6}em`)
+			prev.disabled = page <= 1
+			next.disabled = page >= total
+		}
+
+		function render() {
+			const total = currentTotal()
+			page = Math.min(Math.max(1, page), total)
+			const list = [...entries.values()]
+				.filter(item => !category || item.category === category)
+				.sort(compareBy)
+
+			const start = (page - 1) * perPage
+			const state = order === 'updated' ? 'updated' : 'date'
+			const cards = list.slice(start, start + perPage).map((item, index) => {
+				const source = item.byState[state]
+				if (!source?.firstElementChild)
+					return null
+				const card = source.firstElementChild.cloneNode(true)
+				// getFixedDelay(index * 0.05)
+				card.style.setProperty('--delay', `${(index * 0.05).toFixed(2)}s`)
+				return card
+			}).filter(Boolean)
+			menu.replaceChildren(...cards)
+			syncPager(total)
+		}
+
+		/** 把 URL 里的初始值同步给控制条的 DOM 状态与文案 */
+		function syncToggle() {
+			if (!(toggle instanceof HTMLElement))
+				return
+			toggle.dataset.sortOrder = order
+			toggle.dataset.category = category
+			toggle.dataset.ascending = String(ascending)
+
+			const categoryLabel = toggle.querySelector('[data-category-btn] .order-text')
+			if (categoryLabel)
+				categoryLabel.textContent = category || '全部分类'
+			for (const btn of toggle.querySelectorAll('[data-category-item]'))
+				btn.classList.toggle('active', (btn.dataset.categoryItem || '') === category)
+
+			const sortBtn = toggle.querySelector('[data-order-sort]')
+			if (sortBtn) {
+				let labels = {}
+				try {
+					labels = JSON.parse(sortBtn.dataset.orderLabels ?? '{}')
+				}
+				catch { /* 映射缺失时回退到直接显示键名 */ }
+				const text = sortBtn.querySelector('.order-text')
+				if (text)
+					text.textContent = labels[order] ?? order
+			}
+			toggle.querySelector('[data-order-direction] .toggle-direction')?.classList.toggle('ascending', ascending)
+		}
+
+		/** 只回写真正变了的那个键，与 Nuxt `useRouteQuery` 的单键写入同形 */
+		function writeQuery(keys) {
+			const url = new URL(location.href)
+			for (const k of keys) {
+				let value = ''
+				if (k === 'sort')
+					value = order
+				else if (k === 'asc')
+					value = ascending ? 'true' : 'false'
+				else if (k === 'category')
+					value = category
+				else
+					value = String(page)
+				// 回到初始值就别在 URL 里留痕（Nuxt 侧由 routeQuery 自己判断）
+				if (!value || (k === 'sort' && value === defaultOrder) || (k === 'asc' && value === String(defaultAscending)))
+					url.searchParams.delete(k)
+				else
+					url.searchParams.set(k, value)
+			}
+			history.replaceState(history.state, '', url)
+		}
+
+		function applyState(changes) {
+			/* 关键顺序：先量旧位置，再改 DOM。
+			 MutationObserver 在变更**之后**的微任务里才回调，那时新位置已落布局，
+			 拿不到 before rect；引擎只能靠位置缓存，所以必须在这里手动 refresh()。 */
+			flip?.listTransition?.refresh()
+			render()
+			writeQuery(Object.keys(changes))
+		}
+
+		document.addEventListener('partial:change', (e) => {
+			const d = e.detail || {}
+
+			// OrderToggle：{ category, sortOrder, isAscending }
+			if (d.sortOrder !== undefined || d.category !== undefined || d.isAscending !== undefined) {
+				const changed = {}
+				if (d.sortOrder !== undefined && d.sortOrder !== order) {
+					order = d.sortOrder
+					changed.sort = true
+				}
+				if (d.isAscending !== undefined && d.isAscending !== ascending) {
+					ascending = d.isAscending
+					changed.asc = true
+				}
+				if (d.category !== undefined) {
+					// `@update:category="page = 1"`
+					page = 1
+					changed.category = true
+					changed.page = true
+					category = d.category || ''
+				}
+				if (Object.keys(changed).length)
+					applyState(changed)
+				return
+			}
+
+			// Pagination：{ value }
+			if (d.value !== undefined) {
+				const total = currentTotal()
+				if (!Number.isInteger(d.value) || d.value < 1 || d.value > total || d.value === page)
+					return
+				page = d.value
+				applyState({ page: true })
+			}
+		})
+
+		/* —— 首屏：按 URL 里的查询参数还原状态 —— */
+		const query = new URLSearchParams(location.search)
+		const sort = query.get('sort')
+		if (sort)
+			order = sort
+		const asc = query.get('asc')
+		if (asc !== null)
+			ascending = asc === 'true'
+		const cat = query.get('category')
+		if (cat)
+			category = cat
+		const rawPage = Number(query.get('page'))
+		if (query.get('page') !== null && Number.isInteger(rawPage) && rawPage >= 1)
+			page = rawPage
+
+		/* 状态与构建期一致时**不碰 DOM**：首屏可见节点逐字保持构建期产物，
+		   页高门禁比的就是这一份。多余的一次重排会让 FLIP 放一段无意义的入场动画。 */
+		if (order !== defaultOrder || ascending !== defaultAscending || category !== '' || page !== 1) {
+			syncToggle()
+			render()
+			flip?.listTransition?.refresh()
+		}
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initPostList)
+	else
+		initPostList()
+	document.addEventListener('astro:page-load', initPostList)
+</script>
+
+<style>
+	.post-list {
+		margin: 1rem;
+	}
+</style>

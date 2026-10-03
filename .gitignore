@@ -1,10 +1,23 @@
-# Nuxt dev/build outputs
-.output
-.data
-.nuxt
-.nitro
-.cache
+# Build outputs
 dist
+.output
+.astro
+
+# Frozen Nuxt baseline (scripts/freeze-baseline.mjs). Local-only anchor for the
+# offline gates; see baseline/nuxt/BASELINE.md. Decided on 2026-10-03 to stay
+# uncommitted during the migration -- revisit when the takeover wraps up.
+baseline/
+
+# Comparison artifacts and screenshots (tools write them, they are not source)
+.astro-compare
+.astro-shots/
+.astro-shots-code/
+.astro-shots-live/
+.nuxt-shots/
+.playwright-mcp
+
+# compare-titles.ps1 的输出表（每次运行都变）
+scripts/title-parity.csv
 
 # Node dependencies
 node_modules
@@ -12,6 +25,12 @@ node_modules
 # Logs
 logs
 *.log
+
+# Agent / tooling session artifacts
+.playwright-mcp
+.zcode
+.mimosa
+.qoder
 
 # Misc
 .DS_Store
@@ -25,10 +44,3 @@ logs
 
 # Custom
 .vercel
-content/posts/test.md
-
-# Agent / tooling session artifacts
-.playwright-mcp
-.zcode
-.mimosa
-.qoder

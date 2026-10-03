@@ -1,0 +1,133 @@
+---
+/**
+ * Date 组件（Astro 版）—— 对应 `app/components/util/Date.vue`（Nuxt 侧注册名 `UtilDate`）。
+ *
+ * props 契约与 Nuxt 版逐项对齐：`icon` / `date` / `format` / `absolute` / `relative` /
+ * `nospace` / `tipFormat` / `tipTransform`，外加 `class`（Astro 没有 attribute
+ * fallthrough，必须显式接收才能把 `dim-hover` / `info` / `date` / `desc` 这类
+ * 挂在 Nuxt 版根 `<span>` 上的类名落下来）。
+ *
+ * ═══ 为什么要逐字照抄 NuxtTime 的 Intl 调用 ═══
+ * Nuxt 版不传 `format` 时走 `<NuxtTime month="long" day="numeric" numeric="auto">`，
+ * 文本由 `node_modules/nuxt/dist/app/components/nuxt-time.vue` 生成：
+ *   - 非相对：`new Intl.DateTimeFormat(undefined, rest).format(new Date(datetime))`
+ *   - 相对：`new Intl.RelativeTimeFormat(undefined, rest).format(值, 单位)`
+ * `locale` 与 `timeZone` 两侧都**不传**，按 Intl 规范落到**构建机运行时**的默认值。
+ * 所以措辞是中文还是英文由构建机决定，不是本组件的选择——本组件唯一能做的就是
+ * 别偷偷补上 `timeZone` / `'zh-CN'`：一旦补了，同一份数据在两种构建机上就会和基线分叉。
+ * （本地基线产物实测：`4月1日` / `25年5月19日` / `43秒钟前`。）
+ *
+ * 注意 `numeric: 'auto'` 只被 `Intl.RelativeTimeFormat` 消费（实测它对
+ * `Intl.DateTimeFormat` 完全无效）；「几号」是 `day: 'numeric'` 决定的。
+ *
+ * ═══ tooltip 与 SSR 的差异 ═══
+ * Nuxt 版 tooltip 依赖 `useMounted()`：SSR 阶段 `title` 是**原始日期字符串**，
+ * 水合后才换成格式化结果。Astro 不水合，照抄 SSR 分支只会得到一串裸 ISO，
+ * 且 `tipFormat` / `tipTransform` 永远失效，故这里直接算最终值——对齐的是
+ * Nuxt **水合后**的形态，也与迁移前各调用点手写的 `title={toZdtLocaleString(x, 'full')}`
+ * 逐字一致，切换调用点不产生视觉变化。
+ *
+ * 相对时间的秒级刷新（Nuxt 侧 `setInterval`）与水合后的措辞重算（`onPrehydrate`，
+ * 按访客浏览器 locale 重排）需要客户端 JS，SSG 站点拿不到，构建时冻结为快照。
+ */
+import { Temporal } from 'temporal-polyfill'
+import Icon from '../Icon.astro'
+import { toInstantString, toZdtLocaleString, toZonedTemporal } from '../../lib/shared'
+import { formatRelative } from '../../lib/relative-time'
+
+/** 与 Nuxt 侧 `dateTimeFormatOptions` 同一形状；从已转出的函数签名反推，
+ *  避免为了拿类型而 import 根项目的 `shared/utils/time`（它 import 了 Nuxt 别名 `~~/blog.config`） */
+type DateFormat = Parameters<typeof toZdtLocaleString>[1]
+
+interface Props {
+	/** Iconify 名，渲染在时间文字之前 */
+	icon?: string
+	/** ISO 串或 zdt；不传 / 解析失败时渲染 `Invalid Date` */
+	date?: string | Temporal.ZonedDateTime
+	/** 显式格式。传了就走 `toZdtLocaleString`，不传就走 NuxtTime 那套默认形态 */
+	format?: DateFormat
+	/** 强制绝对时间，压掉相对表述 */
+	absolute?: boolean
+	/** 强制相对时间（默认由「距今不足一周」自动判定） */
+	relative?: boolean
+	/** 图标与文字之间不插 nbsp */
+	nospace?: boolean
+	/** tooltip 格式，默认与 `toZdtLocaleString` 的缺省一致（`full`） */
+	tipFormat?: DateFormat
+	/** tooltip 文本后处理，默认 `String` */
+	tipTransform?: (formattedDate: string) => string
+	/** 合并到根 `<span>`；对应 Nuxt 版的 fallthrough class */
+	class?: string
+}
+
+const {
+	icon,
+	date,
+	format,
+	absolute,
+	relative: forceRelative,
+	nospace,
+	tipFormat,
+	tipTransform = String,
+	class: className,
+} = Astro.props
+
+const today = Temporal.Now.plainDateISO()
+
+let zdt: Temporal.ZonedDateTime | undefined
+try {
+	// 与 Nuxt 版同形：只有 string 才解析，缺省时保持 undefined（落到 Invalid Date 分支）
+	zdt = typeof date === 'string' ? toZonedTemporal(date) : date
+}
+catch {
+	zdt = undefined
+}
+
+/** 相对表述只在「距今不足一周」时自动启用；`absolute` 与无效日期一律压掉 */
+const isRelative = absolute || !zdt
+	? false
+	: Boolean(forceRelative) || today.since(zdt, { largestUnit: 'week' }).weeks < 1
+
+/**
+ * 无 `format` 时的默认形态。
+ *
+ * 时区上刻意与 NuxtTime 一致：它格式化的是 `new Date(instant)`，落在**运行时本地时区**，
+ * 而不是 `format` 分支里 `toZdtLocaleString` 用的 zdt 自带时区。两种行为在原项目里
+ * 本来就不一致，这里不替它做统一。
+ */
+function formatAuto(instant: string, crossYear: boolean): string {
+	const d = new Date(instant)
+	if (isRelative)
+		return formatRelative(d)
+	// 年份仅跨年时补 `2-digit`：同年只显示「4月1日」，跨年显示「25年5月19日」
+	return new Intl.DateTimeFormat(undefined, {
+		year: crossYear ? '2-digit' : undefined,
+		month: 'long',
+		day: 'numeric',
+		numeric: 'auto',
+	}).format(d)
+}
+
+const datetime = zdt ? toInstantString(zdt) : undefined
+const autoText = zdt ? formatAuto(datetime!, zdt.year !== today.year) : ''
+
+const title = zdt
+	? tipTransform(toZdtLocaleString(zdt, tipFormat))
+	// 与 Nuxt 版 `mounted` 为假时的分支一致：给不出格式化结果就退回原始串
+	: (typeof date === 'string' ? date : undefined)
+---
+
+<span class={className} title={title}>
+	{icon && <Icon name={icon} />}
+	{/* Nuxt 模板里的 `&nbsp;`：编译后是真正的 U+00A0（基线产物实测），
+	   这里用转义写法，避免源码里藏一个看不见、编辑器还会顺手改掉的字符 */}
+	{icon && !nospace && '\u00A0'}
+
+	{!zdt
+		? <span>Invalid Date</span>
+		: (
+			<time datetime={datetime}>
+				{format ? toZdtLocaleString(zdt, format) : autoText}
+			</time>
+		)}
+</span>

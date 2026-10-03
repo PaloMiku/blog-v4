@@ -1,0 +1,78 @@
+---
+/**
+ * 站点图标统一出口。
+ *
+ * Nuxt 侧用 `@nuxt/icon`：它**不内联 SVG**，而是输出 `iconify` 类名 + 一个客户端
+ * 图标包（基线构建日志 "Nuxt Icon client bundle consist of 207 icons with 95.26KB"）。
+ * 这里改用 `astro-icon`：**构建期渲染内联 SVG**，零客户端 JS，视觉与体积都更优。
+ *
+ * ## 对外契约（50+ 处调用方，不要改）
+ * ```astro
+ * <Icon name="tabler:xxx" class="foo" style="color:red" />
+ * ```
+ * ⚠️ 实测结论：Astro 组件**不会**把未声明的 prop 自动透传到根元素。
+ * 调用方普遍写 `<Icon class="chevron" name="…" />`（Chevron、目录箭头、侧栏图标等），
+ * 不显式接收 `class` / `style` 就会静默丢失、样式全失效，故必须在此声明并合并。
+ *
+ * ## 尺寸 / 对齐
+ * 根元素统一带 `iconify` 类，尺寸完全交给 `src/styles/main.css` 的
+ * `:where(.iconify)`，与 Nuxt 基线注入的那条规则逐项一致：
+ * `display:inline-block; flex-shrink:0; font-size:1.2em; vertical-align:sub`。
+ * 本组件**不再**自带尺寸规则（占位实现里的 `1em` / `-0.125em` 是占位值，已废弃）。
+ */
+import { Icon as AstroIcon } from 'astro-icon/components'
+import { resolveIcon } from '../lib/icons'
+
+interface Props {
+	/** Iconify 名，如 `tabler:chevron-down`；`zi:` 前缀映射到本地图标集合 */
+	name: string
+	/** 合并进根元素的 class（与内置的 `iconify` 合并） */
+	class?: string
+	/** 透传到根元素 */
+	style?: string
+}
+
+const { name, class: className, style } = Astro.props
+
+const resolved = resolveIcon(name)
+
+/*
+ * 解析不到时不抛错（astro-icon 默认会 throw 并让整站构建失败），
+ * 改为渲染带 `data-icon-missing` 的显眼占位，并在构建期每个名字只警告一次。
+ * 用 `scripts/audit-icons.mjs` 扫 dist 产物即可拿到完整缺口清单。
+ */
+const warned = new Set<string>()
+if (!resolved && name && !warned.has(name)) {
+	warned.add(name)
+	console.warn(`[Icon] 未能解析图标 "${name}"，已降级为 data-icon-missing 占位`)
+}
+
+/** `iconify` 不可省：main.css 的尺寸规则和 catppuccin 浅色滤镜都挂在它上面 */
+const rootClass = ['iconify', className].filter(Boolean).join(' ')
+---
+
+{
+	resolved
+		? <AstroIcon name={`${resolved.set}:${resolved.name}`} class={rootClass} style={style} aria-hidden="true" />
+		: (
+			<span
+				class:list={['iconify', 'icon-missing', className]}
+				style={style}
+				data-icon={name}
+				data-icon-missing={name}
+				aria-hidden="true"
+			/>
+		)
+}
+
+<style>
+	/*
+	 * 降级占位：刻意做得显眼（红色虚线框），避免图标缺失被当成正常样式漏过去。
+	 * 正常路径下这个选择器不匹配任何元素。
+	 */
+	.icon-missing {
+		border: 1px dashed currentcolor;
+		border-radius: 2px;
+		opacity: 0.6;
+	}
+</style>

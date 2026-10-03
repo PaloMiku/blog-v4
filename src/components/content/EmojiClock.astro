@@ -1,0 +1,102 @@
+---
+import { Temporal } from 'temporal-polyfill'
+import { toZonedTemporal } from '../../lib/shared'
+
+/**
+ * EmojiClock 组件（Astro 版）：用 emoji 时钟表示时间。
+ *
+ * 时序与 Nuxt 版一致：
+ * - 传了 `datetime` → 纯静态，不起定时器。
+ * - 没传 `datetime` → 构建期用**构建时刻**的 `Temporal.Now` 渲染
+ *   （Nuxt 静态生成时 SSR 同样只能取到构建时刻，产物 HTML 里的 emoji 也就是构建时刻的），
+ *   客户端脚本接管后每 30s 刷新一次。等价于原来的 `client:load` 语义。
+ */
+interface Props {
+	datetime?: string
+	rotate?: boolean
+	/** MDX 传入的 className；Astro 没有 attribute fallthrough，需显式接收后合并 */
+	class?: string
+}
+
+const { datetime: datetimeProp, rotate = false, class: className } = Astro.props
+
+const emojiStatic = ['🕛', '🕧', '🕐', '🕜', '🕑', '🕝', '🕒', '🕞', '🕓', '🕟', '🕔', '🕠', '🕕', '🕡', '🕖', '🕢', '🕗', '🕣', '🕘', '🕤', '🕙', '🕥', '🕚', '🕦']
+const emojiRotate = ['🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚']
+
+/** 与 frontmatter 里的实现保持一致（构建期 / 浏览器端各算一次当前时间） */
+function resolveStatus(datetime) {
+	const zdt = datetime
+		? toZonedTemporal(datetime)
+		: Temporal.Now.zonedDateTimeISO()
+	const { hour, minute } = zdt
+
+	if (!rotate) {
+		const emojiIndex = (hour * 2 + Math.round(minute / 30)) % emojiStatic.length
+		return { emoji: emojiStatic[emojiIndex]! }
+	}
+
+	const minuteAt = Math.round(minute / 5)
+	const emojiIndex = (hour % 12 - minuteAt + emojiRotate.length) % emojiRotate.length
+	return { rotate: minuteAt * 30, emoji: emojiRotate[emojiIndex]! }
+}
+
+const status = resolveStatus(datetimeProp)
+---
+
+<span
+	class:list={['emoji-clock', className, { rotate }]}
+	style={rotate ? `--deg:${status.rotate}deg` : undefined}
+	data-emoji-clock={datetimeProp ? undefined : ''}
+>
+	{status.emoji}
+</span>
+
+<script>
+	// 定时器只能在客户端跑，否则静态构建不会自动退出
+	function initClock(el) {
+		if (!(el instanceof HTMLElement) || el.dataset.clockReady)
+			return
+		el.dataset.clockReady = '1'
+
+		const emojiStatic = ['🕛', '🕧', '🕐', '🕜', '🕑', '🕝', '🕒', '🕞', '🕓', '🕟', '🕔', '🕠', '🕕', '🕡', '🕖', '🕢', '🕗', '🕣', '🕘', '🕤', '🕙', '🕥', '🕚', '🕦']
+		const emojiRotate = ['🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚']
+
+		async function tick() {
+			// Temporal 是 ES 提案，静态 import 会让不支持的浏览器整个脚本失败，
+			// 故按需引入；失败则保持构建期渲染的 emoji 不动
+			const { Temporal } = await import('temporal-polyfill')
+			const { hour, minute } = Temporal.Now.zonedDateTimeISO()
+			const rotate = el.classList.contains('rotate')
+			if (rotate) {
+				const minuteAt = Math.round(minute / 5)
+				el.textContent = emojiRotate[(hour % 12 - minuteAt + emojiRotate.length) % emojiRotate.length]
+				el.style.setProperty('--deg', `${minuteAt * 30}deg`)
+			}
+			else {
+				el.textContent = emojiStatic[(hour * 2 + Math.round(minute / 30)) % emojiStatic.length]
+			}
+		}
+
+		tick()
+		// 对齐原版 useIntervalFn(fn, 30000) 的 30s 轮询
+		setInterval(tick, 30000)
+	}
+
+	function initAll() {
+		for (const el of document.querySelectorAll('[data-emoji-clock]'))
+			initClock(el)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.emoji-clock.rotate {
+	display: inline-block;
+	transform: rotate(var(--deg, 0deg));
+}
+</style>

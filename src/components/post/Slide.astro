@@ -1,0 +1,272 @@
+---
+/**
+ * Slide 组件（Astro 版）—— 首页「精选文章」横向轮播。
+ *
+ * 对应 `app/components/post/Slide.vue`。原版用 `embla-carousel-vue`（Vue 封装），
+ * 此处直接用 `embla-carousel` 核心库 + 原生脚本，行为一致但不需要 Vue 运行时。
+ *
+ * 插件保持一致：Autoplay（鼠标悬停暂停，交互后继续）+ WheelGestures（Shift + 滚轮）。
+ * 另外原版在 wheel 事件上还有一层自定义阈值判断（|delta| < 80 时忽略），
+ * 与 WheelGestures 插件并存，照搬。
+ *
+ * 日期原版是 `<UtilDate class="desc" :date>`（不传 format，走 NuxtTime 默认形态：
+ * 「4月1日」/「25年5月19日」，跨年才补年份）。此前这里手写
+ * `toLocaleDateString('zh-CN', { month:'2-digit', day:'2-digit' })`，
+ * 既把「4月1日」压成「04/01」又永远不带年份，现收敛到 `util/Date.astro`。
+ */
+import Button from '../partial/Button.astro'
+import Icon from '../Icon.astro'
+import UtilDate from '../util/Date.astro'
+import { appConfig } from '../../lib/app-config'
+
+interface SlideItem {
+	title?: string
+	description?: string
+	date?: string
+	image?: string
+	path: string
+}
+
+interface Props {
+	list?: SlideItem[]
+}
+
+const { list = [] } = Astro.props
+
+const showTitle = appConfig.component.slide?.showTitle ?? true
+---
+
+<div class="z-slide">
+	<div class="z-slide-header">
+		<span class="title text-creative">精选文章</span>
+		<div class="at-slide-hover">
+			<Icon name="tabler:mouse" />
+			按住 Shift 横向滚动
+		</div>
+	</div>
+
+	<div class="z-slide-body" dir="ltr" data-slide-root>
+		<div class="slide-list">
+			{list.map((article, index) => (
+				<a class="slide-item" title={article.description} href={article.path} data-slide-index={index}>
+					{article.image && <img class="cover" src={article.image} alt={showTitle ? '' : (article.title ?? '')} loading="lazy" decoding="async" />}
+
+					{showTitle && <div class="stable-info text-creative">{article.title}</div>}
+
+					<div class="hover-info">
+						<div class="title text-creative">{article.title}</div>
+						{article.date && <UtilDate class="desc" date={article.date} />}
+					</div>
+				</a>
+			))}
+		</div>
+
+		{/*
+		 * 这两个按钮在原版是 `<ZButton class="carousel-action …" icon="…" tabindex="-1">`，
+		 * ZButton 会补上 `z-button button` 与 `button-main` 外壳——
+		 * 底色、内边距、圆角、flex 居中全来自那一层，
+		 * `.carousel-action` 只负责定位与显隐。
+		 * 手写 `<button>` 只会让 `.carousel-action` 的定位生效，外观则全丢。
+		 */}
+		<Button
+			class="carousel-action prev at-slide-hover"
+			aria-label="上一页"
+			icon="tabler:chevron-left"
+			tabindex="-1"
+			data-slide-prev
+		/>
+
+		<Button
+			class="carousel-action next at-slide-hover"
+			aria-label="下一页"
+			icon="tabler:chevron-right"
+			tabindex="-1"
+			data-slide-next
+		/>
+	</div>
+</div>
+
+<script>
+	// Embla 在客户端初始化；autoplay 与 wheel-gestures 插件按需动态 import，
+	// 避免无轮播的页面为它付出首屏代价。
+	async function initSlide(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.slideReady)
+			return
+		root.dataset.slideReady = '1'
+
+		const [{ default: EmblaCarousel }, { default: Autoplay }, { default: WheelGestures }] = await Promise.all([
+			import('embla-carousel'),
+			import('embla-carousel-autoplay'),
+			import('embla-carousel-wheel-gestures'),
+		])
+
+		const embla = EmblaCarousel(
+			root,
+			{ containScroll: false, loop: true, skipSnaps: true },
+			[Autoplay({ stopOnInteraction: false, stopOnMouseEnter: true }), WheelGestures()],
+		)
+
+		// 原版在 wheel 上还叠了一层阈值判断：|delta| < 80 时不翻页
+		root.addEventListener('wheel', (e) => {
+			const delta = e.deltaX + (e.shiftKey ? e.deltaY : 0)
+			if (Math.abs(delta) < 80)
+				return
+			delta > 0 ? embla.scrollNext() : embla.scrollPrev()
+		}, { passive: true })
+
+		// 上一页 / 下一页 按钮
+		root.parentElement?.querySelector('[data-slide-prev]')?.addEventListener('click', () => embla.scrollPrev())
+		root.parentElement?.querySelector('[data-slide-next]')?.addEventListener('click', () => embla.scrollNext())
+
+		// 客户端路由换页后旧的实例要停，否则定时器泄漏
+		document.addEventListener('astro:before-swap', () => embla.destroy(), { once: true })
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('[data-slide-root]'))
+			initSlide(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style scoped>
+.z-slide {
+	margin: 1rem;
+
+	.at-slide-hover {
+		opacity: 0;
+		transition: opacity 0.2s;
+	}
+
+	&:hover .at-slide-hover,
+	&:focus-within .at-slide-hover {
+		opacity: 1;
+	}
+}
+
+.z-slide-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 2rem;
+	height: 3rem;
+	margin-bottom: -0.2rem;
+	mask-image: linear-gradient(#FFF, transparent);
+	color: var(--c-text-3);
+
+	> .title {
+		font-size: 3rem;
+		font-weight: bold;
+		line-height: 1;
+	}
+}
+
+.z-slide-body {
+	--fadeout-width: 1.5rem;
+
+	position: relative;
+	overflow: hidden;
+	padding: 2px 0;
+	mask-image: linear-gradient(to var(--end), transparent, #FFF var(--fadeout-width), #FFF calc(100% - var(--fadeout-width)), transparent);
+	cursor: grab;
+	user-select: none;
+
+	.slide-list {
+		display: flex;
+		scroll-snap-type: x mandatory;
+	}
+}
+
+/*
+ * `:global()` 是必须的，同 Pagination：这两个按钮由 `<Button>` 渲染，
+ * 元素带的是 Button 的 cid。Vue 侧靠「子组件根元素同时带父 scope id」才匹配得上。
+ */
+:global(.carousel-action) {
+	position: absolute;
+	top: 50%;
+	padding: 0.5em 0.2em;
+	font-size: 1.5em;
+	transform: translateY(-50%);
+	transition: all 0.2s;
+
+	&.prev { inset-inline-start: 1rem; }
+	&.next { inset-inline-end: 1rem; }
+}
+
+.slide-item {
+	contain: paint;
+	flex-shrink: 0;
+	position: relative;
+	width: max(12rem, 28%);
+	max-width: 80%;
+	aspect-ratio: 1.77;
+	margin: 0 min(0.5em, 1%);
+	border-radius: 0.5rem;
+	scroll-snap-align: center;
+	scroll-snap-stop: always;
+
+	/* Firefox 图片 alt 为空时 fallback 失效 */
+	@supports (-moz-force-broken-image-icon: 1) {
+		background-color: var(--c-border);
+	}
+
+	> .cover {
+		display: block;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	> .stable-info, > .hover-info {
+		position: absolute;
+		text-align: center;
+		text-shadow: var(--text-shadow-black);
+		color: white;
+		transition: opacity 0.2s;
+	}
+
+	> .stable-info {
+		overflow: hidden;
+		bottom: 0;
+		width: 100%;
+		padding: 0.5em;
+		background-image: linear-gradient(transparent, #0003, #0005);
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	> .hover-info {
+		display: grid;
+		place-items: center;
+		opacity: 0;
+		inset: 0;
+		padding: 1em;
+		backdrop-filter: brightness(0.8) saturate(10) contrast(0.8) blur(2em);
+
+		> .title {
+			text-wrap: balance;
+		}
+
+		> .desc {
+			opacity: 0.5;
+			font-size: 0.8em;
+		}
+	}
+
+	&:hover, &:focus-within {
+		> .stable-info {
+			opacity: 0;
+		}
+
+		> .hover-info {
+			opacity: 1;
+		}
+	}
+}
+</style>

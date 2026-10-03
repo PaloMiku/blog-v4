@@ -1,0 +1,107 @@
+---
+// getImgUrl / ImgService 与 Nuxt 侧同源，临时跨项目引用（同 LinkCard / LinkBanner）
+import type { ImgService } from '../../lib/img'
+import { getImgUrl } from '../../lib/img'
+
+/**
+ * Pic 组件（Astro 版）：文章配图。
+ *
+ * ## 灯箱（zoom）
+ * Nuxt 侧依赖 `useModalStore` + `LazyPopoverLightbox` + `@bikariya/image-viewer`，
+ * Astro 侧换成自研的模态栈：`LightboxModal.astro` 在 document 上做点击委托，
+ * 命中 `img[data-zoom]` 就 `openModal({ key: 'lightbox', … })`。
+ * 于是本组件只需要输出 `data-zoom` / `data-zoom-caption` 与 `cursor: zoom-in`，
+ * 模板与样式不必再动。
+ *
+ * ⚠️ 这里**曾经**写着「灯箱暂不可用，刻意不加 `cursor: zoom-in`，避免给出点不动的假提示」——
+ * 那条前提（功能没接上）**已经不成立**：委托早已在 `LightboxModal.astro` 里。
+ * 少掉的正是「点得动」的唯一视觉提示。
+ *
+ * props 契约与 `UtilImgProps` 对齐。`densities` / `filter` 在 Astro 侧暂无消费方：
+ * 依赖 `@nuxt/image` 生成的 srcset 变体属 Phase 5（astro:assets），先原样接收。
+ */
+interface Props {
+	src: string
+	width?: string | number
+	height?: string | number
+	alt?: string
+	/** 图片镜像服务，Phase 5 接入 astro:assets 后才会被消费 */
+	mirror?: ImgService
+	filter?: string
+	densities?: string
+	caption?: string
+	zoom?: boolean
+	/** MDX 传入的 className；Astro 没有 attribute fallthrough，需显式接收后合并 */
+	class?: string
+}
+
+const {
+	src,
+	width,
+	height,
+	alt = '',
+	mirror,
+	filter,
+	caption = '',
+	zoom = true,
+	class: className,
+} = Astro.props
+
+/*
+ * UtilImg 里的 baseURL 拼接（`withLeadingSlash(withTrailingSlash(app.baseURL))`）
+ * 在 Astro 侧改由 `import.meta.env.BASE_URL` + astro:assets 统一处理，属 Phase 5，
+ * 这里不做，避免两套前缀逻辑同时生效。
+ */
+const imgSrc = getImgUrl(src, mirror)
+
+/*
+ * Nuxt 侧是 `:style="{ cursor: zoom && 'zoom-in' }"`（与 `@click="zoom && open()"` 同一个开关）。
+ * 这里合进已有的 filter 内联样式；zoom 默认 true，与 Nuxt 的 withDefaults 一致，
+ * 故「配了图、没显式关掉」的文章配图都带这个光标。
+ */
+const imgStyle = Object.assign(
+	filter ? { filter } : {},
+	zoom ? { cursor: 'zoom-in' } : {},
+)
+---
+
+{/*
+	原组件此处的注释：<ProseImg> 被 <p> 包裹，服务端渲染时若内含块级元素会自动关闭，导致水合不匹配。
+	Astro 无水合问题，但 MDX 里 <figure> 仍可能被段落包裹，改用裸 <img> 可避免同样的隐患。
+	注：模板里的注释要用 Astro 的 JSX 注释语法（花括号包住 C 风格注释），
+	写成 HTML 注释会被原样输出到产物中。
+*/}
+<figure class:list={['image', className]}>
+	{/* 灯箱：data-zoom 命中后由 LightboxModal 的全局点击委托接管 */}
+	<img
+		class="image"
+		src={imgSrc}
+		alt={caption || alt}
+		width={width}
+		height={height}
+		style={Object.keys(imgStyle).length > 0 ? imgStyle : undefined}
+		referrerpolicy={mirror ? 'no-referrer' : undefined}
+		data-zoom={zoom ? '' : undefined}
+		data-zoom-caption={zoom ? (caption || alt || '') : undefined}
+	/>
+	{/*
+		figcaption 的优先级与灯箱那套**本来就不一致**，这里照搬 figcaption 的：
+		`<slot name="caption">{{ caption }}</slot>` → slot 优先、caption prop 兜底。
+		（灯箱用的是 alt → caption → slot。）
+	*/}
+	{(caption || Astro.slots.has('caption')) && (
+		<figcaption aria-hidden="true">
+			<slot name="caption">{caption}</slot>
+		</figcaption>
+	)}
+</figure>
+
+<style>
+/* 尺寸/对齐等基础样式由全站的 figure / img 规则提供，组件内只管说明文字 */
+figcaption {
+	margin-top: -0.5em;
+	font-size: 0.8em;
+	text-align: center;
+	color: var(--c-text-2);
+}
+</style>

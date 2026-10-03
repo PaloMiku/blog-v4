@@ -1,0 +1,143 @@
+---
+import Icon from '../Icon.astro'
+/**
+ * Tip 组件（Astro 版）。
+ *
+ * 与 Nuxt 版的差异：
+ * - `v-tip`（vue-tippy 的 tooltip）**暂不可用**，tooltip 能力属 Phase 4。
+ *   为避免给出「hover 没反应」的假提示，这里**不渲染任何 tooltip 容器**，
+ *   `tip` / `tipOptions` props 保留在签名里以便将来接回。
+ * - `useCopy` composable（VueUse clipboard）改为一段按 `data-` 自我初始化的原生脚本。
+ * - 图标的 copied 态切换**不是**脚本改 `data-icon`（astro-icon 之后那是 no-op，
+ *   详见模板注释），而是模板里渲染两颗图标、脚本只切 `.is-copied` 类，显示在 CSS 里。
+ */
+interface Props {
+	text?: string
+	tip?: string
+	icon?: string | boolean
+	copy?: boolean
+}
+
+const { text, tip, icon, copy = false } = Astro.props
+
+/** 与原 Vue 版一致的图标决策：显式 icon 优先，否则按 copied 状态推导 */
+function initialIcon() {
+	if (icon !== undefined)
+		return typeof icon === 'string' ? icon : ''
+	return copy ? 'tabler:copy' : ''
+}
+---
+
+<span
+	class="tip"
+	class:list={{ 'tip-copyable': copy }}
+	tabindex={copy ? '0' : undefined}
+	data-tip={copy}
+	data-tip-text={tip}
+>
+	<slot>{text}</slot>
+	{/*
+		复制成功 → 对勾：两颗都渲染，显示哪颗交给 CSS 按 `.is-copied` 判定。
+
+		⚠️ 不能在客户端改 `data-icon`：astro-icon 构建期就把字形写死在
+		`<use href="#ai:…">` 上了，改属性是 no-op（Nuxt 的 `@nuxt/icon` 才有
+		响应式 `:name`）。改 `<use href>` 指向本页 sprite 里没有的 symbol
+		则是空白图标——比 no-op 更糟。两颗都渲染，symbol 必然齐全。
+		与 `content/Copy.astro` 同一套做法。
+	*/}
+	{initialIcon() && <Icon name={initialIcon()} class="tip-icon icon-copy" />}
+	{copy && <Icon name="tabler:check" class="tip-icon icon-done" />}
+</span>
+
+<script>
+	// 复制交互：点击或回车复制自身文本，并把图标切为 tabler:check
+	function initTip(el) {
+		if (!(el instanceof HTMLElement) || el.dataset.tipReady)
+			return
+		el.dataset.tipReady = '1'
+
+		const iconEl = el.querySelector('.tip-icon')
+		if (!iconEl)
+			return
+
+		let timer
+
+		const write = async () => {
+			try {
+				await navigator.clipboard.writeText(el.textContent?.trim() ?? '')
+			}
+			catch {
+				// 非安全上下文或权限被拒时静默降级，与 useClipboard 的行为一致
+				return
+			}
+			// 图标切换是纯 CSS：只切 span 上的类，两个图标都在模板里
+			el.classList.add('is-copied')
+			clearTimeout(timer)
+			timer = setTimeout(() => {
+				el.classList.remove('is-copied')
+			}, 2000)
+		}
+
+		el.addEventListener('click', write)
+		el.addEventListener('keypress', (e) => {
+			if (e.key === 'Enter')
+				write()
+		})
+	}
+
+	function initAll() {
+		for (const el of document.querySelectorAll('[data-tip]'))
+			initTip(el)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.tip {
+	position: relative;
+	text-decoration: underline dashed var(--c-text-3);
+	cursor: pointer;
+	text-underline-offset: 4px;
+}
+
+/*
+ * `:global()` 必须写，同上面 `.icon-done` 的理由：class 是通过
+ * `<Icon class="tip-icon icon-copy" />` 传下去的，落到 astro-icon 子组件自己的
+ * 根元素上，带的是**子组件的** scope id，本组件的 scoped 选择器永远匹配不到。
+ * 漏写时的症状很隐蔽——`audit-dead-scope` 报的是「1 条 scoped 规则够不到任何元素」，
+ * 而这条规则本该命中 128 个元素（audit-css-blocks 口径），
+ * 页面高度与计算样式对比**都看不见**（只差一个 `vertical-align`）。
+ */
+:global(.tip-icon) {
+	display: inline-block;
+	font-size: 1em;
+	vertical-align: top;
+}
+
+/*
+ * 复制成功的图标切换。
+ *
+ * `:global()` 必须写：`<Icon>` 是子组件，根元素只带**子组件自己的** scope id，
+ * 本组件的 scoped 选择器匹配不到它（见 MIGRATION-BRIEF.md §3 陷阱 1）。
+ * 不用 `hidden` 属性：`.iconify { display:inline-block }` 是作者样式，
+ * 压得过 UA 样式表里的 `[hidden] { display:none }`，`hidden` 会被吃掉。
+ */
+:global(.tip .icon-done) {
+	display: none;
+}
+
+.tip.is-copied {
+	:global(.icon-copy) {
+		display: none;
+	}
+
+	:global(.icon-done) {
+		display: inline-block;
+	}
+}
+</style>

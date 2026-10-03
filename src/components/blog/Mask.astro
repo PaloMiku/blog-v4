@@ -1,0 +1,91 @@
+---
+/**
+ * Mask 组件（Astro 版），对应 `app/components/blog/Mask.vue`。
+ *
+ * ## API 变更（必要且有意）
+ * 原组件用 `defineModel('show')` 双向绑定，但 `show` 恒等于
+ * `layoutStore.state === 'sidebar' | 'aside'` —— 也就是说「显不显示」完全由
+ * 布局状态决定，绑定只是把状态抄一份回来。Vue 的 `v-model` 在 Astro 侧不存在，
+ * 故直接把布局状态本身作为 prop 收进来（`for`），省掉一层无意义的双向同步。
+ *
+ * ## 为什么不用 `v-if` + `<Transition>`
+ * 元素常驻 DOM，用 `data-show` 驱动 `opacity` + `visibility` + `pointer-events`，
+ * 进出都能吃到 CSS 过渡，且不依赖 JS 计算 `max-height`。
+ * 隐藏态用 `visibility` 而非 `display: none`，是为了保留过渡。
+ * 这三条属性都可动画，因此等价于原来的 enter/leave 淡入淡出。
+ *
+ * 点击遮罩 → `closeLayout()`，等价于原版 `@click="show = false"`。
+ */
+interface Props {
+	/** 关联哪个抽屉；显示条件为 `layoutState === for` */
+	for?: 'sidebar' | 'aside'
+	blur?: boolean | string
+	zIndex?: number
+	/** 外部传入的 class（Nuxt 侧靠 attribute fallthrough 拿到的） */
+	class?: string
+}
+
+const { for: forState, blur, zIndex, class: className } = Astro.props
+
+const bdfilter = blur ? `blur(${blur === true ? '4px' : blur})` : 'none'
+---
+
+<div
+	class:list={['bg-mask', className]}
+	data-mask={forState ?? ''}
+	style={{ '--z-index-popover': zIndex, '--bdfilter': bdfilter }}
+/>
+
+<script>
+	import { bindLayoutGlobals, closeLayout, subscribeLayout } from '../../lib/layout-state'
+
+	function initMask(el) {
+		if (!(el instanceof HTMLElement) || el.dataset.maskReady)
+			return
+		el.dataset.maskReady = '1'
+
+		// 没有关联抽屉的遮罩没有任何显示条件，保持隐藏即可
+		const forState = el.dataset.mask
+		subscribeLayout((state) => {
+			el.toggleAttribute('data-show', Boolean(forState) && state === forState)
+		})
+
+		el.addEventListener('click', () => closeLayout())
+	}
+
+	function initAll() {
+		for (const el of document.querySelectorAll('[data-mask]'))
+			initMask(el)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+
+	bindLayoutGlobals()
+</script>
+
+<style>
+.bg-mask {
+	position: fixed;
+	inset: 0;
+	background-color: #0003;
+	backdrop-filter: var(--bdfilter);
+	z-index: var(--z-index-popover);
+	/* 隐藏态：三条属性都可过渡，因此显隐各有淡入淡出，且不可点 */
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+	transition:
+		opacity var(--motion-duration, 0.3s) var(--motion-easing, ease-out),
+		visibility var(--motion-duration, 0.3s) var(--motion-easing, ease-out);
+}
+
+.bg-mask[data-show] {
+	opacity: 1;
+	visibility: visible;
+	pointer-events: auto;
+}
+</style>

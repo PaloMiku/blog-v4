@@ -1,0 +1,198 @@
+---
+/**
+ * BlogAside 组件（Astro 版），对应 `app/components/blog/BlogAside.vue`。
+ *
+ * ## 三栏布局契约（最重要）
+ * `app/layouts/default.vue` 靠这一串选择器决定是三栏还是两栏：
+ *   #blog-root:not(:has(> .blog-aside-track > #blog-aside:not(.is-empty)))
+ * 因此本组件**必须**产出 `id="blog-aside"`，且无侧栏内容时**必须**带 `is-empty`。
+ * id 与 class 名与 Nuxt 侧逐字一致，不要改名。
+ *
+ * ## 与 Nuxt 版的差异
+ * 1. `useLayoutSlotProvider()` 那一套（等异步插槽、retain 旧插槽、`provide` 给子树）
+ *    是 Nuxt 特有的「侧栏内容异步到达后不闪退」机制。静态站每个页面的 aside
+ *    在构建期就已确定，故直接用 `hasAside` prop 表达，语义等价。
+ * 2. Vue 的 `v-if="hasAside"`（无内容时**不渲染**）改成**始终渲染**、
+ *    无内容时加 `is-empty` + `inert` + `hidden`。效果等价
+ *    （`:has(> … :not(.is-empty))` 匹配失败 → 布局收成两栏），
+ *    但让 `is-empty` 成为稳定可测的状态，而不是「元素不存在」。
+ * 3. `<Transition name="aside">` 的进出场动画未移植：它依赖 Vue 的
+ *    before-leave/asafter-enter 钩子与 View Transitions 协作，
+ *    静态渲染下没有「侧栏退场」这个时刻。窄屏抽屉的 transform 动画保留。
+ *
+ * ## 遗留取舍
+ * `afterEnter` 里给 `:scope > .blog-widget` 打 `data-native-entered` 标记的逻辑
+ * （配合 `app/plugins/article-transition.client.ts`）已保留，但改为初始化时打，
+ * 因为不再有「进入」时刻。该插件本身尚未移植，标记目前没有消费方。
+ *
+ * ## meta-aside-* 的渲染出口
+ * Nuxt 侧由 `app/pages/[...slug].vue` 读 `post.meta.aside`、
+ * `useWidgets()` 把其中的 `meta-aside-*` 映射成 BlogWidget。
+ * `[...slug].astro` 不在本次改动范围内，而本组件是 aside 内容的**唯一**渲染出口，
+ * 因此在这里按当前路由反查条目并补出 meta 槽位。
+ * 静态构建下 `Astro.url.pathname` 就是该页的页面 URL，与 `entry.id` 一一对应。
+ */
+import type { MetaSlots } from '../../content.config'
+import { getAllContent } from '../../lib/content'
+import BlogWidget from './BlogWidget.astro'
+import Mask from './Mask.astro'
+
+interface Props {
+	/** 布局层是否给本页提供了 aside 内容；false 时侧栏进入 is-empty 态 */
+	hasAside?: boolean
+	class?: string
+}
+
+const { hasAside, class: className } = Astro.props
+
+/** 文章页 aside 的缺省值，与 `[...slug].astro` 的 `?? ['toc']` 保持一致 */
+const DEFAULT_ASIDE = ['toc']
+
+/**
+ * 取出本页 aside 里声明、且 frontmatter 确实带槽位的 `meta-aside-*` 名字。
+ *
+ * **未在 aside 里声明的一律不渲染** —— 这与 Nuxt 侧一致：
+ * `rehype-meta-slots` 只把正文顶层的 `<meta-*>` 收进 `file.data.slots`，
+ * 真正挂不挂由 `[...slug].vue` 读 `post.meta.aside` 决定。
+ * `previews/example.mdx` 的 `metaSlots.copyright` 正是这种「收集但不渲染」的情况。
+ */
+async function getMetaAside(pathname: string): Promise<{ names: string[], metaSlots: MetaSlots } | undefined> {
+	const id = pathname.replace(/^\/+|\/+$/g, '')
+	const entry = (await getAllContent()).find(e => e.id === id)
+	const metaSlots = entry?.data.metaSlots
+	if (!entry || !metaSlots)
+		return undefined
+
+	const aside = entry.data.aside ?? DEFAULT_ASIDE
+	const names = aside.filter(name => name.startsWith('meta-aside-'))
+	return names.length ? { names, metaSlots } : undefined
+}
+
+const metaAside = await getMetaAside(Astro.url.pathname)
+const metaNames = metaAside?.names ?? []
+
+/*
+ * 「侧栏是否有内容」的判定。
+ *
+ * 原先未显式传 `hasAside` 时回退到 `Astro.slots.has('default')`，
+ * 但 `Blog.astro` 里 `<slot name="aside" />` 是**无条件**放进本组件默认 slot 的
+ * —— 那个元素本身就是 slot 内容，于是无论页面有没有提供 aside，
+ * `has('default')` 都为 true，`filled` 恒为 true，`<aside>` 永远拿不到 `is-empty`。
+ * 后果是无侧栏的页面（/link）也按三栏排版，正文被压窄 296px
+ * （1080 → 784），友链列表每行从 5 个变 3 个、5 行变 8 行。
+ *
+ * 现在由布局层显式传 `hasAside={hasAside || Astro.slots.has('aside')}`，
+ * 这里只需要把「调用方说有」和「本页有 meta 槽位要渲染」两者取或。
+ */
+const filled = Boolean(hasAside) || metaNames.length > 0
+---
+
+<Mask for="aside" class="hide-above-tablet" />
+
+<!-- 页面侧栏退场时脱离布局；窄屏抽屉仍由 show 控制。 -->
+<aside
+	id="blog-aside"
+	class:list={[className, { 'is-empty': !filled, show: false }]}
+	inert={!filled}
+	hidden={!filled}
+>
+	<slot />
+	{/*
+		meta 槽位排在调用方内容之后，与 Nuxt 侧 `useWidgets()` 的
+		「按 aside 声明顺序渲染」一致：example 的 aside 是 `[toc, meta-aside-foo, meta-aside-bar]`，
+		Toc 由调用方放进默认 slot，两个 meta 槽位依次跟在其后。
+	*/}
+	{metaNames.map(name => <BlogWidget metaName={name} metaSlots={metaAside!.metaSlots} />)}
+</aside>
+
+<script>
+	import { bindLayoutGlobals, closeLayout, subscribeLayout } from '../../lib/layout-state'
+
+	function initAside() {
+		for (const aside of document.querySelectorAll('#blog-aside')) {
+			if (aside.dataset.asideReady)
+				continue
+			aside.dataset.asideReady = '1'
+
+			// 原 afterEnter：为 article-transition 插件标记「已原生进入」
+			for (const widget of aside.querySelectorAll(':scope > .blog-widget'))
+				widget.dataset.nativeEntered = ''
+
+			subscribeLayout((state) => {
+				const on = state === 'aside'
+				aside.classList.toggle('show', on)
+				aside.setAttribute('aria-hidden', on ? 'false' : 'true')
+			})
+
+			// 点侧栏自身（而非其内容）时关闭抽屉
+			aside.addEventListener('click', (e) => {
+				if (e.target === aside)
+					closeLayout()
+			})
+		}
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAside)
+	else
+		initAside()
+	document.addEventListener('astro:page-load', initAside)
+
+	bindLayoutGlobals()
+</script>
+
+<style>
+#blog-aside {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+	overflow: hidden auto;
+	padding: 0.5rem;
+	z-index: var(--z-index-popover);
+
+	/* 无内容态：占位但不参与布局与焦点 */
+	&.is-empty {
+		display: none;
+	}
+
+	:root[data-article-transition] & {
+		transition: none !important;
+
+		@media not (max-width: 1080px) {
+			&:not(.is-empty) { view-transition-name: article-aside; }
+		}
+	}
+
+	@media (max-width: 1080px) {
+		position: fixed;
+		inset-inline-end: 0;
+		top: 0;
+		width: 320px;
+		height: auto;
+		max-width: 100%;
+		max-height: 100%;
+		/* 为底部悬浮面板的双按钮及底边距留出滚动空间。 */
+		padding-bottom: 9rem;
+		transform: var(--transform-end-far);
+		transition: transform 0.2s;
+
+		/* 平板只有一个按钮；矮屏时双按钮横排，只需留一行高度。 */
+		@media (min-width: 769px), (max-height: 528px) {
+			padding-bottom: 6rem;
+		}
+
+		/* widget 由 BlogWidget 渲染（带它自己的 scope），必须 :global() */
+		> :global(.blog-widget) {
+			padding: 0.5rem;
+			border-radius: 1rem;
+			box-shadow: var(--box-shadow-1), var(--box-shadow-2);
+			background-color: var(--ld-bg-blur);
+			backdrop-filter: blur(0.5rem);
+		}
+
+		&.show {
+			transform: none;
+		}
+	}
+}
+</style>

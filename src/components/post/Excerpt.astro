@@ -1,0 +1,302 @@
+---
+/**
+ * Excerpt 组件（Astro 版）：文章开头的 AI 摘要。
+ *
+ * 对应 `app/components/post/Excerpt.vue`。原版是纯客户端交互（打字机 + 窄屏折叠），
+ * 不做 Vue 岛：服务端直接输出**完整**摘要文本（与 Nuxt 侧 SSR 输出一致），
+ * 动画与折叠交给原生 `<script>` 在挂载后接管。
+ *
+ * ═══ 与 Nuxt 版的差异 ═══
+ * 1. `appConfig.component.excerpt`（`app/app.config.ts`）尚未迁入
+ *    `src/lib/app-config.ts`，而该文件不在本任务的可改范围内，
+ *    故在此按同源规则内联一份（见下方 excerptConfig 的注释）。
+ * 2. `isNarrowScreen` 不再是响应式状态：折叠开关的**长度**条件
+ *    （`excerpt.length > 80`）是构建期常量，直接决定是否输出按钮；
+ *    **屏幕宽度**条件沿用原组件自带的 `.hide-on-wide` 媒体查询，可见行为一致。
+ * 3. `import.meta.dev` 下对 props 的 `watch`（HMR 时重播动画）不移植：
+ *    静态产物没有 props 更新，那段逻辑只服务 Vue 的开发体验。
+ * 4. `isReducedMotion` 只在渲染时读一次（见 renderExcerpt），
+ *    原版额外注册的 `prefers-reduced-motion` change 监听没有可观察效果，一并省掉。
+ */
+import Icon from '../Icon.astro'
+import blogConfig from '../../config/blog'
+
+interface Props {
+	/** frontmatter 的 description，对应 Nuxt 侧的 `excerpt` computed */
+	excerpt: string
+}
+
+const { excerpt } = Astro.props
+
+/*
+ * ⚠️ 同源内联，非重复定义：`app/app.config.ts` 的 `component.excerpt` 段
+ * （该文件头部已注明 excerpt 尚未迁入 app-config.ts）。
+ * animation / caret 是那里的硬编码默认值，label / badge 取自根 blog.config 的 excerpt 段。
+ * 待 `excerpt` 迁入 src/lib/app-config.ts 后，这里改读 appConfig.component.excerpt。
+ */
+const excerptConfig = {
+	animation: true,
+	caret: '_',
+	label: blogConfig.excerpt?.label ?? '智能摘要',
+	badge: blogConfig.excerpt?.badge ?? 'Kimi·K2-Turbo',
+}
+
+/** 折叠开关的长度条件，对应 Nuxt 版的 `excerpt.length > 80` */
+const collapsible = excerpt.length > 80
+---
+
+{/* 对应原模板的 `v-if="excerpt"`，即 frontmatter 没有 description 时整块不输出 */}
+{excerpt && (
+	<div
+		class="md-excerpt ai-excerpt"
+		data-excerpt
+		data-excerpt-caret-char={excerptConfig.caret}
+		data-excerpt-animation={String(excerptConfig.animation)}
+	>
+		<div class="ai-excerpt-header">
+			<div class="ai-excerpt-title">
+				<span class="ai-icon-gpt">
+					<Icon name="simple-icons:openai" class="ai-gpt-icon" />
+				</span>
+				<span class="ai-excerpt-label">{excerptConfig.label}</span>
+			</div>
+			<span class="ai-excerpt-badge">{excerptConfig.badge}</span>
+		</div>
+
+		{/*
+			正文拆成两个 span：脚本要分别重写「已输出文本」和「光标」，
+			对应 Nuxt 版的 `{{ excerpt }}{{ caret }}` 两个插值。
+			SSR 阶段 caret 为空，aria-expanded 与 Nuxt 侧初值一致（isFolded 初值 true）。
+		*/}
+		<div
+			id="excerpt-content"
+			class="ai-excerpt-content"
+			role="region"
+			aria-expanded="false"
+			data-excerpt-content
+		>
+			<span data-excerpt-text>{excerpt}</span><span data-excerpt-caret />
+		</div>
+
+		{collapsible && (
+			<div class="ai-excerpt-toggle-outer hide-on-wide" data-excerpt-toggle>
+				<div class="ai-excerpt-toggle-wrap">
+					<button
+						class="ai-excerpt-toggle"
+						type="button"
+						aria-controls="excerpt-content"
+						aria-expanded="false"
+						data-excerpt-toggle-btn
+					>
+						展开全部
+					</button>
+				</div>
+			</div>
+		)}
+	</div>
+)}
+
+<script>
+	/*
+	 * 打字机动画。Nuxt 版是 `for (const char of content) { ...; await delay(50) }`，
+	 * 这里换成原生 setTimeout 链——固定 50ms 的延时不值得把工具库打进客户端 chunk。
+	 */
+	function typeExcerpt(root, textEl, caretEl, full) {
+		textEl.textContent = ''
+		caretEl.textContent = root.dataset.excerptCaretChar ?? '_'
+		let i = 0
+		const step = () => {
+			if (i >= full.length) {
+				caretEl.textContent = ''
+				return
+			}
+			textEl.textContent += full[i++]
+			setTimeout(step, 50)
+		}
+		step()
+	}
+
+	function initExcerpt(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.excerptReady)
+			return
+		root.dataset.excerptReady = '1'
+
+		const box = root.querySelector('[data-excerpt-content]')
+		const textEl = root.querySelector('[data-excerpt-text]')
+		const caretEl = root.querySelector('[data-excerpt-caret]')
+		const toggleBtn = root.querySelector('[data-excerpt-toggle-btn]')
+		if (!(box instanceof HTMLElement) || !textEl || !caretEl)
+			return
+
+		const full = textEl.textContent ?? ''
+		const narrow = window.matchMedia('(max-width: 768px)')
+		const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+		// 对应 Nuxt 版的 isFolded 初值 true；宽屏时下面两个 class 都不会加上
+		let folded = true
+
+		function applyFold() {
+			const isNarrow = narrow.matches
+			box.classList.toggle('ai-excerpt-content-folded', isNarrow && folded)
+			box.classList.toggle('ai-excerpt-content-unfolded', isNarrow && !folded)
+			if (toggleBtn) {
+				toggleBtn.setAttribute('aria-expanded', String(!folded))
+				toggleBtn.textContent = folded ? '展开全部' : '收起'
+			}
+		}
+
+		toggleBtn?.addEventListener('click', () => {
+			folded = !folded
+			applyFold()
+		})
+		narrow.addEventListener('change', applyFold)
+		applyFold()
+
+		// 关闭动画、或用户要求减少动效时保持 SSR 输出的完整文本
+		if (root.dataset.excerptAnimation === 'true' && !reducedMotion.matches)
+			typeExcerpt(root, textEl, caretEl, full)
+	}
+
+	function initAllExcerpt() {
+		for (const root of document.querySelectorAll('[data-excerpt]'))
+			initExcerpt(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAllExcerpt)
+	else
+		initAllExcerpt()
+	document.addEventListener('astro:page-load', initAllExcerpt)
+</script>
+
+<style>
+.ai-excerpt {
+	--excerpt-folded-max-height: 4.8em;
+	--excerpt-unfolded-max-height: 28em;
+
+	margin: 1rem 0.5rem;
+	padding: 0.8rem;
+	border-radius: 0.5em;
+	box-shadow: var(--box-shadow-2);
+	background: var(--ld-bg-card);
+	color: var(--c-text);
+	transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+.ai-excerpt-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 0.6rem;
+}
+
+.ai-excerpt-title {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.32rem;
+	font-weight: 700;
+	color: var(--c-primary);
+}
+
+.ai-icon-gpt {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.25rem;
+	height: 1.25rem;
+	border-radius: 0.5em;
+	background: linear-gradient(135deg, var(--c-primary), var(--c-primary-soft));
+	color: var(--c-bg);
+}
+
+/*
+ * `:global()` 是必须的，不是保险起见。
+ *
+ * 模板里这个 class 是经 `<Icon class="ai-gpt-icon" />` 传给子组件的，
+ * 元素最终由 astro-icon 渲染、带着**它自己的** cid；而写在这里的 `.ai-gpt-icon`
+ * 会被编译成 `.ai-gpt-icon[data-astro-cid-<Excerpt 的 cid>]`，**永不匹配**。
+ * Vue 侧不存在这个问题，因为子组件根元素会同时带父 scope id。
+ *
+ * 该 class 全站只此一处使用，改成 :global 不会波及别处。
+ * 见 docs/astro-phase1-findings.md §50，scripts/audit-dead-scope.mjs 可复现。
+ */
+:global(.ai-gpt-icon) {
+	width: 0.85rem;
+	height: 0.85rem;
+}
+
+.ai-excerpt-label {
+	font-size: 0.95rem;
+}
+
+.ai-excerpt-badge {
+	padding: 0.15rem 0.5rem;
+	border-radius: 999px;
+	background: var(--c-primary-soft);
+	font-size: 0.75rem;
+	font-weight: 600;
+	color: var(--c-primary);
+}
+
+.ai-excerpt-content {
+	overflow: hidden;
+	overflow-wrap: break-word;
+	opacity: 1;
+	max-height: none;
+	padding: 0.75rem;
+	border-radius: 0.5em;
+	background: var(--c-bg-1);
+	font-size: 0.88rem;
+	line-height: 1.6;
+	white-space: pre-wrap;
+	color: var(--c-text-2);
+	transition: max-height 0.28s ease, opacity 0.22s ease;
+}
+
+.ai-excerpt-content-folded {
+	opacity: 0.96;
+	max-height: var(--excerpt-folded-max-height);
+}
+
+.ai-excerpt-content-unfolded {
+	max-height: var(--excerpt-unfolded-max-height);
+}
+
+.hide-on-wide {
+	@media (min-width: 769px) {
+		display: none;
+	}
+}
+
+.ai-excerpt-toggle-outer {
+	margin-top: 0.5rem;
+}
+
+.ai-excerpt-toggle-wrap {
+	display: flex;
+	justify-content: flex-end;
+}
+
+.ai-excerpt-toggle {
+	padding: 0.3rem 0.75rem;
+	border: 1px solid var(--c-border);
+	border-radius: 999px;
+	background: var(--c-primary-soft);
+	font-size: 0.8rem;
+	font-weight: 700;
+	color: var(--c-primary);
+	transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+	cursor: pointer;
+}
+
+.ai-excerpt-toggle:hover {
+	background: var(--c-bg-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ai-excerpt,
+	.ai-excerpt-content,
+	.ai-excerpt-toggle {
+		transition: none;
+	}
+}
+</style>

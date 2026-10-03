@@ -1,0 +1,257 @@
+---
+/**
+ * FeedGroup 组件（Astro 版），对应 `app/components/content/FeedGroup.vue`。
+ * 一组友链：sticky 大标题 + 简介 + 网格卡片列表。
+ *
+ * ## 与 Nuxt 版的差异
+ * 1. **随机排序**：`onMounted` 时 `shuffle(entries)`（`appConfig.link.randomInGroup`
+ *    且 `?shuffle` 不为 `false` 时生效），点击标题重新随机，按住修饰键点击还原。
+ *    静态站没有 `onMounted`，改为一段原生脚本：构建期仍是**配置里的原始顺序**
+ *    （与基线 SSR 输出一致），挂载后由脚本打乱，行为与基线对齐。
+ *    `es-toolkit/array` 的 `shuffle` 直接沿用（astro-site 已依赖 es-toolkit）。
+ * 2. **TransitionGroup 的 `name="float-in"`**：Vue 的 `<TransitionGroup>` 会把
+ *    `name` 透传成 `<menu name="float-in">` 属性，同时负责进出场动画类名。
+ *    Astro 无对应物，保留 `name` 属性与 `<style>` 里的 `.float-in-move` 钩子。
+ * 3. **`import.meta.dev` 下的 props watch** 未移植（仅开发态热更新行为）。
+ *
+ * ## 作用域要点
+ * `.feed-card` 是 **FeedCard.astro 的根元素**，不带本组件 scope，
+ * 原版的三处 `:deep(.feed-card)` 均需逐层 `:global()`（陷阱 2/3）。
+ */
+import FeedCard from './FeedCard.astro'
+
+/** 与 `app/types/feed.ts` 的 `FeedEntry` 同构 */
+interface FeedEntry {
+	author: string
+	sitenick?: string
+	title?: string
+	desc?: string
+	link: string
+	feed?: string
+	icon: string
+	avatar: string
+	archs?: string[]
+	date?: string
+	comment?: string
+	error?: string
+}
+
+interface Props {
+	name: string
+	desc?: string
+	entries: FeedEntry[]
+	/** 组内随机排序（对应 appConfig.link.randomInGroup） */
+	shuffle?: boolean
+}
+
+const { name, desc, entries, shuffle = false } = Astro.props
+
+/** 逐字照搬原组件的 getCardDelay：友链浮现随机延迟 */
+function getCardDelay(link: string) {
+	let hash = 0
+	for (const char of link) {
+		hash = hash * 31 + char.charCodeAt(0)
+	}
+	return (hash % 1000) / 1000
+}
+
+/** 客户端脚本要还原的原始顺序；构建期只序列化 link，脚本按 link 找回条目 */
+const originalLinks = entries.map(entry => entry.link)
+---
+
+<section
+	class="feed-group"
+	data-feed-group-root
+	data-shuffle={shuffle ? '' : undefined}
+	data-entry-links={JSON.stringify(originalLinks)}
+>
+	<h3 class="feed-title">
+		{shuffle
+			? (
+				<button
+					type="button"
+					role="button"
+					title="点击随机排序，按住修饰键点击可取消随机排序"
+					data-feed-shuffle
+				>
+					{name}
+				</button>
+			)
+			: (
+				<span>{name}</span>
+			)}
+	</h3>
+	<p class="feed-desc">{desc}</p>
+
+	<menu class="feed-list" name="float-in">
+		{entries.map(entry => (
+			<li style={`--delay: ${getCardDelay(entry.link)}s;`} data-feed-entry={entry.link}>
+				<FeedCard {...entry} />
+			</li>
+		))}
+	</menu>
+</section>
+
+<script>
+	import { shuffle } from 'es-toolkit/array'
+
+	// 原生脚本会被 Astro 去重合并，故用 data 属性定位各个实例
+	function initFeedGroup(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.feedGroupReady)
+			return
+		root.dataset.feedGroupReady = '1'
+
+		const list = root.querySelector('.feed-list')
+		const btn = root.querySelector('[data-feed-shuffle]')
+		if (!list || !btn || root.dataset.shuffle === undefined)
+			return
+
+		/** 按 data-entry-links 记录的原始顺序取回当前列表 */
+		function collect() {
+			return [...list.querySelectorAll('[data-feed-entry]')]
+		}
+		function orderBy(links) {
+			const map = new Map(collect().map(li => [li.dataset.feedEntry, li]))
+			for (const li of links) {
+				const el = map.get(li)
+				if (el)
+					list.append(el)
+			}
+		}
+
+		// 对应 onMounted：?shuffle=false 时保持配置顺序
+		if (new URLSearchParams(location.search).get('shuffle') !== 'false')
+			orderBy(shuffle([...list.querySelectorAll('[data-feed-entry]')]).map(li => li.dataset.feedEntry))
+
+		btn.addEventListener('click', (e) => {
+			// @click.exact 还原原始顺序
+			if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) {
+				orderBy(JSON.parse(root.dataset.entryLinks || '[]'))
+				return
+			}
+			orderBy(shuffle([...list.querySelectorAll('[data-feed-entry]')]).map(li => li.dataset.feedEntry))
+		})
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('[data-feed-group-root]'))
+			initFeedGroup(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+	.feed-group {
+		container-type: inline-size;
+		margin: 2em 1em;
+	}
+
+	.feed-title {
+		contain: layout; /* 极窄宽度阻止滚动条 */
+		position: sticky;
+		opacity: 0.5;
+		top: 0;
+		margin-bottom: -0.3em;
+		mask-image: linear-gradient(#FFF 50%, transparent);
+		font-family: var(--font-stroke-free);
+		font-size: 5em;
+		font-weight: 800;
+		line-height: 1;
+		text-align: center;
+		color: transparent;
+		transition: color 0.2s;
+		-webkit-text-stroke: 1px var(--c-text-3);
+
+		/* 原版 `&::selection` 的逐字保留 */
+		&::selection {
+			color: var(--c-text-3);
+		}
+	}
+
+	.feed-desc {
+		text-align: center;
+		color: var(--c-text-2);
+	}
+
+	/*
+	 * 原版是 `.feed-title { &::selection, :hover > & { … } }`。
+	 * `:hover > &` 里结尾的 `&` 会被 Astro 前移成非法的 `[cid]:hover>&`
+	 * （与 `src/components/post/Article.astro` 头注记录的是同一个问题），
+	 * 故这里把该条拆到顶层并手写完整选择器：
+	 * 编译产物是 `.feed-group[cid]:hover > .feed-title[cid]`，
+	 * 语义为「悬停整组时标题显色」，与原意一致。
+	 */
+	.feed-group:hover > .feed-title {
+		color: var(--c-text-3);
+	}
+
+	.feed-list {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(12em, 1fr));
+		gap: 0.2em 0.5em;
+		overflow: clip;
+		/* 列宽过渡与随机排序同时发生时，限制 FLIP 位移的绘制范围。 */
+		overflow-clip-margin: 0.5rem;
+		margin: 1em auto;
+
+		@media (max-width: 528px) {
+			grid-template-columns: repeat(auto-fill, minmax(5em, 1fr));
+			font-size: 0.9em;
+
+			/* .feed-card 是 FeedCard.astro 的根元素，不带本组件 scope */
+			:global(.feed-card) {
+				flex-direction: column;
+				text-align: center;
+			}
+
+			:global(.feed-card .avatar.avatar) {
+				margin: 0 0 0.2em;
+			}
+		}
+	}
+
+	@container (max-width: 528px) {
+		.feed-list {
+			grid-template-columns: repeat(auto-fill, minmax(5em, 1fr));
+			font-size: 0.9em;
+
+			:global(.feed-card) {
+				flex-direction: column;
+				text-align: center;
+			}
+
+			:global(.feed-card .avatar.avatar) {
+				margin: 0 0 0.2em;
+			}
+		}
+	}
+
+	/*
+	 * 原版是**顶层**的 `:deep(.feed-card.feed-card) { width: auto; margin: 0 }`，
+	 * Vue 编译成 `[data-v-ad1ec0bb] .feed-card.feed-card`——
+	 * 关键在那个 `[data-v-ad1ec0bb]`：它要求祖先里有本组件渲染的元素。
+	 *
+	 * 写成裸的 `:global(.feed-card.feed-card)` 就把锚点整个丢了，规则变成**全站生效**。
+	 * `/link` 上那张独立卡片（`.link-tab` 里直接渲染的 `myFeed`）不在任何 FeedGroup 内，
+	 * 线上不受这条影响、保留 FeedCard 自己的 `margin: 1em auto`，
+	 * 而 Astro 侧被顶成 `margin: 0`——下外边距 16 消失，与后继 `code.copy` 的 8
+	 * 不再塌陷成 16，于是 `/link` 少 8px（见 findings §76）。
+	 *
+	 * 故必须补回祖先条件。用 `.feed-group`（组件根）而不是 `.feed-list`：
+	 * 语义上就是「组内的卡片」，且不依赖列表层级的具体结构。
+	 */
+	.feed-group :global(.feed-card.feed-card) {
+		width: auto;
+		margin: 0;
+	}
+
+	.float-in-move {
+		contain: paint; /* 防止移动时出现滚动条 */
+		pointer-events: none; /* 阻止触发错误定位的气泡 */
+	}
+</style>

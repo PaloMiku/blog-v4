@@ -1,0 +1,79 @@
+---
+/**
+ * BlogFooter 组件（Astro 版），对应 `app/components/blog/BlogFooter.vue`。
+ * 纯配置渲染，构建期一次性求值，无交互、无 props。
+ *
+ * 差异：
+ * - `v-html` → `set:html`（同样支持配置里的 `<br>` 等标签）
+ * - `UtilLink` → 本目录的 `UtilLink.astro`（NuxtLink → 裸 `<a>`）
+ * - `Icon` 不接受 class，故用 `<span class="nav-icon">` 包一层承载样式
+ */
+import Icon from '../Icon.astro'
+import UtilLink from './UtilLink.astro'
+import { appConfig } from '../../lib/app-config'
+---
+
+<footer class="blog-footer">
+	<nav class="footer-nav">
+		{appConfig.footer.nav.map(group => (
+			<div>
+				<hgroup class="text-creative">{group.title}</hgroup>
+				<menu>
+					{group.items.map(item => (
+						<li>
+							<UtilLink to={item.url}>
+								<span class="nav-icon"><Icon name={item.icon} /></span>
+								<span class="nav-text">{item.text}</span>
+							</UtilLink>
+						</li>
+					))}
+				</menu>
+			</div>
+		))}
+	</nav>
+	<p set:html={appConfig.footer.copyright} />
+</footer>
+
+<style>
+.blog-footer {
+	margin: 3rem 1rem;
+	font-size: 0.9em;
+	color: var(--c-text-2);
+
+	.footer-nav {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 5vw clamp(2rem, 5%, 5vw);
+		padding-block: 3rem;
+
+		hgroup {
+			margin: 0.5em;
+		}
+
+		a {
+			display: flex;
+			align-items: center;
+			gap: 0.3em;
+			width: fit-content;
+			padding: 0.3em 0.5em;
+			border-radius: 0.5em;
+			font-size: 0.9em;
+			transition: background-color 0.2s, color 0.1s;
+
+			&:hover {
+				background-color: var(--c-bg-soft);
+				color: var(--c-text);
+			}
+		}
+	}
+
+	p {
+		margin: 0.5em;
+	}
+
+	/* Icon 组件不接受 class，用包装层承载尺寸 */
+	.nav-icon {
+		display: inline-block;
+	}
+}
+</style>

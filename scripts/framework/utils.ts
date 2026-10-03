@@ -1,4 +1,4 @@
-import type { FeedEntry, FeedGroup } from '../../app/types/feed'
+import type { FeedEntry, FeedGroup } from '../../src/lib/types/feed'
 import { Console } from 'node:console'
 import dns from 'node:dns'
 import http from 'node:http'
@@ -7,7 +7,7 @@ import { Writable } from 'node:stream'
 import tls from 'node:tls'
 import { promisify } from 'node:util'
 import stripAnsi from 'strip-ansi'
-import feeds from '../../app/feeds'
+import feeds from '../../src/lib/feeds'
 
 export const entries = flattenFeedGroups(feeds)
 
