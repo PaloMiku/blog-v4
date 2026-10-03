@@ -32,3 +32,11 @@ content/posts/test.md
 .zcode
 .mimosa
 .qoder
+.commandcode
+
+# 2026-10-03 起本地正式迭代目标回到 Nuxt 版本。
+# astro-site/ 是 Nuxt → Astro 的迁移实现（曾产出 68 页并与线上逐项测量对齐），
+# 整份只留本地、不入库：它是实验产物而不是本仓库的产品代码，
+# 而且自带独立 pnpm workspace 与 lockfile，入库后会让根 workspace 多出一套依赖解析。
+# 重新启用时删掉这一条即可，代码仍在磁盘上。
+astro-site/
