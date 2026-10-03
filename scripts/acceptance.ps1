@@ -1,8 +1,14 @@
 param(
 	# How much to run. See section 6 for the two tiers and what each one is for.
 	#
-	#   offline (default) 29 gates that read only dist/ and src/. No network,
-	#           no browser, no ports. ~35s. This is the local loop.
+	#   offline (default) the dist/-and-src/ gates plus check-runtime-dom.
+	#           No EXTERNAL network. ~50s. This is the local loop.
+	#           Correction: this tier was previously described as "no browser,
+	#           no ports". It is neither any more -- check-runtime-dom drives a
+	#           real headless Chrome against a local astro preview on port 4402.
+	#           Deliberate: it is the only gate that catches defects invisible
+	#           in the static artifact, and burying it in the 20-minute tier
+	#           meant it would never run. See section 6 for the ASCII rule.
 	#   full    everything above plus preview-guard-selftest and the three live
 	#           gates against the deployed site. **~20-25 min**, dominated by
 	#           live:ui-parity (63 pages x 2 sides x ~20s/page). Only for a
@@ -128,7 +134,6 @@ $gates = @(
 	'check-anchor-classes',
 	'check-dead-css',
 	'check-assets',
-	'compare-urls',
 	'compare-titles',
 	# Wired 2026-10-03. compare-dom used to be one of the "exists but unwired"
 	# scripts (findings 85.4: a gate you do not wire does not exist). It reported 15
@@ -368,8 +373,22 @@ $productGates = @(
 	'check-mdc-eval',
 	'check-aria-current',
 	'check-icon-box',
-	'check-component-fence'
+	'check-component-fence',
+	# Ported from compare-urls.ps1 on 2026-10-04. The PS version could not run on
+	# `runs-on: ubuntu` at all, so this gate -- the last line of defence against a
+	# cutover turning into a site-wide 404 -- never reached CI. Red/green verified.
+	'compare-urls'
 )
+
+# Runtime DOM gate. Lives in the default tier on purpose: in the `full` tier it
+# would sink alongside the 20-minute live:ui-parity and never run at all, which
+# is exactly how preview-guard-selftest ended up being reported as a 120.8s
+# failure. Localhost only, no external network, ~15s measured.
+#
+# NOTE the comment above this line is ASCII on purpose -- see section 6 of this
+# header about PS 5.1 swallowing the newline after non-ASCII bytes. The long
+# Chinese version of this note lives in CLAUDE.md, not here.
+$results.Add((Step 'check-runtime-dom' { & node (Join-Path $PSScriptRoot 'check-runtime-dom.mjs') 2>&1 | Out-String }))
 foreach ($g in $productGates) {
 	$script = Join-Path $PSScriptRoot "$g.mjs"
 	if (-not (Test-Path -LiteralPath $script)) {

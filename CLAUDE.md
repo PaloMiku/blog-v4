@@ -89,6 +89,7 @@ node scripts/freeze-baseline.mjs --help   # 重新冻结 Nuxt 基线的用法
 | 产品门禁 | 12 | `check-icon-swap` `check-flip-gates` `check-list-controls` `check-dropped-css` `check-affordances` `check-scope-anchors` `check-heading-ids` `check-text-literal` `check-mdc-eval` `check-aria-current` `check-icon-box` `check-component-fence` |
 | 仪器自检 | 1 | `preview-guard-selftest`（**只属于 `full` 档**，见下） |
 | 线上门禁 | 7 | `live:sitemap` `live:head` `live:ui-parity` `live:style-parity` `live:ui-parity-mobile` `live:style-parity-mobile` `live:style-parity-dark` |
+| 运行时 DOM | 1 | `check-runtime-dom`（起本地 preview + 无头 Chrome，交互后读活的 DOM；**唯一不看静态产物**的门禁，~23s） |
 | 构建告警 | 1 | `check-build-warnings`（读步骤 2 那次构建的日志，**不再自己构建**） |
 
 ### 分档：本地只跑基础档，切换/发布前才跑 full
@@ -159,9 +160,10 @@ runner，那是一次结构性改动，不在当前范围内。剩下的 33.9 s 
 | `compare-dom.ps1` | 跑得通，但报 **15 处 marker 不一致**且自身 exit 0。见「开放项」 |
 
 CI 侧只有一条流水线 `.github/workflows/build.yml`（push main 即发布），跑
-**10 道无浏览器门禁**：`check-self-contained` `check-mdc-eval` `check-heading-ids`
+**12 道无浏览器门禁**：`check-self-contained` `check-mdc-eval` `check-heading-ids`
 `check-text-literal` `check-scope-anchors` `check-aria-current` `check-icon-box`
-`check-component-fence` `audit-css-blocks` `check-ci-triggers`。它**不**跑 `acceptance.ps1`（需要未入库的基线、
+`check-component-fence` `check-runtime-dom` `compare-urls` `audit-css-blocks`
+`check-ci-triggers`。它**不**跑 `acceptance.ps1`（需要未入库的基线、
 PowerShell 入口、打线上站的 headless Chrome，干净 CI 里都不成立），也**不**跑
 `interaction-check.mjs`（流水线里不可靠而单跑可靠）。
 
@@ -402,6 +404,28 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 Pal
       `position:absolute + clip-path:inset(50%)`，**不能用 `display:none`**，
       那会把元素从无障碍树里摘掉，等于没加。
 
+36. **PowerShell 5.1 会让中文注释**吞掉**后面的整行语句——静默失效。**
+    无 BOM 的 `.ps1` 按系统 ANSI 码页读，注释里的非 ASCII 字节可能把换行吃掉，
+    于是紧跟其后的**第一条可执行语句根本没执行**，脚本不报错、退出码也正常。
+    2026-10-04 实踩：给 `acceptance.ps1` 插了一段中文注释来登记新门禁，
+    跑完 `total: 36`——**新门禁压根没进表**，因为它的
+    `$results.Add(...)` 被那段注释吞了。改成 ASCII 注释后立刻变成 37。
+    **症状是「加了步骤但计数没变」，不报错、不红**，只看退出码完全发现不了。
+    → 在 `.ps1` 里，**紧挨可执行语句的注释一律用 ASCII**；要说的话放
+    `CLAUDE.md`，或放在离语句远一些的位置。别指望这条规则是形式主义。
+
+37. **决定门禁能不能进 CI 的是 `baseline/`，不是 PowerShell。**
+    曾以为「17 道 PS 门禁进不了 CI，换成 node 就把它们救回来了」——实测不成立：
+    16 道 PS 门禁里**只有 6 道不依赖 `baseline/`**，另外 10 道依赖冻结基线，
+    而 `baseline/` 按既定决定是不入库的（见「冻结基线」一节）。把那 10 道换成
+    node 之后，它们在 CI 里和现在一样自我跳过：`compare-urls.mjs` 在无基线环境
+    直接 exit 0 并打印「基线缺失」。
+    **换语言能换来 CI 覆盖的只有那 6 道**：
+    `check-content-preservation` `check-assets` `check-integration`
+    `audit-deferred` `check-build-warnings` `check-head-vs-live`。
+    排移植优先级时先按「是否依赖基线」分，别按「是不是 PowerShell」分。
+    真正把 CI 从 11 道提到 12 道、且那道**不依赖基线**的，是 `check-runtime-dom`。
+
 ## 开放项（接管后新增，勿当成已解决）
 
 | 项 | 证据 | 状态 |
@@ -414,13 +438,13 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 Pal
 | 33 条顶层裸 `:global()` 未复核 | `check-scope-anchors` 的 `UNREVIEWED` | 钉住但未复核，见坑位 31。**条数是棘轮**，门禁会全量打印清单，改动后自己数一遍（2026-10-03 发现文档写 32、实际 33） |
 | ~~`vue` / `@astrojs/vue` 是死重量~~ | `src/` 下 **0 个 `.vue` 文件**，这两个依赖只服务 `astro.config.mjs` 的 `vue()` | **已摘**（2026-10-03）。三处同步删：`package.json` 两条依赖、`pnpm-workspace.yaml` 的 `ui` catalog 两条、`astro.config.mjs` 的 import + `vue()`。`pnpm install` 少装 150 个包，`pnpm build` 68 页绿、`typecheck` / `lint` / `check-self-contained` 干净，产物里搜不到 Vue runtime。**验收已补跑：`pnpm accept`（基础档）36/36 绿；`pnpm accept:full` 未跑完（中途停止），重档待补** |
 | 基线缺 Nuxt 的 `atom.xml` / `subscriptions.opml` | 首次冻结只收 html+css（`freeze-baseline.mjs` 的理由漏了 xml），已把 `*.xml` 补进白名单 | **不可本地修复**（Nuxt 源码树已删）。要取回只能抓 https://blog.sotkg.com/atom.xml |
-| 分享按钮两侧不同步 | §85 选的是「两侧同步改、先不部署」。**Nuxt 侧其实改了**——`chore/nuxt-fork-maintenance:382a2fb` 删掉了 `app/components/popover/Share.vue`（226 行）与 `PostHeader.vue` 的分享相关段；该提交信息明说「只删 Nuxt 侧，Astro 侧那份在 astro-site/ 里，两边都清掉才能避免反向漂移」，而 **Astro 侧从未跟进**。那条分支未并入 main，改动随工作树删除而丢失 ⇒ 线上仍有按钮、Astro 已无 ⇒ 每篇文章页 −10~−11px 且少一个 button | 随接管自然消解，但**第一次 push main 部署后线上会真的少掉这个按钮**。要让线上一致只能二选一：把 Astro 侧分享补回，或在旧部署上补一次并等 CDN 刷新。`style-parity` 实测 62/62 页命中 `.button: nuxt=1 astro=0`，是当前唯一贯穿全站的计算样式差异 |
-| `live:*` 三道门禁未在新布局下重跑 | 本次只跑了离线门禁 | 未验证 |
+| ~~分享按钮两侧不同步~~ | §85 选的是「两侧同步改、先不部署」。**Nuxt 侧其实改了**——`chore/nuxt-fork-maintenance:382a2fb` 删掉了 `app/components/popover/Share.vue`（226 行）与 `PostHeader.vue` 的分享相关段；该提交信息明说「只删 Nuxt 侧，Astro 侧那份在 astro-site/ 里，两边都清掉才能避免反向漂移」，而 **Astro 侧从未跟进**。那条分支未并入 main，改动随工作树删除而丢失 ⇒ 线上仍有按钮、Astro 已无 ⇒ 每篇文章页 −10~−11px 且少一个 button | **已随部署消解**（2026-10-03）。Astro 版上线后线上与本地同源：线上文章页实测无 `class="*share*"` / `aria-label="*分享*"`（唯一命中「分享」的是相关文章标题），`style-parity` 曾报的 `.button: nuxt=1 astro=0`（62/62 页）随之消失。两侧现已一致，无需再「补回按钮」或「补旧部署」 |
+| `live:*` 三道门禁未在新布局下重跑 | 本次只跑了离线门禁 | 未验证。**且前提已变**：Astro 版上线后线上与本地同源，`live:*` 只能抓部署滞后漂移，不再能对 Nuxt 基线（详见「当前状态 → 提交与部署」） |
 
-## 当前状态（2026-10-03，`00c4401` 之后 in-flight）
+## 当前状态（2026-10-03，Astro 版已上线）
 
-> 上一节「接管当日」的状态已被 `00c4401` 提交取代（86 文件、Nuxt 树删除、68 页构建绿），
-> 当日的数字与「顺手修掉的缺陷」清单记在该提交信息里，不再双写。
+> `00c4401`（Astro 接管仓库根、Nuxt 树删除、68 页构建绿）落地后，本节记录的两批改动
+> 也已提交并上线，见文末「提交与部署」。当日「顺手修掉的缺陷」清单记在该提交信息里，不再双写。
 >
 - **组件示例页改为 `Component` 围栏**：`src/plugins/component-source.ts`（空围栏 +
   `source=`，只解决源码不腐烂，**没解决重复书写**）退役，换成
@@ -437,4 +461,15 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 Pal
   记的那条红已不复现，原因未查）、**10 道 node 门禁全绿**
 - `live:*` 七道线上门禁**未跑**（需要 headless Chrome 打线上站 + 用户自管的 preview
   server），因此本页的**页高与计算样式尚未与 Nuxt 基线对过账**
-- 本次改动**未提交**
+
+### 提交与部署
+
+- 本节改动**已提交并推送**：`5232c7b`（三个交互期缺陷 + 门禁耗时收敛 + SEO 与归档页 h1）、
+  `7e3029c`（日期 `locale` / `timeZone` 锁定，消除构建机环境依赖）；归档 tag
+  `archive/astro-migration-2026` 已随 `git push --tags` 上传（含 `^{}` 解引用）
+- **Astro 版于 2026-10-03 上线**（线上实测，非推测）：零 `_nuxt/`、14 处 `_astro/`；
+  `atom.xml` 的 `<updated>` = `2026-10-03T13:48:31Z`，对应 `7e3029c` 那次 CI
+  （13:47:56 起 / 44s），即含日期修复的构建已生效；首页日期渲染为 `2025年05月19日`（中文）；
+  本地 `dist` 与线上同页 `data-astro-cid-*` 一致
+- ⚠️ **连带后果**：「本地 ↔ 线上」不再跨两套框架，`live:*` 从「Astro ↔ Nuxt」退化为
+  「Astro ↔ Astro」，只能抓部署滞后漂移；对 Nuxt 基线的验证只剩离线 `baseline/nuxt/`
