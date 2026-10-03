@@ -154,13 +154,16 @@ const QUERY = argOf('query', 'shuffle=false')
  * 没有上限的豁免项，迟早会盖住一个真 bug。
  */
 const ACCEPTED = [
-	{
-		path: '/2025/10/clarity-resource-list',
-		maxDelta: 600,
-		reason: 'Nuxt 的 MDC 解析器没把 `#tab2` 当插槽，渲出多余的 <h1>「tab2」+ 默认展开的代码块（+465px）；'
-			+ 'Astro 正常渲出 tab 界面。用户 2026-10-02 决定保留 Astro 的正确渲染，不复刻该解析缺陷。'
-			+ '全站仅此一页用到「具名插槽后紧跟围栏代码块」的写法。',
-	},
+	// 这里曾经有过一条 `/2025/10/clarity-resource-list`、上限 600px 的豁免：
+	// 「Nuxt 的 MDC 解析器没把 `# tab2`（注意那个前导空格）当插槽，渲出多余的
+	// <h1>tab2</h1> + 默认展开的代码块（+465px）」。Nuxt 提交 1e78213 把空格去掉了，
+	// 该差异**不再复现**：2026-10-03 实测该页 d=-10px，而 -10px 是每篇文章都有的
+	// 分享按钮差值。
+	//
+	// 于是那条豁免变成了「一个 600px 的口子，只盖住一个 10px 的差」——正是本文件
+	// 头部警告的那种「豁免盖住不相干的问题」。已删除。剩下的真实差异（tab2 面板里
+	// 一个 hidden 的代码块）由 check-dead-css.ps1 的 $knownDelta 具名记录，那条
+	// 记录同时给出了 0px 的页高证据。
 	{
 		path: '/2025/11/piece-hy1',
 		maxDelta: 200,

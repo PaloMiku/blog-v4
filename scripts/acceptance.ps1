@@ -99,6 +99,16 @@ $gates = @(
 	'check-assets',
 	'compare-urls',
 	'compare-titles',
+	# Wired 2026-10-03. compare-dom used to be one of the "exists but unwired"
+	# scripts (findings 85.4: a gate you do not wire does not exist). It reported 15
+	# marker mismatches while exiting 0, which is the "scored but never went red"
+	# family (85.5). Both are fixed: it now has a $knownMarkers map with a recorded
+	# root cause per (page, marker), and it exits 1 on anything not on that map.
+	'compare-dom',
+	# Wired 2026-10-03 for the same reason. Evidence-only (it collects, it does not
+	# assert), but a non-zero exit means one of the products it reads is missing,
+	# which is worth failing a run over.
+	'collect-evidence',
 	'check-content-preservation',
 	'check-dates',
 	'audit-deferred',

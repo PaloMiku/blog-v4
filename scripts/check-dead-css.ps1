@@ -188,6 +188,21 @@ $diff = 0
 $knownDelta = @{
 	'previews/example/index.html' = 'demo page: nuxt-content renders only 11 of the ~50 fences in content/previews/example.md, Astro renders 43. Content gap in the Nuxt baseline, not a port defect.'
 	'link/index.html'             = 'link page: astro renders the code block in the friend-link instructions, nuxt renders none.'
+	'2025/10/clarity-resource-list/index.html' = @'
+astro renders one more code block, and it is not visible: the extra <figure
+class="z-codeblock"> sits inside <div class="tab-panel" data-tab-panel="2" hidden>,
+the unselected second tab, holding the ::resource-list MDC source. Measured page
+height on that page is d=-10px, which is the share-button difference every article
+page has -- the hidden panel contributes 0px, so the *visible* count matches.
+
+Nuxt Content swallows that fence inside the container block, so the "语法" tab
+there is empty on the live site; Astro shows the author-intended source. Keeping
+Astro. Related: compare-ui-parity.mjs had a 600px ACCEPTED entry for this path
+for an older, larger difference (Nuxt rendering `# tab2` -- WITH a leading space --
+as a visible <h1> plus a default-expanded block). Nuxt commit 1e78213 removed
+that space, the +465px no longer reproduces, and that entry has been deleted; this
+one records what is actually left: an invisible DOM node.
+'@
 }
 foreach ($rel in $astroPages.Keys) {
 	if (-not $nuxtPages.ContainsKey($rel)) { continue }
