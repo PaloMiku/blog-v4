@@ -251,10 +251,11 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 Pal
 | 项 | 证据 | 状态 |
 | --- | --- | --- |
 | `dist` 是指向 `.output/public` 的**悬空 junction** | 硬安全策略禁止任何 CLI 永久删除，`mavis-trash` 拒收 reparse point ⇒ **需要你手动 `rmdir dist`**（只删链接，不动数据） | 未解决；本次靠重建 `.output/public` 让链接恢复有效才跑通构建 |
-| `astro-site/` 尚未删除 | 目录内容已全部上移到仓库根，但每次删除都被**正在运行的 `compare-ui-parity`** 占用（它从 `astro-site/dist` 起 preview）而失败 | 扫描结束后 `rm -- "astro-site"` 即可。本次提交**刻意没有把它带进去**（254 个文件），它仍是 untracked |
+| `astro-site/` 只剩 `node_modules` 未删 | 目录里的源码与配置副本已在接管提交中清空，剩 369.6 MB 的 `node_modules`。**回收站通道删不了它**：`mavis-trash` 报 `The system call level is not correct`，因为 `.pnpm` 里全是 junction，而永久删除命令被硬安全策略禁止 | 需要你在 cmd 里跑（`rd` 不会跟随 reparse point）：`rmdir /s /q astro-site\node_modules` 再 `rmdir astro-site` |
 | `games/galgames/clannad` 表格差异 | 源 `clannad/index.mdx` 1113 行、508 行表格、17 个 `<Folding>`；Astro 渲染 31 张表（310 处 `md-table`），**Nuxt 基线 0** | 未分类。`compare-dom` 报出的 15 处 marker 不一致里最大的一条，机制待查（Nuxt Content 的 GFM 表格在 MDC 块里是否被解析） |
 | `/2025/10/clarity-resource-list` 代码块计数 | 基线（用**当前源码**重建）nuxt=1 / astro=2；该页页高 d=0，两道几何门禁都看不见 | 未分类，根因同上（围栏代码块嵌在 MDC tab 槽位里，两侧解析不同） |
 | `compare-dom` 15 处 marker 不一致 | 脚本自身 exit 0（§85.5 那族「打了分不算红」） | 未接线、未分类，因此没进 `acceptance.ps1` |
+| `check-content-preservation` 围栏跟踪有漏 | 逐行采样（1458 行）会浮出 10 条假阳性，集中在 3 页，都是**围栏代码块里**的样本：缩进围栏、或 info string 里带反引号的围栏没被跟随。因此生产步长取 1/8（88 行、0 假阳性）。要提高密度得先修围栏跟踪 | 已知取舍，未修 |
 | `compare-titles` 缺 `exit` | 打印 RESULT 但退出码恒 0 | 属 §85.5 那族（8 道里只修了 `check-integration`），未逐道补 |
 | 32 条顶层裸 `:global()` 未复核 | `check-scope-anchors` 的 `UNREVIEWED` | 钉住但未复核，见坑位 31 |
 | `vue` / `@astrojs/vue` 是死重量 | `src/` 下 **0 个 `.vue` 文件**，这两个依赖只服务 `astro.config.mjs` 的 `vue()` | 未摘。摘之前先确认不再引入 Vue 岛 |
