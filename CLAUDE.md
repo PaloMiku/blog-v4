@@ -478,15 +478,32 @@ GitHub Actions（push main 触发）：`pnpm generate` 后把 `.output/public` �
 - 包版本 3.8.0，已完全同步上游 v3.8.0；已完成 SCSS→纯 CSS 迁移
 - Bangumi 功能已于 2026-09-30 移除：bangumi-clarity 模块暂不引入（源码在仓库外 D:/Projects/Bangumi-Clarity）；`app/pages/bangumi.vue` 与无引用的 `HomeHeroBar.vue` 已删、可从 git 历史找回；自包含的 `InfoCard.vue` 与 `content/previews/bangumi-components.md` 保留，作为恢复时的展示资产
 - 分支 `feat/sync-upstream-v3.7.1` 已完全合并进 main，可删
-- Nuxt 侧工作区已清空，`89136cb` 已部署（见上方「部署」小节）；此后所有迁移工作只发生在 `astro-site/`
+- Nuxt 侧工作区已清空，`89136cb` 已部署（见上方「部署」小节）
+- 🔀 **2026-10-03 方向已定：本地正式迭代目标回到 Nuxt 版本。**
+  `astro-site/` 已加进 `.gitignore`、**整份只留本地不入库**（它是实验产物，且自带
+  独立 pnpm workspace）。下面这几条关于 `astro-site/` 的记录仅作历史参考，
+  **不再是当前的工作目标**；`.github/workflows/build-astro.yml` 也已随之删除。
+  未提交的残留：`docs/astro-phase1-findings.md`（417 KB 实测记录）、
+  `scripts/baseline-analyze.ps1`、`scripts/remove-bgm-directives.ps1`
+- 评论区**暂时关闭**（2026-10-03）：`blog.config.ts` 顶部 `commentEnabled = false`，
+  三处读它（`twikoo.enabled`、两处页面的 `<PostComment v-if>`、`Toc.vue` 里的
+  `href="#twikoo"` 入口）。判据是 **opt-out**——未显式为 `false` 即视为开启，
+  删掉这个键会回到开启状态而不是静默永久关闭。`Comment.vue` 与自建 Twikoo 地址原样保留。
+  ⚠️ `ProseP` 的「引用整段到评论区」按钮**不受这个开关影响**，它靠
+  `onMounted` 里的 `querySelector('#twikoo')` 自行判断；`Toc.vue` 那个跳转链接
+  原本没有这层保护，是关评论区时必须一起处理的一条死链。
+- PR #2（`PaloMiku/blog-v4`，分支 `chore/nuxt-fork-maintenance`）含以上三项改动 +
+  README 改写。⚠️ **合并它等于部署**：`build.yml` 在 push `main` 时触发。
 - `astro-site/scripts/acceptance.ps1` 的产品门禁 **11 道**（新增 `check-heading-ids`、`check-text-literal`、`check-mdc-eval`、`check-aria-current`、`check-icon-box`）
 - 侧栏「技术信息」widget 的**构建信息组**已按用户要求改成 **Astro 版 + 竖列带图标**
   （`DlGroup` 新增第四种尺寸 `stack`；service 组与线上保持一致未动）。
   这是**用户主动要求的偏离**，不是迁移缺陷，且默认折叠状态下不影响页高/样式/语义三道门禁 —— 见 findings §83
 - ⚠️ `astro-site/` **没有 eslint 配置**，`npx eslint .` 会向上用仓库根那份（Nuxt 的），
   且**不覆盖 `.astro`**；`acceptance.ps1` 也**没有 lint 步骤**。见坑位 28
+- ⚠️ 本项目 `eslint.config.mjs` 配的是 `'style/eol-last': ['warn', 'never']`——
+  **文件末尾不要留换行**，与常见默认相反。`.gitignore` 至今无末尾换行；
+  改这几个文件时若误加会凭空多出整行 diff。
 - 文章分享按钮与 `ShareModal` **已从两侧源码移除**（Nuxt `app/components/popover/Share.vue`、
-  Astro `src/components/popover/ShareModal.astro` 均已删，孤儿依赖 `qrcode` 一并清掉），
-  **但尚未部署** —— 线上 Nuxt 站仍有该按钮，因此 `live:ui-parity` 会在所有文章页报
-  「Astro 少一个 button」。这是**部署滞后漂移**，正确动作是部署，
-  **不要**加进 `ACCEPTED` / `STYLE_ACCEPTED` / `known`。见 findings §85
+  Astro `src/components/popover/ShareModal.astro` 均已删，孤儿依赖 `qrcode` 一并清掉）。
+  实测代价是**每篇文章页 −10 ~ −11px**（那个按钮比 `.post-info` 高，是它在撑行高），
+  线上侧读数未变 ⇒ 全部来自移除本身。见 findings §85.9
