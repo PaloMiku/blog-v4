@@ -317,6 +317,15 @@ node scripts/check-scope-anchors.mjs      # 顶层 :global() 丢了 scope 锚点
     按 `tag.class` 汇总两侧签名、拿一张普查表当依据；清单里每一条都要能指着普查表
     说「这条两侧同名」。**判据在更上游的环节出局时，往下游补清单是白费力气——
     先确认判据那一层本身成立，再谈覆盖面。**
+    ⚠️ **同形态的第四层（§82.9）：量了「盒」，没量盒「里面」。** 用户报「图标和字不是很对齐」，
+    而「盒中心 vs 文字中心」两侧全是 0、盒高 21.5938 逐位相同——**一个数字都没错**，
+    但它们回答的都是「多大」，没有一条回答「在哪」。真凶是内层 `<svg>` 按
+    `vertical-align: baseline` 贴到父级的基线上，**偏下 1.72px**，而父级那个
+    `line-height: 1` 正是为了把盒高压回 21.6px 才写的。
+    两台仪器结构上都看不见它：`STYLE_PROPS` 里**一条几何偏移都没有**（补选择器那一步看不出这个缺口），
+    而 `.nav-icon > .iconify` **跨侧不匹配**——线上根本没有内层 svg。
+    **⇒ 补测量维度时，除了「补选择器」还要问「补位置类指标」；
+    两侧没有同一个东西可对时，那是单侧不变量，得另写门禁而不是继续往表里加。**
 26. **`X.check()` 这类便利谓词往往不是你以为的那个问题，而且答案可能是反的。**
     §82：`span.split-char` 高 35（线上）/ 32（Astro），两侧 CSS 逐字相同，
     `fontSize`/`lineHeight`/`fontWeight`/`fontVariationSettings`/动画 `currentTime` 全部一致。
@@ -329,9 +338,120 @@ node scripts/check-scope-anchors.mjs      # 顶层 :global() 丢了 scope 锚点
     `fonts.check()` 判的是「该文本能否无回退渲染」且把整条 fallback 链算进去，
     `getComputedStyle().fontFamily` 则原样回显声明值，两个都不是。
     **同一个探针里两个字段互相打架时，挑定义与被测问题相符的那个，
-    而不是先读到的、或看起来更权威的那个。** 顺带一条：基线的成立条件要显式写下来——
+    而不是先读到的、或看起来更权威的那个。** 顺带两条：基线的成立条件要显式写下来——
     本项目「两侧字体环境一致」是靠**断网隔离**碰上的，不是任何检查保证的，
     切到 online 模式就必须重取基线。
+    ⚠️ 另有一条**只对 Windows PowerShell 成立、但后果最严重**的同类陷阱在坑位 27。
+27. **仪器自己失败的三种形态，全都会被读成「站点有缺陷」——这是最贵的一类错误。**
+    §82.8 一节里我连犯五次，其中三次照着读会直接得出「站点坏了」的错误结论：
+    ① `Get-Content` 按 GBK 读无 BOM 的 UTF-8，**中文注释全成乱码**，
+    差点判 `BlogHeader.astro` 损坏；直读字节数 5364 B、U+FFFD 计数 0 ⇒ 文件一直是好的。
+    **判编码必须用 `[System.IO.File]::ReadAllText($p, [Text.Encoding]::UTF8)` 或 `Get-Content -Encoding UTF8`。**
+    ② 探针里写 `{ 有has-quote-button: n }`——**未加引号的对象 key 不能含连字符**，是语法错误，
+    CDP 返回 `undefined`，两侧同时 undefined 被读成「线上和本地都没有这个按钮」。
+    **求值失败必须抛错，不能静默返回 undefined**；同一段表达式里也**别用中文当 key**。
+    ③ 想验证「CDN 边缘节点刷新不同步」，我在 URL 上加了 `?probe=<时间戳>`——
+    带 query 是**独立 cache key**，每次都请求全新条目，必然拿到最新内容，
+    恰好测不到边缘节点差异。**想观察缓存这一层，cache-buster 会把你直接送到缓存之外。**
+    另两条不致命但同样误导：逐行比对两个文件报「1417 行不同」，
+    其实只是 `--fix` 插入行导致的**行号错位**，该用 `git diff --no-index -w`；
+    拿 `toString('utf8')` 的**字符数**去比 `Get-Item` 的**字节数**，
+    中文 3 字节/字符，「差 7.7KB」实际是差 **788 字节**。
+    **应用**：每次读到「异常结果」先问一句「仪器自己是不是先挂了」——
+    有没有报错信息、有没有单位不一致、有没有偏移/编码问题。
+    这与坑位 21、25、26 同源，但更隐蔽：**那几条是判据选错，这一条是判据根本没运行起来。**
+28. **「exit 0」只有在检查的**作用域**覆盖到你改的文件时**才算通过。**
+    §83.4：改完 `.astro` 顺手跑 `npx eslint .`，先得到 **359 errors**，
+    追下去发现两层错位——`astro-site/` **没有自己的 eslint 配置**，
+    命令向上找到仓库根 `eslint.config.mjs`（Nuxt 那份）去判 astro-site；
+    而 `.astro` 文件**根本不在它的作用域里**，单跑会得到
+    `warning  File ignored because no matching configuration was supplied`。
+    ⇒ 那 359 个 error 全在 `scripts/*.mjs` / `src/**/*.ts` / `tsconfig.check.json`
+    这些平时没人单独 lint 的文件上，**真正改动的两个 `.astro` 一个都没被检查**。
+    更糟的是上一轮汇报过的「eslint exit 0」是**窄范围调用**的结果，对 `.astro` 一直是空判；
+    且 `acceptance.ps1` 里**根本没有 lint 这一步**。
+    **应用**：汇报任何检查结果前，先确认它**实际检查了哪些文件**——
+    打印工具列出的文件清单，而不是只看退出码。
+    **一个从不加载目标文件的检查，和没有检查是同一个东西**（与坑位 4「没接进流水线就等于不存在」互补：
+    那条是检查存在但没人跑，这条是检查在跑但没看你改的东西）。
+29. **「到边的距离」不是「相对基准的偏移」；居中的判据是对称性，不是绝对值小。**
+    §83.5：判内层图标是否在行内居中，第一版判据写成
+    `svg 到行上沿 > 0.5px ⇒ FAIL`，跑出 4.313px 直接报红——
+    差点照着去"修"一个完全正确的布局。实际是行高 25.9063、图标 17.2656，
+    `(25.9063 − 17.2656) / 2 = 4.32`，**上下各留 4.31px 正是居中**。
+    定稿三条：`|上沿距离 − 下沿距离|`（对称即居中，两值都可以很大）、
+    `svg 中心 − dt 中心`、`svg 中心 − dd 中心`。
+    **⇒ 绝对量级大不等于有缺陷。** 与坑位 27 同源但更隐蔽：
+    那条是仪器返回 `undefined` 被读成「两边都没有」，
+    这条是**仪器返回了一个正确但被我读错了含义的数**。
+30. **批量改写脚本：「按第一个匹配定位」是错的；而且你只验了你改的那一种结构。**
+    §84 用一次性脚本把 25 段内容从 2 个 tab 扩成 3 个，连犯三次，**没有一个会被行数或标签总数看出来**：
+    ① `slotRange` 只找区间内**第一个** `<div slot="tab2">`，而 `Tab` 组件段的 tab1 里嵌了 4 个
+    `<Tab>` —— 抓到的是**嵌套 Tab 的槽位**，外层真实 tab1 被删、4 个嵌套 Tab 变成孤儿漂在文档里。
+    ② 替换区间只到 `</div>`，而新块自带一个 `</Tab>` —— 凭空多出 **26 个**闭合标签
+    （写完数开闭才发现：开 34 / 闭 60）。
+    ③ **只写了围栏开头、没写闭合围栏** —— 每个 ` ```astro ` 被**后面某一节**的围栏错配吃掉，
+    一路错位到文件末尾，最后一个未闭合的围栏把 `</div>` 吞进代码块，
+    MDX 报 `Expected a closing tag for <div>`，报在**文件末尾**而不是出错的那一行。
+    **根因是同一个**：我验了 `<Tab>` 开闭配平（因为在改 Tab），**没验围栏配平**（因为围栏是新引入的）。
+    **⇒ 改一种结构就要验那一种；引入一种新结构就得给它配一条新断言。**
+    嵌套结构的定位要**整段跳过子结构**，不能靠「第一个匹配」；
+    写盘前把断言跑在**重新解析**的结果上，不通过就拒绝写盘。
+31. **注释里不要出现可解析的 import 语句或相对路径**——词法门禁不认注释。
+    §84.5 一天内被 `check-self-contained.mjs` 绊了两次，两次都是**我自己写的反面教材**：
+    先在 `BlogTech.astro` 写「不改成 `import pkg from '../../package.json'`」，
+    门禁报 `[missing]`；修掉之后又在 `component-source.ts` 的注释里把 `mdast` / `unified`
+    的 import 原样写出来，门禁再报 `[undeclared]`。
+    第二次顺手修掉一个真问题：那两个是 **transitive** 依赖、`package.json` 里没声明，
+    改成**本地声明接口**后插件零第三方类型依赖。
+    **⇒ 门禁报错时先确认命中的是不是注释**——它可能正是在告诉你「你写的这句话本身有问题」。
+32. **门禁打印 `RESULT: FAIL` 不等于它能失败；退出码才是结论，而屏幕上往往只看得到前者。**
+    §85.5 给新断言验红时发现 `check-integration.ps1` 打印了 `RESULT: FAIL`、
+    `$LASTEXITCODE` 却是 **0**。原因在调用链：`acceptance.ps1:175` 用
+    `powershell -File <gate>` 起子进程，`Step()` 只取 `$LASTEXITCODE`。
+    **PowerShell 脚本不调 `exit` 就返回 0**，哪怕它满屏 `FAIL`。
+    普查 12 道静态门禁：**8 道没有任何 `exit` 语句**（`check-integration`、`check-layout`、
+    `compare-urls`、`compare-titles`、`check-content-preservation`、`check-dates`、
+    `audit-deferred`、`audit-image-pipeline`），只有 4 道 `.ps1` + 那个 `-File` 之外的
+    `check-head-vs-live` 会真的返回非零。
+    **为什么能活这么久**：汇总表的 `Note` 一列是从输出文本正则抓的，屏幕上**确实看得到**
+    `RESULT: FAIL`——看着是红的；而历史上报出来的每一次失败恰好全是 `.mjs` 或带 `exit` 的
+    `.ps1`，与「另外 8 道从来没红过」完全自洽。
+    **⇒ 这是坑位 20「一个从不报错的门禁比没有门禁更糟」的加强版：不是不报错，是报错了但
+    记成通过，比不报错更难发现。加任何新断言之前，先确认它所在文件能返回非零退出码。**
+    ⚠️ 退出码一旦修好，这些门禁立刻翻出从未被处理的结果（`check-content-preservation`：
+    `/drive/` 缺 1 段正文；`check-dates`：40 个受检页 **40 个全 mismatch**）。
+    `check-dates` 的 100% 失败率本身就是信号——它拿 Nuxt frontmatter 裸串和产物里的
+    UTC ISO 做**字符串相等**比较，带时分秒就永远不可能相等；抽样 10 条全是整 8 小时差、
+    日历日相同，即同一瞬间的表示差异。
+    ⚠️ 附带一层：`check-dates.ps1` 用 `$root = (Resolve-Path '..')`，那是相对**进程 CWD**
+    解析的、不是 `$PSScriptRoot`，于是它读的是 **`blog-v4/content`（Nuxt 树）**而不是
+    `astro-site/src/content-mdx`。`check-self-contained.mjs` 抓不到——它扫 import，
+    不扫运行时按 CWD 拼出来的路径。**「自包含」目前只覆盖了 import 形式的外流。**
+33. **报错文案会把「假设」写成「结论」——照着它去修，等于去确认一件已经成立的事。**
+    §85.8：`check-text-literal` 变红，报错写死「smartypants 会把 `"..."` 改成它」
+    并给出「修法：保持 `smartypants: false`」。**而 `smartypants: false` 本来就设着**
+    （`astro.config.mjs` 的 `createProcessor()`）。门禁在教我去确认一个既有事实。
+    独立验了两条假设：H1（转换还开着）**被证伪**——产物里 `“ ”` 是 318/310，
+    **少于**源 390/382，开着的话必然多于源；H2（有插件把源外内容注入正文）**成立**——
+    `component-source.ts` 注入 25 个文件 92157 字符，带进 `…` 15 / `—` 40，
+    恰好对上超出量 +14 / +32。真因是我自己上一轮加的功能。
+    **⇒ 报错文案是门禁作者的猜测，不是测量结果。看到「因为 X」先问「这条是谁测出来的」；
+    判据没指明来源的因果，一律当作待验假设。**（与坑位 21「断言自己会错」同源，
+    但那条讲的是仪器算错，这条讲的是仪器**说错**。）
+    ⚠️ 同一次里还踩了口径错：临时探针数整个 dist 得 `—`=218，门禁说 98——
+    门禁只数 `<article>` 内、剥标签后的文本。**两个数字在量不同的东西，差点被我拿来互相解释。**
+    ⇒ 引用别人的数字之前先对齐口径（这条与坑位「先确认你的查询覆盖了全部路径」同源）。
+    ⚠️ 第三条：**为一个改动找到了机制，不等于那个机制覆盖了它的全部影响面。**
+    §85.4 我为删分享按钮给出了「`space-between` 单子元素 ≡ flex-start」这个**横向**机制，
+    就顺手断言了竖向也不变——实测每篇文章页 **−10 ~ −11px**，因为那个按钮比
+    `.post-info` 高，是它在撑行高。**推出来的结论要和被测量的维度对齐，不能跨维度搬运。**
+    ⚠️ 第四条：「有 / 无某因素」这类判据要比较**两种状态下差值之差**，而不是绝对窗口。
+    `compare-ui-parity.mjs` 的 `ARTIF` 复核用「online 复量落在 ±40 内 ⇒ 隔离噪声」，
+    于是把本轮 −11px 的**真实**布局差异当成噪声放过了（同成因的另两页却判红）。
+    而隔离噪声的定义是「断网与联网读数不同」：已知真 ARTIF（lemmy）offline −19 / online 0，
+    差值 19；本轮 misskey offline −11 / online **−11**，差值 **0**。
+    **两个样本都指向同一条修正**：`offline_d ≈ online_d` ⇒ 真实差异照报。
 
 > **`live:ui-parity` 的红灯理由已经变了。** 它此前 exit 1 的 7 条差异里，
 > 5 条是「本地内容比线上多」（用户删了 `## 相关条目`、移除了 Bangumi，线上还留着）。
@@ -359,4 +479,14 @@ GitHub Actions（push main 触发）：`pnpm generate` 后把 `.output/public` �
 - Bangumi 功能已于 2026-09-30 移除：bangumi-clarity 模块暂不引入（源码在仓库外 D:/Projects/Bangumi-Clarity）；`app/pages/bangumi.vue` 与无引用的 `HomeHeroBar.vue` 已删、可从 git 历史找回；自包含的 `InfoCard.vue` 与 `content/previews/bangumi-components.md` 保留，作为恢复时的展示资产
 - 分支 `feat/sync-upstream-v3.7.1` 已完全合并进 main，可删
 - Nuxt 侧工作区已清空，`89136cb` 已部署（见上方「部署」小节）；此后所有迁移工作只发生在 `astro-site/`
-- `astro-site/scripts/acceptance.ps1` 的产品门禁 **10 道**（新增 `check-heading-ids`、`check-text-literal`、`check-mdc-eval`、`check-aria-current`）
+- `astro-site/scripts/acceptance.ps1` 的产品门禁 **11 道**（新增 `check-heading-ids`、`check-text-literal`、`check-mdc-eval`、`check-aria-current`、`check-icon-box`）
+- 侧栏「技术信息」widget 的**构建信息组**已按用户要求改成 **Astro 版 + 竖列带图标**
+  （`DlGroup` 新增第四种尺寸 `stack`；service 组与线上保持一致未动）。
+  这是**用户主动要求的偏离**，不是迁移缺陷，且默认折叠状态下不影响页高/样式/语义三道门禁 —— 见 findings §83
+- ⚠️ `astro-site/` **没有 eslint 配置**，`npx eslint .` 会向上用仓库根那份（Nuxt 的），
+  且**不覆盖 `.astro`**；`acceptance.ps1` 也**没有 lint 步骤**。见坑位 28
+- 文章分享按钮与 `ShareModal` **已从两侧源码移除**（Nuxt `app/components/popover/Share.vue`、
+  Astro `src/components/popover/ShareModal.astro` 均已删，孤儿依赖 `qrcode` 一并清掉），
+  **但尚未部署** —— 线上 Nuxt 站仍有该按钮，因此 `live:ui-parity` 会在所有文章页报
+  「Astro 少一个 button」。这是**部署滞后漂移**，正确动作是部署，
+  **不要**加进 `ACCEPTED` / `STYLE_ACCEPTED` / `known`。见 findings §85
