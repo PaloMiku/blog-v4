@@ -25,6 +25,21 @@ const basicConfig = {
 	defaultCategory: '未分类',
 }
 
+/**
+ * 评论区总开关。
+ *
+ * 2026-10-03 起**临时关闭**评论区。`app/components/post/Comment.vue`、
+ * 自建的 Twikoo 服务与下面的 `twikoo` 配置都原样保留，只是：
+ *   1. 页面不再渲染 `<PostComment>`（`[...slug].vue` / `link.vue`）；
+ *   2. 不再往 `<head>` 注入 CDN 上的 `twikoo.min.js`，省掉一次无用第三方请求。
+ *
+ * 恢复方式：把这里改成 `true`，或直接删掉这一行——
+ * 下面 `twikoo.enabled` 与两处 `v-if` 都是按「未显式为 `false` 即视为开启」判断的。
+ * 注意是「opt-out」而不是「opt-in」：这样万一这个键被整个删掉，评论区是回到开启状态
+ * （改动前的样子），而不是静默变成永久关闭。
+ */
+const commentEnabled = false
+
 // 存储 nuxt.config 和 app.config 共用的配置
 // 此处为启动时需要的配置，启动后可变配置位于 app/app.config.ts
 // @keep-sorted
@@ -92,8 +107,10 @@ const blogConfig = {
 		{ 'src': 'https://umami.sotkg.com/script.js', 'data-website-id': '372ccc48-32bf-434d-a1a2-9879fe82ca32', 'defer': true },
 		// Cloudflare Insights 统计服务
 		{ 'src': 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': '{"token": "b5c89be9025a4b1ba8750f8fd8850904"}', 'defer': true },
-		// Twikoo 评论系统
-		{ src: 'https://s4.zstatic.net/npm/twikoo@1.7.20/dist/twikoo.min.js', defer: true },
+		// Twikoo 评论系统，评论区关闭时不加载（见文件顶部 commentEnabled）
+		...(commentEnabled
+			? [{ src: 'https://s4.zstatic.net/npm/twikoo@1.7.20/dist/twikoo.min.js', defer: true }]
+			: []),
 	],
 
 	/** 文章统计配置 */
@@ -108,6 +125,8 @@ const blogConfig = {
 
 	/** 自己部署的 Twikoo 服务 */
 	twikoo: {
+		/** 评论区总开关，取自文件顶部 commentEnabled */
+		enabled: commentEnabled,
 		envId: 'https://twikoo.sotkg.com/',
 		preload: 'https://twikoo.sotkg.com/',
 	},

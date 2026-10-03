@@ -11,6 +11,16 @@ const { toc } = useArticle()
 const scrollableEl = useTemplateRef('toc')
 const { tocOffsets, activeHeadingId } = useToc(toc, computed(() => scrollableEl.value?.body))
 
+const appConfig = useAppConfig()
+
+/**
+ * 评论区关闭时同步隐藏下面那个「跳到评论区」的入口。
+ * 它没有像 `ProseP` 的引用按钮那样做运行时 DOM 检测（那边靠 `querySelector('#twikoo')`），
+ * 所以评论区一旦不存在，`#twikoo` 就是一条点了什么都不发生的死链。
+ * 判据与 blog.config.ts 的 commentEnabled 一致。
+ */
+const commentEnabled = computed(() => appConfig.twikoo?.enabled !== false)
+
 function hasHeading(tocTree: TocLink, heading?: string): boolean {
 	return tocTree.id === heading || !!tocTree.children?.some(child => hasHeading(child, heading))
 }
@@ -29,7 +39,7 @@ function hasHeading(tocTree: TocLink, heading?: string): boolean {
 			<Icon name="tabler:arrow-bar-to-up" />
 		</a>
 
-		<a href="#twikoo" aria-label="评论区">
+		<a v-if="commentEnabled" href="#twikoo" aria-label="评论区">
 			<Icon name="tabler:message-dots" />
 		</a>
 	</template>

@@ -1,6 +1,13 @@
 <script setup lang="ts">
 const route = useRoute()
 const contentPath = useContentPath().value
+const appConfig = useAppConfig()
+
+/**
+ * 评论区总开关。2026-10-03 起临时关闭，`Comment.vue` 仍在仓库里没动过。
+ * 判据是「未显式为 `false` 即开启」，与 blog.config.ts 的 commentEnabled 同语义。
+ */
+const commentEnabled = computed(() => appConfig.twikoo?.enabled !== false)
 
 const { data: post } = await useAsyncData(
 	`content:${contentPath}`,
@@ -50,7 +57,7 @@ else {
 
 	<PostFooter v-bind="post" />
 	<PostSurround />
-	<PostComment />
+	<PostComment v-if="commentEnabled" />
 </template>
 
 <ZError

@@ -4,6 +4,12 @@ import feeds from '~/feeds'
 
 const appConfig = useAppConfig()
 
+/**
+ * 评论区总开关。2026-10-03 起临时关闭，`Comment.vue` 仍在仓库里没动过。
+ * 判据是「未显式为 `false` 即开启」，与 blog.config.ts 的 commentEnabled 同语义。
+ */
+const commentEnabled = computed(() => appConfig.twikoo?.enabled !== false)
+
 const { data: postLink } = await useAsyncData(
 	'content:/link',
 	() => queryCollection('content').path('/link').first(),
@@ -55,7 +61,7 @@ const copyFields = {
 	</template>
 </Tab>
 
-<PostComment />
+<PostComment v-if="commentEnabled" />
 </template>
 
 <style scoped>
