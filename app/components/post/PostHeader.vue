@@ -1,31 +1,13 @@
 <script setup lang="ts">
 import type { ArticleProps } from '~/types/article'
-import { LazyPopoverShare } from '#components'
 
 defineOptions({ inheritAttrs: false })
 const props = defineProps<ArticleProps>()
-
-const appConfig = useAppConfig()
 
 const coverFilter = computed(() => props.meta?.coverFilter || (props.meta?.coverDim && 'brightness(0.75)') || undefined)
 const categoryLabel = computed(() => props.categories?.[0])
 const categoryIcon = computed(() => getCategoryIcon(categoryLabel.value))
 const subtitle = computed(() => props.subtitle || props.meta?.subtitle)
-const articleUrl = computed(() => new URL(props.path!, appConfig.url).href)
-
-const modalStore = useModalStore()
-const {
-	open: openShare,
-	close: closeShare,
-} = modalStore.use(() => h(LazyPopoverShare, {
-	title: props.title,
-	description: props.description,
-	url: articleUrl.value,
-	onClose: () => closeShare(),
-}), {
-	unique: true,
-	duration: 200,
-})
 </script>
 
 <template>
@@ -68,15 +50,6 @@ const {
 					<Icon name="tabler:pilcrow" />
 					{{ formatNumber(readingTime?.words) }} 字
 				</span>
-			</div>
-
-			<div class="operations">
-				<ZButton
-					icon="tabler:share-3"
-					@click="openShare()"
-				>
-					分享文章
-				</ZButton>
 			</div>
 		</div>
 	</div>
@@ -146,11 +119,6 @@ const {
 	gap: 0.75rem;
 	font-size: 0.85rem;
 	color: var(--c-text-1);
-}
-
-.operations {
-	flex-shrink: 0;
-	opacity: 1;
 }
 
 .post-info {
