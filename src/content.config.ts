@@ -15,7 +15,7 @@ function generateId({ entry, data, base }: { entry: string, data: Record<string,
 		return permalink.replace(/^\/+|\/+$/g, '')
 
 	// 去掉 base 与扩展名，得到相对内容根的路径
-	let rel = entry.replace(base, '').replace(/\.[^./]+$/, '')
+	let rel = entry.replace(String(base), '').replace(/\.[^./]+$/, '')
 	rel = rel.replace(/^\/+/, '')
 
 	// index.md 表示所在目录本身，与 Nuxt 的文件路由一致：`games/index.md` → `games`

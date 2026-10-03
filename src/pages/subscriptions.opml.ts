@@ -3,7 +3,7 @@ import XmlBuilder from 'fast-xml-builder'
 import { Temporal } from 'temporal-polyfill'
 import blogConfig, { myFeed } from '../config/blog'
 import feeds from '../lib/feeds'
-import type { FeedEntry, FeedGroup } from '../lib/types/feed'
+import type { FeedEntry, FeedGroup, FeedGroupEntry } from '../lib/types/feed'
 import { toZonedTemporal } from '../lib/shared'
 
 /**
@@ -34,8 +34,14 @@ function mapEntry(item: FeedEntry) {
 	}
 }
 
+/** entries 是 FeedEntry | FeedGroup 的联合，只有 FeedEntry 带 feed 字段。 */
+function isFeedEntry(entry: FeedGroupEntry): entry is FeedEntry {
+	return 'feed' in entry
+}
+
 function flattenGroups(groups: FeedGroup[]) {
-	return groups.flatMap(({ entries }) => entries.filter(({ feed }) => feed).map(mapEntry))
+	// 嵌套的 FeedGroup 不带 feed，这里一律滤掉（不递归展开子分组）。
+	return groups.flatMap(({ entries }) => entries.filter(isFeedEntry).filter(({ feed }) => feed).map(mapEntry))
 }
 
 export const prerender = true

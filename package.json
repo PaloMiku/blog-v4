@@ -16,7 +16,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "sync": "astro sync",
-    "typecheck": "tsc -p tsconfig.check.json",
+    "typecheck": "astro sync && tsc -p tsconfig.check.json",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
     "accept": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance.ps1",

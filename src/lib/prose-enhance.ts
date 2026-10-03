@@ -289,7 +289,8 @@ function onLinkPointerOver(event: Event) {
 function onLinkPointerOut(event: Event) {
 	const link = (event.target as HTMLElement | null)?.closest<HTMLElement>('a.z-link[data-tip]')
 	// 在同一个链接内部移动（文字 ↔ 域名图标）不算离开
-	if (link && (event as PointerEvent).relatedTarget instanceof Node && link.contains((event as PointerEvent).relatedTarget))
+	const related = (event as PointerEvent).relatedTarget
+	if (link && related instanceof Node && link.contains(related))
 		return
 	hideLinkTip()
 }

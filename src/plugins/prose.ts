@@ -29,7 +29,7 @@
  * `shiki scrollcheck-x` 排在 `one-dark-pro` 之后，且拆掉的 `<code>`
  * 没有被重新包回来）。
  */
-import type { BundledLanguage, HighlighterCore } from 'shiki'
+import type { BundledLanguage, Highlighter } from 'shiki'
 import type { HastNode } from '../lib/prose-icons'
 import { readFileSync } from 'node:fs'
 import { createHighlighter } from 'shiki'
@@ -41,10 +41,10 @@ import { formatBytes, getDomain, getDomainIcon, getFileIcon, getLangIcon, isExtL
  * 不引入 unist-util-visit：它只是传递依赖，且这里只需要深度优先遍历。
  */
 
-function el(tag: string, props: Record<string, unknown> = {}, children: HastNode[] = []): HastNode {
+function el(tag: string, props: Record<string, unknown> = {}, children: Array<HastNode | undefined> = []): HastNode {
 	// 图标查不到时 iconElement 返回 undefined；这里滤掉，
 	// 否则 walk 里的 `child.children` 会在 undefined 上炸。
-	return { type: 'element', tagName: tag, properties: props, children: children.filter(Boolean) }
+	return { type: 'element', tagName: tag, properties: props, children: children.filter((c): c is HastNode => Boolean(c)) }
 }
 
 function txt(value: string): HastNode {
@@ -522,7 +522,7 @@ function buildCodeFigure(pre: HastNode, metas: CodeMeta[]): HastNode {
 	return figure
 }
 
-function buildLink(node: HastNode): HastNode {
+function buildLink(node: HastNode): HastNode | undefined {
 	const href = getAttr(node, 'href') ?? ''
 	if (!href)
 		return undefined
@@ -619,7 +619,7 @@ const INLINE_THEMES = { light: 'catppuccin-latte', dark: 'one-dark-pro' }
  * 那类问题（插件顶部记的第二个坑是模块级**队列**被插队冲掉，性质不同）。
  * 整个站点只有 4 处行内代码，语言按需 `loadLanguage`，不做硬编码白名单。
  */
-let inlineHighlighter: Promise<HighlighterCore> | undefined
+let inlineHighlighter: Promise<Highlighter> | undefined
 
 function loadInlineHighlighter() {
 	inlineHighlighter ??= createHighlighter({ themes: [INLINE_THEMES.light, INLINE_THEMES.dark], langs: [] })
@@ -627,7 +627,7 @@ function loadInlineHighlighter() {
 }
 
 /** 返回 token 节点；语言不认识 / 语法炸了就返回 undefined，调用方保留原样。 */
-async function highlightInline(highlighter: HighlighterCore, code: string, lang: string): Promise<HastNode[] | undefined> {
+async function highlightInline(highlighter: Highlighter, code: string, lang: string): Promise<HastNode[] | undefined> {
 	try {
 		if (!highlighter.getLoadedLanguages().includes(lang))
 			await highlighter.loadLanguage(lang as BundledLanguage)
@@ -689,7 +689,7 @@ async function highlightInlineCode(tree: HastNode) {
  * `shiki` / `language-*` 由上面的 highlightInlineCode 加，这里只补结构。
  * `<pre>` 里的那个 `<code>` 由 buildCodeFigure 拆掉，不走这里。
  */
-function buildInlineCode(node: HastNode): HastNode {
+function buildInlineCode(node: HastNode): HastNode | undefined {
 	const lang = getAttr(node, 'lang')
 	if (lang)
 		addClass(node, `language-${lang}`)

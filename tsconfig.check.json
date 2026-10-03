@@ -13,10 +13,17 @@
 		"noEmit": true,
 		"types": ["node"]
 	},
+	// 顺序有语义：`.astro/types.d.ts` 必须在**第一位**。
+	// 生成的 .astro/content.d.ts 结尾有 `ContentConfig = typeof import("../src/content.config.js")`，
+	// 而 src/content.config.ts 又 `import 'astro:content'` —— 构成环。若 src/ 下的文件先被绑定，
+	// TS 会把 'astro:content' 的解析失败按目录（location）缓存，于是所有内容集合退化成 any，
+	// 只表现为 7 处 TS7006 隐式 any（`getCollection(...).then(list => …)` 之类），静默通过。
+	// 实测（同一 compilerOptions，只换 include 顺序）：该项在末位 → 7 errors；在首位 → 0 errors。
+	// 也必须在 `pnpm typecheck` 的 `astro sync` 之后，否则该文件不存在（CI 已按此顺序执行）。
 	"include": [
+		".astro/types.d.ts",
 		"src/**/*.ts",
 		"scripts/**/*.mjs",
-		"astro.config.mjs",
-		".astro/content.d.ts"
+		"astro.config.mjs"
 	]
 }
