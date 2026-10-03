@@ -7,15 +7,17 @@
  * fallthrough，必须显式接收才能把 `dim-hover` / `info` / `date` / `desc` 这类
  * 挂在 Nuxt 版根 `<span>` 上的类名落下来）。
  *
- * ═══ 为什么要逐字照抄 NuxtTime 的 Intl 调用 ═══
+ * ═══ NuxtTime 的 Intl 调用形状 ═══
  * Nuxt 版不传 `format` 时走 `<NuxtTime month="long" day="numeric" numeric="auto">`，
  * 文本由 `node_modules/nuxt/dist/app/components/nuxt-time.vue` 生成：
  *   - 非相对：`new Intl.DateTimeFormat(undefined, rest).format(new Date(datetime))`
  *   - 相对：`new Intl.RelativeTimeFormat(undefined, rest).format(值, 单位)`
- * `locale` 与 `timeZone` 两侧都**不传**，按 Intl 规范落到**构建机运行时**的默认值。
- * 所以措辞是中文还是英文由构建机决定，不是本组件的选择——本组件唯一能做的就是
- * 别偷偷补上 `timeZone` / `'zh-CN'`：一旦补了，同一份数据在两种构建机上就会和基线分叉。
- * （本地基线产物实测：`4月1日` / `25年5月19日` / `43秒钟前`。）
+ * **options 的形状照抄，`locale` 与 `timeZone` 两处不照抄**——它们在 Nuxt 侧是
+ * `undefined`，而 `undefined` 的语义是「用运行时默认值」，SSG 的运行时是**构建机**。
+ * 本组件因此改成写死 `blogConfig.language` / `blogConfig.timeZone`。
+ * 理由与实测见 `formatAuto` 上方的注释（2026-10-03 首次切流时线上因此全站英文日期）。
+ *
+ * 基线产物实测措辞：`4月1日` / `25年5月19日` / `44秒钟前`，与写死后的产物一致。
  *
  * 注意 `numeric: 'auto'` 只被 `Intl.RelativeTimeFormat` 消费（实测它对
  * `Intl.DateTimeFormat` 完全无效）；「几号」是 `day: 'numeric'` 决定的。
@@ -31,6 +33,7 @@
  * 按访客浏览器 locale 重排）需要客户端 JS，SSG 站点拿不到，构建时冻结为快照。
  */
 import { Temporal } from 'temporal-polyfill'
+import blogConfig from '../../config/blog'
 import Icon from '../Icon.astro'
 import { toInstantString, toZdtLocaleString, toZonedTemporal } from '../../lib/shared'
 import { formatRelative } from '../../lib/relative-time'
@@ -91,20 +94,36 @@ const isRelative = absolute || !zdt
 /**
  * 无 `format` 时的默认形态。
  *
- * 时区上刻意与 NuxtTime 一致：它格式化的是 `new Date(instant)`，落在**运行时本地时区**，
- * 而不是 `format` 分支里 `toZdtLocaleString` 用的 zdt 自带时区。两种行为在原项目里
- * 本来就不一致，这里不替它做统一。
+ * ⚠️ locale **必须写死** `blogConfig.language`，timeZone **必须写死**
+ * `blogConfig.timeZone`，两个都不能留 `undefined`。
+ *
+ * `undefined` 的意思是「用运行时默认值」，而 SSG 的运行时是**构建机**，
+ * 于是产物随构建环境变：GitHub Actions（en-US runner）构建出
+ * `August 7, 24`，中文机器构建出 `24年8月7日`。
+ * 2026-10-03 首次切流时线上 63/63 篇文章全是英文日期，而离线门禁全绿——
+ * 因为冻结基线与本地构建都是中文，**只有 CI 那一侧是英文**，
+ * 而门禁比的是「本地 vs 基线」，结构上就看不见它。
+ *
+ * timeZone 同理且更隐蔽：留空时按构建机时区取日期，同一篇 UTC 时间戳的文章
+ * 在 UTC runner 上是 7 号、在 +08:00 机器上是 8 号，**差一整天**。
+ *
+ * 早先这里写的是「刻意与 NuxtTime 一致，它格式化 `new Date(instant)`，
+ * 落在运行时本地时区」，并附一条警告说别补 `timeZone` / `'zh-CN'`。
+ * 那条警告的前提是「两台构建机配置相同」——接管期一直用本地机器构建，
+ * 成立；一旦改由 CI 构建就不成立了，而 `live:*` 门禁比的是「本地 vs 线上」，
+ * 只有它能看见，也正是它从没跑完、于是这个回归漏了过去。
  */
 function formatAuto(instant: string, crossYear: boolean): string {
 	const d = new Date(instant)
 	if (isRelative)
 		return formatRelative(d)
 	// 年份仅跨年时补 `2-digit`：同年只显示「4月1日」，跨年显示「25年5月19日」
-	return new Intl.DateTimeFormat(undefined, {
+	return new Intl.DateTimeFormat(blogConfig.language, {
 		year: crossYear ? '2-digit' : undefined,
 		month: 'long',
 		day: 'numeric',
 		numeric: 'auto',
+		timeZone: blogConfig.timeZone,
 	}).format(d)
 }
 

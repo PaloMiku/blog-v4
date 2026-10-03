@@ -110,6 +110,12 @@ export const dateTimeFormat = {
 export type dateTimeFormatOptions = keyof typeof dateTimeFormat | Intl.DateTimeFormatOptions
 
 export function toZdtLocaleString(date: string | Temporal.ZonedDateTime, format: dateTimeFormatOptions = 'full') {
+	// locale 写死 `blogConfig.language`，不传 `undefined`——见 relative-time.ts 头注：
+	// 留 undefined 会让产物随**构建机**语言变（CI 的 en-US 出 `August 7, 24`，
+	// 中文机器出 `24年8月7日`），2026-10-03 首次切流时线上就是这样坏的。
+	// 时区不需要额外传：`Temporal.ZonedDateTime.prototype.toLocaleString` 默认
+	// 就按该 zdt 自带的时区格式化，而 `toZonedTemporal` 产出的是
+	// `blogConfig.timeZone`（Asia/Shanghai）下的 zdt。
 	return (typeof date === 'string' ? toZonedTemporal(date) : date)
-		.toLocaleString(undefined, typeof format === 'string' ? dateTimeFormat[format] : format)
+		.toLocaleString(blogConfig.language, typeof format === 'string' ? dateTimeFormat[format] : format)
 }

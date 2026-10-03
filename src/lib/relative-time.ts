@@ -16,13 +16,19 @@
  * 照抄 `node_modules/nuxt/dist/app/components/nuxt-time.vue` 的单位阶梯，
  * 阈值取「上一级单位的进位基数」：60 秒 → 60 分 → 24 时 → 30 天 → 12 月。
  *
- * ⚠️ locale 传 `undefined` 是刻意的，与线上保持一致：
- * NuxtTime 里 `Intl.RelativeTimeFormat(_locale ?? propsLocale)`，
- * 而 `UtilDate` 两边都没传 locale，于是取值落在运行时默认值上——
- * GitHub Actions（en-US）构建出 `25 seconds ago`，
- * 中文机器构建出 `43秒钟前`。
- * **写死 'zh-CN' 反而会与线上不一致**，所以这里保持 undefined。
+ * ⚠️ locale **必须写死**为 `blogConfig.language`（`zh-CN`），不能留 `undefined`。
+ * 留 `undefined` 时取值落在**构建机运行时**默认值上，于是产物随构建环境变：
+ * GitHub Actions（en-US）构建出 `25 seconds ago`，中文机器构建出 `43秒钟前`。
+ *
+ * 这个坑踩过一次：2026-10-03 首次切流，线上 63/63 篇文章的日期全部变成英文
+ * （`August 7, 24`），而本地构建与冻结基线对比全绿——**因为基线和本地都是中文，
+ * 只有 CI 那一侧是英文**，离线门禁结构上就看不见它。
+ *
+ * 当时这里写的是「写死 'zh-CN' 反而会与线上不一致，所以保持 undefined」。
+ * 那句的前提是错的：核对冻结基线，线上曾经的措辞是**中文**（实测 `44秒钟前`）。
+ * 结论反了——写死才是与线上一致，不写死才会不一致。
  */
+import blogConfig from '../config/blog'
 
 /** 取第一个 `|值| < 阈值` 的单位；阈值本身是上一级单位的进位基数。 */
 const RELATIVE_UNITS = [
@@ -41,5 +47,5 @@ export function formatRelative(instant: string | number | Date, now = Date.now()
 	const diffInSeconds = (ms - now) / 1e3
 	const { unit, seconds } = RELATIVE_UNITS.find(({ seconds: s, threshold }) => Math.abs(diffInSeconds / s) < threshold)
 		?? RELATIVE_UNITS[RELATIVE_UNITS.length - 1]
-	return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(Math.round(diffInSeconds / seconds), unit)
+	return new Intl.RelativeTimeFormat(blogConfig.language, { numeric: 'auto' }).format(Math.round(diffInSeconds / seconds), unit)
 }
