@@ -131,7 +131,7 @@ const zoomFactor = type === 'douyin'
 	box-shadow: var(--box-shadow-2);
 
 	/* `<article>` 来自父页面，拿不到本组件的 scope 属性，
-	   必须 :global() 否则这条规则永远不匹配（见 docs/astro-phase1-findings.md 陷阱 2） */
+	   必须 :global() 否则这条规则永远不匹配（见 git: a4603b0^:docs/astro-phase1-findings.md 陷阱 2） */
 	:global(article) & {
 		margin: 2rem auto;
 	}

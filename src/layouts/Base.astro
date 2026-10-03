@@ -103,7 +103,39 @@ const canonical = new URL(pathname, siteUrl).toString()
  * 那是把页面自己的数据搬到布局里，与源项目结构相反，而且每个非静态页
  * 都要全表扫一遍内容集合。取不到时回落到站点级描述。
  */
-const description = descriptionProp ?? blogConfig.description
+
+/**
+ * meta description 截断上限。
+ *
+ * 站内 38 篇文章里有 26 篇超长，最长 406 字符——frontmatter 的 `description`
+ * 写的就是首段原文，没有为搜索摘要做过裁剪。Google 的结果摘要在 155~160 字符
+ * 附近截断，超出的部分永远显示不出来，只是白占权重。
+ *
+ * ⚠️ 这是一次**对线上行为的主动偏离**，不是修回归：Nuxt 基线同样不截断
+ * （逐字核对过 26 页），所以 `live:head` 会就此报出 26 页 head 差异。
+ * 那是预期内的，别当成缺陷去"修"。
+ *
+ * 150 而不是 160：留一点余量，避免中英混排时按字节/字素折算的偏差顶到边界。
+ * 省略号占 1 个字符，故切在 `MAX - 1`。
+ */
+const SEO_DESCRIPTION_MAX = 150
+
+/** 超长时按句子边界回退，实在切不出句子边界再硬切，避免把词劈开 */
+function clampDescription(text: string): string {
+	const trimmed = text.trim()
+	if (trimmed.length <= SEO_DESCRIPTION_MAX)
+		return trimmed
+	const head = trimmed.slice(0, SEO_DESCRIPTION_MAX - 1)
+	const lastStop = Math.max(
+		head.lastIndexOf('。'), head.lastIndexOf('！'), head.lastIndexOf('？'),
+		head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '),
+	)
+	// 回退到最近的句子边界；最近的边界若在 60% 之前，说明这篇首段句子太长，
+	// 那种情况下宁可硬切也不要丢掉大半内容。
+	return `${lastStop > SEO_DESCRIPTION_MAX * 0.6 ? head.slice(0, lastStop + 1) : head}…`
+}
+
+const description = clampDescription(descriptionProp ?? blogConfig.description)
 const ogType = ogTypeProp ?? 'website'
 /** 源项目首页 `ogImage: appConfig.author.avatar`；内容页由页面传 frontmatter 封面，缺封面时同头像 */
 const ogImage = imageProp ?? blogConfig.author.avatar

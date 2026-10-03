@@ -1,4 +1,21 @@
 param(
+	# How much to run. See section 6 for the two tiers and what each one is for.
+	#
+	#   offline (default) 29 gates that read only dist/ and src/. No network,
+	#           no browser, no ports. ~35s. This is the local loop.
+	#   full    everything above plus preview-guard-selftest and the three live
+	#           gates against the deployed site. **~20-25 min**, dominated by
+	#           live:ui-parity (63 pages x 2 sides x ~20s/page). Only for a
+	#           cutover or a release.
+	#
+	# 2026-10-03: the default was 'full', on the argument that a narrower default
+	# is the same mistake as dropping a gate. That was the wrong call in practice
+	# -- nobody runs the heavy tier when the default is 20 minutes, so the heavy
+	# tier simply never runs, which is a worse failure than the one it was
+	# guarding against. The user decision is explicit: **locally we do the basic
+	# scan; the full scan is opt-in by name** (`pnpm accept:full`).
+	[ValidateSet('offline', 'full')]
+	[string] $Profile = 'offline',
 	# Opt-in extra gate: computed-style parity against the live site.
 	#
 	# Off by default because it measures the whole site a second time and adds
@@ -29,7 +46,8 @@ $ErrorActionPreference = 'Stop'
 #
 #   1. install (so a newly declared dependency is actually present)
 #   2. build once -- every gate below reads dist/, so ONE build keeps them
-#      consistent with each other and with the source tree
+#      consistent with each other and with the source tree. Its log is kept:
+#      check-build-warnings reads that instead of building again.
 #   3. run every static gate
 #   4. run the two node gates (CI trigger parity, headless-Chrome interaction)
 #   5. print one summary table; exit non-zero if anything failed
@@ -37,6 +55,8 @@ $ErrorActionPreference = 'Stop'
 # Why one build and not one-per-gate: several gates compare Astro output against
 # the Nuxt baseline in .output/public. A gate that rebuilds could observe a
 # half-written dist and report a phantom diff.
+#
+# -Profile picks how much to run; see section 6. The default is the full set.
 #
 # NOTE: ASCII-only. Windows PowerShell 5.1 reads BOM-less .ps1 as ANSI; non-ASCII
 # bytes in a comment swallow the following newline and silently skip the next
@@ -88,7 +108,18 @@ function Step($name, $block) {
 $results.Add((Step 'pnpm install' { & pnpm install 2>&1 | Out-String }))
 
 # -- 2. build -----------------------------------------------------------------
-$results.Add((Step 'pnpm build' { & pnpm build 2>&1 | Out-String }))
+#
+# The full stdout+stderr is written to a log file as it streams past, not just
+# summarized. check-build-warnings (section 5) used to run its OWN isolated
+# `astro build --outDir <tmp>` purely to have a log to scan; now it reads this
+# one. Saves a full ~15s build and, more importantly, removes the second build
+# that the rest of the pipeline had to be ordered around (see section 5).
+$compareDir = Join-Path $root '.astro-compare'
+if (-not (Test-Path -LiteralPath $compareDir)) {
+	New-Item -ItemType Directory -Path $compareDir -Force | Out-Null
+}
+$buildLog = Join-Path $compareDir 'acceptance-build.log'
+$results.Add((Step 'pnpm build' { & pnpm build 2>&1 | Tee-Object -FilePath $buildLog | Out-String }))
 
 # -- 3. static gates (read dist/) --------------------------------------------
 $gates = @(
@@ -305,6 +336,23 @@ $results.Add((Step 'check-self-contained' { & node (Join-Path $PSScriptRoot 'che
 #                       Verified red/green both ways: reverting to
 #                       `display: inline` names both offending rules and exits 1.
 #
+#   check-component-fence  A `Component` fence expands into three tab panes
+#                       (rendered / usage / source). The source pane's figcaption
+#                       filename is paired by "same language, same order" against
+#                       the info strings scanned from the .mdx RAW SOURCE
+#                       (meta cannot travel mdast -> hast: Astro's shiki rebuilds
+#                       the <pre> and keeps only its own attributes). Pair the
+#                       nodes in the wrong order and every source pane still HAS a
+#                       filename -- just someone else's file. Nothing goes red:
+#                       the build is green, page height is green, computed style
+#                       is green. The gate reads each source pane back and
+#                       compares it verbatim against the file on disk, and also
+#                       rejects a leftover `source=` fence from the retired
+#                       empty-fence form (whose pane would just be an empty block).
+#                       Verified red/green both ways: swapping the two emitted
+#                       code nodes in component-fence.ts names the mismatched
+#                       file and exits 1.
+#
 # They read dist/ only, never source: a component that exists but is not
 # referenced is not compiled by Astro, so "it is in the repo" is not evidence
 # that it shipped.
@@ -319,7 +367,8 @@ $productGates = @(
 	'check-text-literal',
 	'check-mdc-eval',
 	'check-aria-current',
-	'check-icon-box'
+	'check-icon-box',
+	'check-component-fence'
 )
 foreach ($g in $productGates) {
 	$script = Join-Path $PSScriptRoot "$g.mjs"
@@ -341,8 +390,31 @@ foreach ($g in $productGates) {
 # lib/preview-guard.mjs now negotiates the port instead. This step is its proof:
 # it starts real previews and asserts the three branches, including the one that
 # matters most -- refusing must NOT kill the other server.
-# It costs ~30s (two preview boots), so it is a real step rather than an import.
-$results.Add((Step 'preview-guard-selftest' { & node (Join-Path $PSScriptRoot 'preview-guard.selftest.mjs') 2>&1 | Out-String }))
+#
+# It belongs to the `full` profile, not `offline`, for two reasons that both
+# showed up in the first offline run on 2026-10-03:
+#
+#   1. It asserts nothing about the SITE. It tests the harness's port
+#      negotiation, so it can only tell you something when a gate that needs
+#      preview-guard is about to run -- i.e. the live:* browser gates.
+#   2. It is the most expensive step in the pipeline by a wide margin, and the
+#      cost is not the ~30s the old comment claimed. Measured 120.8s, because
+#      each `waitUp` shells out to a PowerShell `Get-NetTCPConnection` poll and
+#      each preview boot is a real `astro preview`.
+#
+# And a third reason, which is a genuine collision rather than a cost argument:
+# the self-test hardcodes ports 4391 and 4393 and spawns/kills processes on them.
+# With a preview the USER started already listening on 4391, the self-test went
+# red on its first offline run -- its "someone else's preview" scenario landed on
+# the user's own server. CLAUDE.md is explicit that preview servers are managed
+# by the user, so a self-test that reaches for a port the user may be holding is
+# in the wrong tier regardless of how fast it is.
+if ($Profile -eq 'full') {
+	$results.Add((Step 'preview-guard-selftest' { & node (Join-Path $PSScriptRoot 'preview-guard.selftest.mjs') 2>&1 | Out-String }))
+}
+else {
+	$results.Add([pscustomobject]@{ Step = 'preview-guard-selftest'; Exit = 0; Seconds = 0; Note = 'SKIP (-Profile offline: harness self-test, needs ports 4391/4393 free)' })
+}
 
 # -- 4a. interaction-check is deliberately NOT run here -----------------------
 #
@@ -387,6 +459,9 @@ $results.Add((Step 'preview-guard-selftest' { & node (Join-Path $PSScriptRoot 'p
 #
 # An unreachable production site must SKIP, never FAIL. A flaky network is not
 # a migration defect, and a gate that cries wolf gets ignored.
+#
+# -Profile offline short-circuits before the reachability probe runs (PowerShell
+# `-and` short-circuits, so the offline tier makes zero network calls).
 function Test-LiveReachable($url) {
 	try {
 		$r = Invoke-WebRequest -Uri $url -Method Head -TimeoutSec 10 -UseBasicParsing
@@ -398,7 +473,8 @@ function Test-LiveReachable($url) {
 }
 
 $liveBase = 'https://blog.sotkg.com'
-if (Test-LiveReachable "$liveBase/") {
+$liveReachable = ($Profile -eq 'full') -and (Test-LiveReachable "$liveBase/")
+if ($liveReachable) {
 	$env:BASE_URL = $liveBase
 	$results.Add((Step 'live:sitemap' { & node (Join-Path $PSScriptRoot 'compare-remote-sitemap.mjs') 2>&1 | Out-String }))
 	Remove-Item Env:\BASE_URL -ErrorAction SilentlyContinue
@@ -488,52 +564,80 @@ if (Test-LiveReachable "$liveBase/") {
 	}
 }
 else {
+	$why = if ($Profile -eq 'offline') { 'SKIP (-Profile offline)' } else { 'SKIP (live site unreachable)' }
 	foreach ($skipped in @('live:sitemap', 'live:head', 'live:ui-parity')) {
-		$results.Add([pscustomobject]@{ Step = $skipped; Exit = 0; Seconds = 0; Note = 'SKIP (live site unreachable)' })
+		$results.Add([pscustomobject]@{ Step = $skipped; Exit = 0; Seconds = 0; Note = $why })
 	}
 	if ($Styles) {
-		$results.Add([pscustomobject]@{ Step = 'live:style-parity'; Exit = 0; Seconds = 0; Note = 'SKIP (live site unreachable)' })
+		$results.Add([pscustomobject]@{ Step = 'live:style-parity'; Exit = 0; Seconds = 0; Note = $why })
 	}
 	if ($Mobile) {
-		$results.Add([pscustomobject]@{ Step = 'live:ui-parity-mobile'; Exit = 0; Seconds = 0; Note = 'SKIP (live site unreachable)' })
-		$results.Add([pscustomobject]@{ Step = 'live:style-parity-mobile'; Exit = 0; Seconds = 0; Note = 'SKIP (live site unreachable)' })
+		$results.Add([pscustomobject]@{ Step = 'live:ui-parity-mobile'; Exit = 0; Seconds = 0; Note = $why })
+		$results.Add([pscustomobject]@{ Step = 'live:style-parity-mobile'; Exit = 0; Seconds = 0; Note = $why })
 	}
 	if ($Dark) {
-		$results.Add([pscustomobject]@{ Step = 'live:style-parity-dark'; Exit = 0; Seconds = 0; Note = 'SKIP (live site unreachable)' })
+		$results.Add([pscustomobject]@{ Step = 'live:style-parity-dark'; Exit = 0; Seconds = 0; Note = $why })
 	}
 }
 
-# -- 5. check-build-warnings runs LAST, and that is load-bearing ---------------
+# -- 5. check-build-warnings runs LAST, and that is no longer load-bearing ------
 #
-# It has to. `astro build --outDir <tmp>` keeps dist/ untouched but still runs a
-# full build against the shared working tree, and it is one of the operations
-# that opens the window in which browser-driven gates go flaky (see 4a above).
-# Measured: everything after it in the same run is unreliable, everything before
-# it is fine. Running it last means the fragile window contains nothing.
+# 2026-10-03: this step no longer builds. It used to run an isolated
+# `astro build --outDir <tmp>` whose only purpose was to produce a log to scan
+# (the script has supported `-LogPath` all along). It now analyzes the log the
+# step-2 build already wrote, so the run has exactly ONE build.
 #
-# NOTE: this block used to sit BEFORE the live gates. The 2026-10-02 run then had
-# both `live:ui-parity` and `live:style-parity` fail with
-# `FAIL: preview never came up` (60.8s each -- exactly the waitHttp timeout).
+# That was worth more than the ~15s. The old header here read "runs LAST, and
+# that is load-bearing", for this reason: the isolated build was an operation
+# that opened a window in which browser-driven gates went flaky, so it had to be
+# positioned so the window contained nothing. With no second build, that window
+# does not exist and the ordering constraint is gone.
 #
-# That was NOT an ordering problem: reordering reproduced it unchanged. The real
-# cause is that Astro 7.x `astro preview` keeps a cross-port registry of running
-# preview servers, and any leftover entry blocks a new one. compare-ui-parity.mjs
-# now runs `astro preview stop` before starting its own. The reordering is kept
-# because it matches what the original note above already said ("runs LAST") --
-# but it was not the fix, and the earlier comment claiming it was has been
-# corrected here so the next reader is not sent down the same wrong path.
-$results.Add((Step 'check-build-warnings' { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'check-build-warnings.ps1') 2>&1 | Out-String }))
+# It is still last, for the cheap reason that a warning report is the kind of
+# thing you want to be able to find at the bottom of the output. Nothing
+# depends on it any more -- moving it next to the build is safe.
+#
+# Historical note, kept because it is a trap, not because it still applies: this
+# block sat BEFORE the live gates at one point, and the 2026-10-02 run then had
+# both `live:ui-parity` and `live:style-parity` fail with `FAIL: preview never
+# came up` (60.8s each -- exactly the waitHttp timeout). Reordering reproduced it
+# unchanged, so it was never an ordering problem: Astro 7.x `astro preview` keeps
+# a cross-port registry of running preview servers and any leftover entry blocks
+# a new one, which compare-ui-parity.mjs now handles itself. Do not "fix" this
+# by moving things around again.
+#
+# One coverage note: with `-LogPath` the gate has no build exit code to check, so
+# it cannot fail on a failed build. It does not need to -- step 2's own
+# `$LASTEXITCODE` is what catches that, and it is the same build.
+$results.Add((Step 'check-build-warnings' { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'check-build-warnings.ps1') -LogPath $buildLog 2>&1 | Out-String }))
 
-# -- 5. summary --------------------------------------------------------------
+# -- 6. summary --------------------------------------------------------------
 ''
-'================ ACCEPTANCE ================'
+"================ ACCEPTANCE (profile: $Profile) ================"
 $results | Format-Table -AutoSize -Wrap
+''
+'PROFILES:'
+'  pnpm accept        (default) the 29 gates that read only dist/ and src/.'
+'                     No network, no browser, no ports. ~35s. The local loop.'
+'  pnpm accept:full   the above plus preview-guard-selftest and the three live'
+'                     gates against the deployed site. ~20-25 min, dominated by'
+'                     live:ui-parity (63 pages x 2 sides, ~20s/page measured).'
+'                     Run it before a cutover and before a release: those three'
+'                     are the only instruments that can see "Astro emits a URL'
+'                     set that is internally consistent but differs from what is'
+'                     live", which turns a cutover into a site-wide 404 with'
+'                     every offline gate still green.'
 ''
 'NOT RUN HERE (deliberate, see section 4a):'
 '  interaction-check   run it on its own:  node scripts/interaction-check.mjs'
 '                      26 assertions in a real headless Chrome + 67-page sweep.'
 '                      It is reliable standalone and unreliable in this pipeline,'
 '                      and a gate that cries wolf is worse than no gate.'
+'                      It is NOT wired into the offline profile either: the'
+'                      measured evidence for its in-pipeline flakiness points at a'
+'                      full build against the shared tree, which step 5 no longer'
+'                      performs -- but that is a hypothesis, not a measurement, and'
+'                      re-running it here is how it would get tested.'
 ''
 'OPT-IN:'
 '  -Styles            also run live:style-parity (computed styles vs the live site).'

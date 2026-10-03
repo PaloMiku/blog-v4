@@ -268,7 +268,28 @@ const pageArr = getPaginationIndicator(value, totalPages, expandPages)
 		}
 	}
 
-	> .pagination-num {
+	/*
+	 * `:global()` 同样是必须的，而且理由比上面那条更硬：**页码按钮会被脚本重建。**
+	 *
+	 * `pages/index.astro` 的 `syncPager()` 在排序 / 分类 / 翻页后用
+	 * `document.createElement('button')` 摘掉旧的、插入新的页码按钮。Astro 的作用域
+	 * 属性 `data-astro-cid-<hash>` 是**构建期**写进 HTML 的，运行时 createElement
+	 * 出来的节点没有它——所以任何带 cid 的选择器都对它们失配。
+	 *
+	 * 实测症状（Astro 7，2026-10-03，首页 `?page=2`）：
+	 *   编译产物 `&>.pagination-num[data-astro-cid-4lhk3nrq]{width:3em;…}`
+	 *   构建期渲染的按钮带 cid → 首屏正常：宽度 3em、当前页有高亮底色。
+	 *   syncPager 重建的按钮不带 cid → 切到第 2 页后三条规则**同时失效**：
+	 *     - `width: 3em` 没了 → 四个页码塌成文字宽度，糊成 `1234`；
+	 *     - `&.active` 没了 → 当前页没有高亮，看不出自己在第几页；
+	 *     - `&:hover` 没了 → 悬停无反馈。
+	 *   页高与计算样式两道门禁都看不见：这是**横向**差异，且只在翻页后才出现，
+	 *   门禁量的是首屏那一份 DOM。
+	 *
+	 * 不能反过来在脚本里补 cid 属性：那个 hash 会随组件内容变化，脚本无从得知，
+	 * 组件一改样式就静默失配——比现在更难查。
+	 */
+	> :global(.pagination-num) {
 		width: 3em;
 		transition: background-color 0.2s;
 

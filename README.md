@@ -1,14 +1,15 @@
 # 纸鹿摸鱼处
 
-[![框架](https://img.shields.io/badge/框架-Nuxt-00DC82?logo=Nuxt.js)](https://nuxt.com/)
-[![CMS](https://img.shields.io/badge/CMS-Nuxt%20Content-00DC82?logo=Nuxt.js)](https://content.nuxt.com/)
-[![部署平台](https://img.shields.io/badge/部署平台-Vercel-000000?logo=Vercel)](https://vercel.com/)
-[![访问统计](https://img.shields.io/badge/访问统计-Umami-000000?logo=Umami)](https://github.com/umami-software/umami)
-[![代码风格](https://img.shields.io/badge/代码风格-ESLint-4B32C3?logo=ESLint)](https://eslint.org/)
+[![框架](https://img.shields.io/badge/Astro-7-BC52EE?logo=astro)](https://astro.build/)
+[![部署平台](https://img.shields.io/badge/GitHub%20Pages-222?logo=github)](https://blog.sotkg.com/)
+[![代码风格](https://img.shields.io/badge/ESLint-4B32C3?logo=eslint)](https://eslint.org/)
 
 我的第三代个人博客，于 2024 年 8 月 11 日上线。
 
-3.8.0 原生 CSS 迁移包含破坏性更改：不再默认提供 Sass 和 Stylelint。下游更新前请阅读 [迁移说明](MIGRATION.md)，保留 SCSS 定制的过渡方案也在其中。
+> **2026-10-03 起本站从 Nuxt 4 迁移到 Astro 7**（迁移提交 `00c4401`）。本文的「目录结构 /
+> 快速开始 / 部署指南」按 Astro 现实改写；耻辱柱、友链清单、特性等主题内容继承自上游
+> Clarity 主题（[L33Z22L11/blog-v3](https://github.com/L33Z22L11/blog-v3)）。
+> Nuxt 时代的 `MIGRATION.md` 已删除，历史工程决策见 `CLAUDE.md` 与 `MIGRATION-BRIEF.md`。
 
 ## 耻辱柱 / Hall of Shame
 
@@ -17,7 +18,7 @@
 > - 部署前必须完成项目个性化配置与内容修改，不得将我的信息用于你的网站图标/名称，严禁将项目内我的文章以你的名义重新发布至公开环境。
 > - 部署前必须完成项目个性化配置与内容修改，不得将我的信息用于你的网站图标/名称，严禁将项目内我的文章以你的名义重新发布至公开环境。
 
-近期 Fork 项目后将我的文章部署在互联网且不遵守 CC 协议的行为增加，追查耗费了我巨大精力，因此我将直接将侵权网站列在此标题，希望能减少此类现象的发生。
+近期 Fork 项目后将我的文章部署在互联网且不遵守 CC 协议的行为增加，追查耗费了我大量精力，因此我将直接将侵权网站列在此标题，希望能减少此类现象的发生。
 
 <!-- 1. 2025-12-05 [钟神秀](https://github.com/zsxcoder/Nuxt-blog-v3)：blog.zsxcoder.top《我们的设备被拿来做了什么：软件的背景行为》 -->
 <!-- 2. 2025-12-28 [Axel Beta](https://github.com/ErenAxel/blog-v3)：sc.axel.xin《我们的设备被拿来做了什么：软件的背景行为》《深色模式开发的最佳实践》《寻不回手工油糕》 -->
@@ -50,25 +51,25 @@
 | [闻絮语](https://www.wxuyu.top/)             | wxuyu           | v3.6.5      | 友链轮播、追更历史、音乐控制   |
 | [落憾](https://blog.luoh.org/)               | LuoH-AN         | v3.7.1      | 原创诗词、闲言、今日诗词       |
 | [fishcpy的小破站](https://blog.fis.ink/)     | fishcpy         | v3.4.8      | 鱼塘、时间盒、监控美化         |
-| [六月墨语](https://blog.june.ink/)           | Akuma-real      | v3.7.1      | 说说、访客卡片、音乐           |
-| [Cталин博客](https://blog.jiclub.site/)      | StalinDev54     | v3.4.8      | 生活长文、动态、关于页         |
-| [栖童の小站](https://blog.linux-qitong.top/) | Linux-qitong    | v3.7.1      | 标签、友圈、Linux 实践         |
-| [鹊楠の小窝](https://blog.quenan.cn/)        | QNquenan        | v3.4.9      | 建站教程、公告、更新日志       |
+| [六月墨语](https://blog.june.ink/)           | Akuma-real      | v3.6.3      | 说说、访客卡片、音乐播放器     |
+| [Cталин博客](https://blog.jiclub.site/)     | StalinDev54     | v3.4.8      | 生活长文、动态、关于页         |
+| [栖童の小站](https://blog.linux-qitong.top/) | Linux-qitong    | v3.4.9      | 标签、友圈、Linux 实践         |
+| [鹊楠の小窝](https://quenan.cn/)             | QNquenan         | v3.4.9      | 建站教程、公告、更新日志       |
 | [KingKangBlog](https://blog.kingkang.xyz/)   | KingStoning     | v3.4.9      | 标签筛选、大学随笔             |
-| [Axel's BLOG](https://blog.axelx.cn/)        | AxelEwan        | v3.7.0-rc.0 | 演唱会图文、动态               |
-| [AirTouchの小站](https://www.xsl.im/)        | AirTouch666     | v3.6.0      | 自部署教程、鱼塘、说说         |
-| [Olinl Blog](https://blog.olinl.com/)        | olinll          | v3.7.1      | 部署与容器教程、主题改造笔记   |
-| [古怪杂记本](https://blog.guuguai.site/)     | GuuGuai         | v3.6.3      | 考研复盘、Minecraft 长文       |
-| [敖苛记](https://blog.kayro.cn/)             | jeoor           | v3.7.1      | 相册、标签云、时间进度         |
-| [灯火不休时](https://blog.dhbxs.top/)        | dhbxs           | v3.7.0-rc.0 | Java 与大数据实践、碎碎念      |
-| [郭雨博](https://blog.guoyubo.cn/)           | guojiahaous-alt | v3.7.0-rc.0 | CTF 复盘、折叠好友、音乐播放器 |
+| [Axel's BLOG](https://blog.axelx.cn/)         | AxelEwan        | v3.7.0-rc.0 | 演唱会图文、动态、音乐         |
+| [AirTouchの小站](https://www.xsl.im/)         | AirTouch666     | v3.6.0      | 自部署教程、鱼塘、说说         |
+| [Olinl Blog](https://blog.olinl.com/)        | olinll         | v3.7.1      | 部署与容器教程、主题改造笔记   |
+| [古怪杂记本](https://blog.guuguai.site/)       | GuuGuai        | v3.6.3      | 考研复盘、Minecraft 长文       |
+| [敖苛记](https://blog.kayro.cn/)              | jeoor          | v3.7.1      | 相册、标签云、时间进度         |
+| [灯火不休时](https://blog.dhbxs.top/)          | dhbxs          | v3.7.0-rc.0 | Java 与大数据实践、碎碎念      |
+| [郭雨博](https://blog.guoyubo.cn/)             | guojiahaous-alt | v3.7.0-rc.0 | CTF 复盘、折叠好友、音乐播放器 |
 
 ### 社区移植
 
 | 框架    | 项目                                                                    | 版本 / 状态 | 特色                                                                             |
 | ------- | ----------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------- |
 | Hugo    | [it985/hugo-theme-clarity](https://github.com/it985/hugo-theme-clarity) | 开发中      | Pagefind、相册、说说                                                             |
-| Halo    | [acanyo/theme-clarity](https://github.com/acanyo/theme-clarity)         | v1.6.6      | 可配置小组件、分享海报；[应用市场](https://www.halo.run/store/apps/app-jglhpodw) |
+| Halo    | [acanyo/theme-clarity](https://github.com/acanyo/theme-clarity)         | v1.6.6      | 可配置小组件、分享海报；[应用市场](https://www.halo.run/store/app/app-jglhpodw) |
 | Typecho | [jkjoy/theme-clarity](https://github.com/jkjoy/theme-clarity)           | v1.1.9      | 基于 Halo 版移植，图库、瞬间、追番                                               |
 
 ## 特性
@@ -77,59 +78,40 @@
 
 ## 目录结构
 
-项目使用 [Nuxt 4 项目目录结构](https://nuxt.com/docs/4.x/guide/directory-structure/app/app)。
+Astro 7 项目结构（站点根即仓库根）：
 
 ```sh
 .
-├── app # 前端
-│   ├── assets # 资源文件
-│   ├── components # 组件
+├── src # 站点源码
+│   ├── components # UI 组件
 │   │   ├── blog # 博客布局组件
-│   │   ├── content # MDC组件
+│   │   ├── content # MDX 组件（MDC 注册表）
 │   │   ├── partial # 微型组件
 │   │   ├── popover # 弹窗组件
 │   │   ├── post # 文章组件
 │   │   ├── util # 功能组件
 │   │   └── widget # 侧栏小组件
-│   ├── composables # Vue 组合式函数
-│   ├── pages # 页面
-│   │   ├── [...slug].vue # 正文、404页面
-│   │   ├── archive.vue # 归档
-│   │   ├── link.vue # 友链
-│   │   ├── index.vue # 首页
-│   │   └── preview.vue # 预览的文章
-│   ├── plugins # Nuxt / Vue 插件
-│   ├── stores # Pinia 状态管理
-│   ├── types # 类型定义
-│   ├── utils # 工具函数
-│   ├── app.config.ts # 前端响应式配置★
-│   ├── app.vue # 基本布局
-│   ├── error.vue # 意外错误页
-│   └── feeds.ts # 友链列表★
-├── content # 文章
-│   ├── posts # 正式文章
-│   ├── previews # 草稿文章，仅可被站内搜索
-│   ├── link.md # 友链要求
-│   └── theme.md # 主题介绍
-├── modules # Nuxt 模块
-│   └── anti-mirror # 恶意反代跳转
-├── patches # npm 包补丁
+│   ├── config # blog.ts（内容/分类/友链）★
+│   ├── content # 文章与页面内容（.mdx）
+│   │   ├── posts # 正式文章
+│   │   ├── previews # 草稿文章，仅可被站内搜索
+│   │   └── games # 游戏页
+│   ├── lib # 框架无关共享层（app-config.ts 导航/页脚/交互默认值）
+│   ├── loaders # 内容加载器
+│   ├── pages # 文件路由与端点（atom.xml / llms.txt / search-index / raw/*.md）
+│   ├── plugins # remark/rehype 管线（component-fence / heading-ids / math-code / prose）
+│   ├── styles # CSS 令牌与主题
+│   └── layouts # 页面骨架
 ├── public # 静态资源，生成在站点根目录
-│   ├── assets # 订阅源 XSLT 模板
+│   ├── assets # 资源文件
 │   └── fonts # 字体
-├── remark-plugins # Unified 生态插件
-├── scripts # npm 脚本
-├── server # 服务端
-│   ├── api # 接口
-│   │   └── stats.get.ts # 博客静态统计
-│   └── routes # 根路由
-│       ├── atom.xml.get.ts # Atom 订阅源
-│       └── subscriptions.opml.get.ts # OPML 订阅源聚合
-├── blog.config.ts # 博客静态公共配置★
-├── content.config.ts # Nuxt Content 配置
-├── edgeone.json # EdgeOne 配置
-├── nuxt.config.ts # Nuxt 配置
-└── redirects.json # 旧站点重定向配置
+├── scripts # 门禁与工具（acceptance.ps1 是单一验收入口）
+├── baseline # 冻结的 Nuxt 产物（未入库，离线门禁锚点，见 CLAUDE.md）
+├── astro.config.mjs # Astro 配置
+├── edgeone.json # EdgeOne 控制台配置（自媒体生效，不被流水线消费）
+├── CLAUDE.md # 工程决策与验收规则★
+├── MIGRATION-BRIEF.md # Nuxt → Astro 迁移交接
+└── package.json # pnpm 12，版本经 pnpm-workspace.yaml 的 catalogs 集中管理
 ```
 
 ## 快速开始
@@ -142,30 +124,15 @@
 pnpm i
 ```
 
-如果你擅长前端并且需要安装 npm 包，推荐通过 `@antfu/nip` 包提供的 `nip` 命令安装 npm 包到合适的 catalog 下。
-
 ### 初始配置
 
-```sh
-pnpm init-project # 初始化项目配置，输入 confirm 确认
-```
+三层配置分工：内容/分类/友链改 `src/config/blog.ts`；导航/页脚/交互默认值改
+`src/lib/app-config.ts`；内容 schema 与 loader 改 `src/content.config.ts`。
 
-初始化会删除整个 `content` 目录，重建示例文章与通用友链申请说明，重置 `app/feeds.ts`（仅保留主题作者纸鹿的博客），并清空个人导航及统计/评论配置。请先备份自己的内容；自动化环境可显式执行 `pnpm init-project --yes`，没有确认参数时会退出且不修改文件。
-
-初始化后头像和图标使用 WeAvatar 首字占位头像（无需邮箱或 MD5），站点地址为 `http://localhost:3000/`。上线前请按终端清单修改：
-
-- 站点与个人配置：
-  - `blog.config.ts` 中的站点信息、Umami 站点统计、Cloudflare Insights 统计、Twikoo 评论服务源。
-  - `app/app.config.ts` 中的页脚导航、出生年份等（`birthYear: 0` 隐藏年龄）。
-  - `content/link.md` 中的友链申请方式、`app/feeds.ts` 中的友链列表。
-
-- 为保证开发体验，需要安装 ESLint、Stylelint 等 VS Code 扩展。如果你不喜欢此项目的格式化风格，可以在 `./eslint.config.mjs` 和 `./.vscode/settings.json` 中调整或者不安装 VS Code 扩展。
-
-- 如果文章 URL 和先前的不相同，可以通过编辑 `redirects.json` 来添加重定向。
+文章 URL 可在 frontmatter 用 `permalink` 自定义；`hidePostPrefix` 开启时 `/posts/xxx`
+显示为 `/xxx`。建站流程与门禁规则以 `CLAUDE.md` 为准。
 
 ### 创建文章
-
-- 启用 `blog.config.ts` 中的 `article.useRandomPremalink`，即可在创建文章时随机生成 URL。
 
 ```sh
 pnpm new
@@ -180,35 +147,33 @@ pnpm dev
 ### 构建生产环境
 
 ```sh
-pnpm generate
-pnpm preview
+pnpm build   # 产物在 dist/（SSG）
+pnpm preview # 本地预览产物
 ```
 
 ### 部署指南
 
-支持 Vercel、Netlify、Cloudflare Pages、EdgeOne Makers 等平台部署。建议采用静态（SSG）部署方式：
+本仓库的部署：GitHub Actions（`.github/workflows/build.yml`，push main 触发）跑
+typecheck + build + 9 道无浏览器门禁，随后把 `dist/` 推送到 `PaloMiku/blog-public`
+（GitHub Pages），站点经 EdgeOne CDN 对外服务。构建命令 `pnpm build`，输出目录 `dist`。
 
-- 构建命令: `pnpm generate`
-- 输出目录: `.output/public`
-- 安装命令: `pnpm i`
-
-如果直接使用平台提供的“Nuxt”预设部署，则会变成 SSR 模式，此模式每次访问都会等待服务端重新渲染。请参阅 [Nuxt 文档](https://nuxt.com/docs/getting-started/deployment) 和 [Nuxt Content 文档](https://content.nuxt.com/docs/deploy/static) 的“部署”一节。
+换成其他平台时：构建命令同样是 `pnpm build`、输出目录 `dist`；若托管在 EdgeOne，
+`/api/*` 与 `*.opml` 的 MIME 由 `edgeone.json` 描述，改 API 路径需同步改它（该文件不被
+仓库内任何流水线消费，只在 EdgeOne 控制台侧生效）。
 
 #### 疑难解答
 
-- 手动清理文章后若 `generate` 报 `Exiting due to prerender errors`，请在完整日志中搜索 `[404]` 和 `Linked from`，修正引用已删除文章的链接。推荐在全新模板上使用初始化命令统一清理。
-- `absolute-site-urls` 表示站内链接使用了绝对 URL，并非 IP 地址无效。Atom / OPML 等订阅信息需要绝对地址；自托管时将 `blog.config.ts` 的 `url` 设为实际访问地址，且协议、主机、端口保持一致。
-
-- 当你发现文章页面 404 问题时，请注意文章 URL 不应尾随 `/`。
-- 如果修改了 API 路径，使用 EdgeOne Makers 部署需要同步修改 `edgeone.json`。
-- 运行、部署项目时 Node.js 版本需要遵照 `package.json` 限制，推荐使用 Node LTS 最新版。
-
-### 检测友链状态
-
-```sh
-pnpm check:feed # 检测某友链 / 任意 URL 的托管商及可访问性
-pnpm check:feed/all # 检测所有友链可访问性并生成报告
-```
+- 验证部署一律用普通 URL：站点在 EdgeOne 后面，带 query 的 URL 是独立 cache key，
+  `?cb=<时间戳>` 会命中尚未刷新的父层拿到旧内容；要绕过 CDN 就查 `blog-public` 的部署产物。
+- 订阅源需要绝对地址：自托管时把 `src/config/site-meta.ts` 的站点地址设为实际访问地址，
+  协议、主机保持一致。
+- `pnpm accept` 是唯一验收入口（`scripts/acceptance.ps1`），默认跑**基础档** 36 步：
+  只读 `dist/` 与 `src/`，零网络零浏览器，约 30 s。其中需要 Nuxt 冻结基线的门禁只能在
+  本地跑，干净 CI 里不成立，CI 只跑其无浏览器子集（10 道）。
+- `pnpm accept:full` 在基础档之上加 `preview-guard-selftest` 与三道打线上站的
+  `live:*` 门禁，**约 20–25 分钟**（大头是 `live:ui-parity`，63 页 × 两侧）。
+  切换上线前与发布前各跑一次；日常改动不必跑。
+- 运行、部署项目时 Node.js 版本需遵照 `package.json` 的 engines 限制。
 
 ## 贡献
 

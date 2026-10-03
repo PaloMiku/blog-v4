@@ -91,7 +91,7 @@ export const collections = {
 			//
 			// 接管前这里是「codemod 产物」，原文 `content/*.md` 另存一份当事实源。现在原文树
 			// 已删除，`.mdx` **就是**一手内容源，`mdc-to-mdx` codemod 随之退役
-			// （转换报告存档在 docs/mdc-to-mdx-report.md）。
+			// （转换报告存档在 git: a4603b0^:docs/mdc-to-mdx-report.md）。
 			pattern: '**/*.mdx',
 			base: new URL('./content/', import.meta.url),
 			generateId,

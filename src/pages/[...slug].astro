@@ -74,12 +74,28 @@ const siteUrl = blogConfig.url
 const canonicalUrl = new URL(`/${entry.id}`, siteUrl).toString()
 const imageUrl = entry.data.image ? new URL(entry.data.image, siteUrl).toString() : undefined
 
+/**
+ * meta description：frontmatter 优先，缺省时**不要**让 22 个页面共用同一句站点简介。
+ *
+ * 2026-10-03 实测：63 个 mdx 里有 20 个没有 `description`（全是 `content/games/`
+ * 下的 galgame 条目），它们全部回落到 `blogConfig.description`，于是 25 个页面的
+ * meta description 逐字相同。重复的 description 对这些页面没有任何区分度——
+ * 它们能被抓到的关键词全在标题里，描述栏却写着一句跟本页无关的站点简介。
+ *
+ * 这里按「标题 + 站点名」合成一句：至少**逐页唯一**、含标题这个主检索词。
+ * ⚠️ 这是**占位**，质量上限有限。真正的描述应该写进 frontmatter 的
+ * `description:`（schema 已经是 `z.string().optional()`，加了直接生效），
+ * 写了就以 frontmatter 为准。
+ */
+const description = entry.data.description
+	?? `「${entry.data.title ?? entry.id}」——${blogConfig.title}`
+
 const jsonLd: Record<string, unknown>[] = [
 	{
 		'@id': `${canonicalUrl}#blogposting`,
 		'@type': 'BlogPosting',
 		'headline': entry.data.title,
-		...(entry.data.description ? { description: entry.data.description } : {}),
+		...(description ? { description } : {}),
 		...(imageUrl ? { image: imageUrl } : {}),
 		...(toIsoDate(entry.data.date) ? { datePublished: toIsoDate(entry.data.date) } : {}),
 		...(toIsoDate(entry.data.updated ?? entry.data.date) ? { dateModified: toIsoDate(entry.data.updated ?? entry.data.date) } : {}),
@@ -98,7 +114,7 @@ const jsonLd: Record<string, unknown>[] = [
 <Blog
 		title={entry.data.title ?? entry.id}
 		hasAside={hasAside}
-		description={entry.data.description}
+		description={description}
 		image={entry.data.image}
 		ogType="article"
 		jsonLd={jsonLd}

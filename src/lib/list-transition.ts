@@ -39,7 +39,7 @@
  *
  * ## isomprhic 安全
  * 模块顶层**不触碰** `document` / `window` / `matchMedia`，全部访问都在函数体内。
- * 原因见 `docs/astro-phase1-findings.md` §39：本项目出过「服务端模块被 import 进
+ * 原因见 `git: a4603b0^:docs/astro-phase1-findings.md` §39：本项目出过「服务端模块被 import 进
  * 客户端产物」的错，`astro build` 的 SSR 阶段会因为顶层 `document` 直接崩。
  * 因此这个模块可以被 `.astro` 的 frontmatter 无条件 import 而不出事。
  *

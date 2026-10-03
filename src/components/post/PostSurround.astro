@@ -122,7 +122,7 @@ const { prev, next } = await getSurroundings(currentId)
 	 * 元素由 astro-icon 产出、带着**它自己的** cid；写在这里会被编译成
 	 * `.surround-link[data-astro-cid-<本组件>] > .iconify[data-astro-cid-<同>]`
 	 * 而永不匹配。父选择器 `.surround-link` 是本组件渲染的，保持 scoped 即可，
-	 * 影响面仍限定在本组件内。见 docs/astro-phase1-findings.md §50。
+	 * 影响面仍限定在本组件内。见 git: a4603b0^:docs/astro-phase1-findings.md §50。
 	 */
 	> :global(.iconify) {
 		opacity: 0.5;

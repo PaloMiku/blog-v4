@@ -20,6 +20,7 @@
     "lint": "eslint",
     "lint:fix": "eslint --fix",
     "accept": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance.ps1",
+    "accept:full": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance.ps1 -Profile full",
     "freeze-baseline": "node scripts/freeze-baseline.mjs",
     "interaction-check": "node scripts/interaction-check.mjs",
     "new": "node scripts/new-blog.ts"
@@ -28,7 +29,6 @@
     "@astrojs/markdown-remark": "catalog:content",
     "@astrojs/mdx": "catalog:content",
     "@astrojs/sitemap": "catalog:framework",
-    "@astrojs/vue": "catalog:ui",
     "@iconify-json/catppuccin": "catalog:ui",
     "@iconify-json/devicon": "catalog:ui",
     "@iconify-json/icon-park-outline": "catalog:ui",
@@ -61,8 +61,7 @@
     "remark-mdc": "catalog:content",
     "shiki": "catalog:content",
     "temporal-polyfill": "catalog:framework",
-    "unist-util-visit": "catalog:util",
-    "vue": "catalog:ui"
+    "unist-util-visit": "catalog:util"
   },
   "devDependencies": {
     "@antfu/eslint-config": "catalog:quality",

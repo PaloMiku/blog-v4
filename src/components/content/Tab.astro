@@ -55,8 +55,8 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 
 {combobox
 	? (
-		<div class="combobox-wrapper" class:list={{ 'has-border': border }}>
-			<div class="combobox-container" data-tab-root>
+		<div class="combobox-wrapper" class:list={{ 'has-border': border }} data-tab-root>
+			<div class="combobox-container">
 				<button class="combobox-trigger" type="button" aria-expanded="false" data-combobox-trigger>
 					<span class="combobox-label" data-combobox-label>{current}</span>
 					<svg class="combobox-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -137,7 +137,9 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 
 		root.addEventListener('click', (e) => {
 			const btn = e.target.closest?.('[data-tab-select]')
-			if (!btn || !root.contains(btn))
+			// 必须校验归属到最近的 Tab 根：嵌套 Tab 时外层根也 contains 内层按钮，
+			// 用 contains 会把内层的点击拿到自己身上切换外层面板
+			if (!btn || btn.closest('[data-tab-root]') !== root)
 				return
 			const index = Number(btn.dataset.tabSelect)
 			select(index)
@@ -169,7 +171,9 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 
 		const trigger = root.querySelector('[data-combobox-trigger]')
 		const dropdown = root.querySelector('[data-combobox-dropdown]')
-		if (trigger && dropdown) {
+		// 必须校验归属：嵌套 Tab 时外层根的 querySelector 也会抓到内层 combobox 的
+		// trigger，两边都绑 toggle 会导致一次点击开→关净效果为零（下拉展不开）
+		if (trigger && dropdown && trigger.closest('[data-tab-root]') === root) {
 			trigger.addEventListener('click', (e) => {
 				e.stopPropagation()
 				const open = trigger.getAttribute('aria-expanded') === 'true'
@@ -459,7 +463,25 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 	}
 }
 
-.combobox-check {
+/*
+ * 锚点保留、只有对勾本身走 `:global()`。
+ *
+ * 对勾会被脚本重建：上面的构建期分支（`index + 1 === initial`）由 Astro 渲染，
+ * 带 `data-astro-cid-aqy2tepw`；而 combobox 每次换选项时，<script> 里的
+ * `document.createElementNS(...)` 会摘掉旧的对勾、给新选中项插一个**不带**该属性的。
+ * 带 cid 的选择器于是只对首屏那一个生效。
+ *
+ * 实测症状（Astro 7，2026-10-03，`/previews/example` 的 combobox Tab）：
+ * 首屏「React」选中时对勾是正常的 1em 小勾；一旦点「Vue」，新对勾丢掉
+ * `width:1em;height:1em`，退化成 SVG 默认尺寸，在 1280px 视口下实测约 90px 高，
+ * 把那一行从约 20px 撑到约 140px。首屏页高门禁看不见（门禁量的是构建期那份 DOM），
+ * `audit-dead-scope` 也不报（规则在静态产物里确实匹配得到）。
+ *
+ * ⚠️ 写成**顶层裸** `:global(.combobox-check)` 会被 `check-scope-anchors` 判红，
+ * 而且它说得对：那样这条规则在组件外也生效。挂到 `.combobox-wrapper` 下面即可——
+ * 那是本组件的根，恒带 cid，锚点就回来了，只有对勾本身豁免作用域。
+ */
+.combobox-wrapper :global(.combobox-check) {
 	flex-shrink: 0;
 	width: 1em;
 	height: 1em;

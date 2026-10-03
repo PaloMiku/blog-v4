@@ -34,7 +34,7 @@ import { ciIcons, getDomain } from '../../lib/shared'
  *
  * 原来这里是以 `import.meta.url` 为基准**向上走四层**，再用 `node:fs` 去读
  * 根 `package.json` 与根 `pnpm-workspace.yaml`。
- * 那是 `import.meta.url` 少算一层的老坑（见 docs/astro-phase1-findings.md §35）：
+ * 那是 `import.meta.url` 少算一层的老坑（见 git: a4603b0^:docs/astro-phase1-findings.md §35）：
  * 组件被复制到仓库外单独构建时，它会一路向上找到某个**碰巧存在**的
  * `package.json`（本项目实测：复制到 %TEMP% 后它读的是 `%TEMP%\package.json`，
  * 构建直接 ENOENT 失败）。词法层的自包含门禁当时看不见这种运行时读文件——
@@ -233,7 +233,7 @@ const techstack: DlItem[] = [
  * cid、不带本组件的，所以只放开后代还不够——父级选择器照样匹配不上。
  * 此前这三条规则整组失效，EdgeOne 那枚外链 favicon 因此没有 1.2em 约束、
  * 会按固有像素（32px）撑高整行。两个 class 名全站各只出现一次，无扩散风险。
- * 见 docs/astro-phase1-findings.md §50，scripts/audit-dead-scope.mjs 可复现。
+ * 见 git: a4603b0^:docs/astro-phase1-findings.md §50，scripts/audit-dead-scope.mjs 可复现。
  *
  * 注：tech-stack 的 `.dl-icon` 尺寸已由 DlGroup 自己的 `.dl-group.stack` 规则接管，
  * 这里原先那条 `:global(.tech-stack) :global(.dl-icon)` 随之删除，避免两处都写。

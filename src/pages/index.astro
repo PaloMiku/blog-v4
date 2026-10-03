@@ -215,6 +215,8 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 	 *   - `@update:category="page = 1"`
 	 *   - `getFixedDelay(index * 0.05)` = `--delay: ${(index * 0.05).toFixed(2)}s`
 	 */
+	import { hoistIconSprites } from '../lib/icon-sprite'
+
 	function initPostList() {
 		const root = document.querySelector('[data-post-list]')
 		if (!(root instanceof HTMLElement) || root.dataset.postListReady)
@@ -224,6 +226,15 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 		if (!(dataset instanceof HTMLTemplateElement) || !(menu instanceof HTMLElement))
 			return
 		root.dataset.postListReady = '1'
+
+		/*
+		 * 首屏第一张卡持有 `tabler:pencil-minus` / `tabler:pilcrow` 两个 symbol 的**唯一定义**
+		 * （astro-icon 只在首次出现处内联 `<symbol>`，其余都是 `<use>`）。render() 马上要
+		 * `menu.replaceChildren(...)` 把这张卡连同定义一起丢掉，于是所有 `<use>` 变空白——
+		 * 症状是「翻到第 2 页后卡片上的日期图标和字数图标消失，分类图标还在」。
+		 * 详见 src/lib/icon-sprite.ts 的文件头。
+		 */
+		hoistIconSprites(menu)
 
 		const perPage = Number(root.dataset.perPage) || 1
 		const defaultOrder = root.dataset.defaultOrder || 'date'

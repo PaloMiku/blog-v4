@@ -36,6 +36,7 @@ import { createHighlighter } from 'shiki'
 import { appConfig } from '../lib/app-config'
 import { iconElement } from '../lib/prose-icons'
 import { formatBytes, getDomain, getDomainIcon, getFileIcon, getLangIcon, isExtLink, safelyDecodeUriComponent } from '../lib/shared'
+import { COMPONENT_FENCE_LANG, componentFenceInfos } from './component-fence'
 
 /* ══════════════════════════ 极简 hast 遍历 ══════════════════════════
  * 不引入 unist-util-visit：它只是传递依赖，且这里只需要深度优先遍历。
@@ -287,6 +288,10 @@ export function scanFences(source: string): CodeMeta[] {
 	const out: CodeMeta[] = []
 	let openChar = ''
 	let openLen = 0
+	/** 围栏内的正文行。Component 围栏关掉时要拿它再扫一遍 */
+	let body: string[] = []
+	/** 当前围栏是不是 `Component` 围栏；是的话它的 meta 推迟到关掉时才推 */
+	let componentFilename: string | null = null
 
 	for (const line of source.split(/\r?\n/)) {
 		/*
@@ -295,18 +300,53 @@ export function scanFences(source: string): CodeMeta[] {
 		 * 去掉 `$` 与尾部组，剩余部分直接用 slice 取——效果完全一样，复杂度线性。
 		 */
 		const m = /^\s*(`{3,}|~{3,})/.exec(line)
-		if (!m)
+		if (!m) {
+			if (openChar)
+				body.push(line)
 			continue
+		}
 		const fence = m[1]
 		const info = line.slice(m[0].length)
 		if (!openChar) {
 			openChar = fence[0]
 			openLen = fence.length
-			out.push(parseFenceInfo(info))
+			body = []
+			const meta = parseFenceInfo(info)
+			/*
+			 * `Component` 围栏在**树**里展开成两个代码块（用法、源码），
+			 * 源文件里却只有一个围栏——所以它必须算成**两个** CodeMeta，
+			 * 否则后面两个 `<pre>` 会去配别的围栏的 meta（文件名/图标张冠李戴，
+			 * 而且不会报错）。
+			 *
+			 * ⚠️ 缺 `[文件名]` 时这里**不能抛错**：`readFenceMetas()` 把异常吞成 `[]`，
+			 * 一抛就是「整份文件的 meta 全丢」，症状离病因十万八千里。
+			 * 那种情况由 remark 阶段的插件抛——它在 rehype 之前跑，一定拦得住。
+			 */
+			componentFilename = meta.lang === COMPONENT_FENCE_LANG && meta.filename ? meta.filename : null
+			if (componentFilename)
+				continue
+			out.push(meta)
 		}
 		else if (fence[0] === openChar && fence.length >= openLen && info.trim() === '') {
+			if (componentFilename) {
+				/*
+				 * 顺序必须与树里 code 节点的顺序一致，而树里是
+				 *   tab1（围栏正文，含正文里的围栏）→ tab2 用法 → tab3 源码。
+				 * 所以**正文里的围栏 meta 要排在最前面**：漏掉它们的话，
+				 * 正文里那个 ` ```md wrap expand ` 的 wrap/expand 会静默失效
+				 * （围栏照常渲染，只是少了那两个标记）。
+				 */
+				out.push(...scanFences(body.join('\n')))
+				out.push(...componentFenceInfos(componentFilename).map(parseFenceInfo))
+			}
 			openChar = ''
 			openLen = 0
+			body = []
+			componentFilename = null
+		}
+		else {
+			// 围栏内的一行、且不是闭合围栏 → 正文
+			body.push(line)
 		}
 	}
 

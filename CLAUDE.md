@@ -14,13 +14,15 @@ pnpm preview                 # 预览产物
 pnpm typecheck               # tsc -p tsconfig.check.json
 pnpm lint                    # ESLint（含 CSS 规则；本机 pnpm 可能 EBUSY，可改用 npx eslint）
 pnpm new                     # 新建文章（写 src/content/posts/<年>/<名>.mdx）
-pnpm accept                  # 单一验收入口，等价于 scripts/acceptance.ps1
+pnpm accept                  # 基础验收（默认档，~35s，零网络零浏览器）
+pnpm accept:full             # 加重档：线上对比，~20-25min，仅切换/发布前跑
 pnpm freeze-baseline         # 重新冻结 Nuxt 基线（见「冻结基线」一节）
 
-powershell -File scripts/acceptance.ps1   # 完整验收（需先自行确保 dev server 已停）
-                                         #   -Styles   再加 1600 浅色计算样式对比
-                                         #   -Mobile   再加 390×844 的页高 + 计算样式对比
-                                         #   -Dark     再加深色下的计算样式对比
+powershell -File scripts/acceptance.ps1   # 同 pnpm accept（需先自行确保 dev server 已停）
+                                         #   -Profile full   加重档（同 pnpm accept:full）
+                                         #   -Styles   再加 1600 浅色计算样式对比（仅 full）
+                                         #   -Mobile   再加 390×844 的页高 + 计算样式对比（仅 full）
+                                         #   -Dark     再加深色下的计算样式对比（仅 full）
 node scripts/interaction-check.mjs        # 交互门禁，**单独跑**，不要塞进流水线
 node scripts/probe-subtree.mjs --sel='<css>'        # 逐节点几何对比
 node scripts/probe-subtree.mjs --sel='<css>' --mode=profile   # 垂直剖面：空隙、垂直带、对账
@@ -29,16 +31,24 @@ node scripts/freeze-baseline.mjs --help   # 重新冻结 Nuxt 基线的用法
 
 ## 技术栈与结构
 
-- Astro 7（站点根即仓库根，`src/pages` 文件路由）+ Vue 3.5 运行时（当前 **0 个 Vue 岛**，
-  `@astrojs/vue` 只服务于 `astro.config.mjs` 里那一行 `vue()`，是可摘的死重量）
-  + `@astrojs/mdx` v8 + `remark-mdc`（frontmatter 解析）；pnpm 12 + **catalogs 集中管版本**
-  （`package.json` 全是 `catalog:` 引用，版本只在 `pnpm-workspace.yaml` 出现一次，5 组 45 条）
+- Astro 7（站点根即仓库根，`src/pages` 文件路由）+ `@astrojs/mdx` v8 + `remark-mdc`
+  （frontmatter 解析）；pnpm 12 + **catalogs 集中管版本**
+  （`package.json` 全是 `catalog:` 引用，版本只在 `pnpm-workspace.yaml` 出现一次，5 组 46 条）
+- **零 Vue 岛**：`src/` 下 0 个 `.vue` 文件，`vue` / `@astrojs/vue` 已于 2026-10-03 摘除
+  （`package.json` / `pnpm-workspace.yaml` 的 `ui` catalog / `astro.config.mjs` 的 `vue()`），
+  产物里搜不到任何 Vue runtime。交互一律走组件内原生 `<script>` + `data-*` 定位；
+  确实要引入岛时先把 `vue()` 加回这三处
 - 样式纯 CSS（无 Tailwind、无预处理器）：令牌在 `src/styles/*.css`，组件内 `<style>` 用原生 CSS 嵌套，
   CSS 检查走 ESLint（@zinkawaii/eslint-config-css）
+- **组件示例页靠 `Component` 围栏**：`src/content/previews/example.mdx` 里每个组件写成一个
+  ```` ```Component [Alert.astro] ```` 围栏，正文就是实际会写的 MDX，由
+  `src/plugins/component-fence.ts` 展开成「组件/用法/源码」三页签（源码从 `src/components/`
+  读盘）。文件不在 `components/content/` 下时补 `source=<相对 src 的路径>`。门禁
+  `check-component-fence.mjs` 验它与磁盘文件逐字一致
 - UI 组件全自研（`src/components/` 下 `blog/` `content/` `post/` `partial/` `popup/` `util/` `widget/`），
-  第三方仅 `astro-icon`、vue-tippy、embla-carousel、@bikariya/*
+  第三方仅 `astro-icon` 与 `embla-carousel`
 - **内容唯一真相源是 `src/content/**/*.mdx`**（63 个文件）。接管前的 `content/**/*.md` 原文树
-  与 `mdc-to-mdx` codemod 已退役（转换报告存档在 `docs/mdc-to-mdx-report.md`）。
+  与 `mdc-to-mdx` codemod 已退役（转换报告归档在 git 历史：`git show a4603b0^:docs/mdc-to-mdx-report.md`）。
 - 三层配置分工：内容/分类/友链 → `src/config/blog.ts`；导航/页脚/交互默认值 → `src/lib/app-config.ts`；
   内容 schema 与 loader → `src/content.config.ts`；构建/module → `astro.config.mjs`
 - 端点（`src/pages/`）：`/api/stats`、`/atom.xml`、`/subscriptions.opml`、`/llms.txt`、
@@ -48,6 +58,11 @@ node scripts/freeze-baseline.mjs --help   # 重新冻结 Nuxt 基线的用法
   `currentMark` 写成 `path === item.url` 时必须用 `pathname === '/'` 之类的归一化，
   否则首页因为 `item.url` 恰好是 `/` 而**巧合正确**（见坑位 27）
 - dev / preview 服务器的启停由用户自行管理，代理不得擅自启动或杀掉
+- ⚠️ **`dist` 是指向 `.output/public` 的符号链接**（Nuxt 时代留下的路径，本仓库的
+  `.gitignore` 忽略 `dist` 与 `.output`）。任何 `find dist -type f` / `du -sh dist`
+  **都会返回 0**——`find` 与 `du` 默认不跟随符号链接。统计产物一律用
+  `find -L dist` / `du -shL dist`，或直接写 `.output/public`。
+  2026-10-03 收尾审计时在这里踩过一次，误以为产物是空的。
 
 ## 冻结基线（`baseline/nuxt/`）
 
@@ -63,18 +78,78 @@ node scripts/freeze-baseline.mjs --help   # 重新冻结 Nuxt 基线的用法
 
 ## 验收
 
-`scripts/acceptance.ps1` 是单一验收入口：**2 步构建 + 34 步**。
+`scripts/acceptance.ps1` 是单一验收入口：**2 步构建 + 35 步**。
 
 | 组 | 数量 | 成员 |
 | --- | --- | --- |
-| 构建 | 2 | `pnpm install`、`pnpm build`（只构建一次，所有门禁共用同一个 `dist`） |
+| 构建 | 2 | `pnpm install`、`pnpm build`（只构建一次，所有门禁共用同一个 `dist`；日志落在 `.astro-compare/acceptance-build.log`） |
 | PowerShell 静态门禁 | 11 | `check-integration` `check-layout` `check-anchor-classes` `check-dead-css` `check-assets` `compare-urls` `compare-titles` `check-content-preservation` `check-dates` `audit-deferred` `audit-image-pipeline` |
 | 边界/源码门禁 | 3 | `audit-dead-scope`（`$knownDeadScope = 3`）`audit-css-blocks` `check-ci-triggers` |
 | 依赖边界 | 1 | `check-self-contained` |
-| 产品门禁 | 11 | `check-icon-swap` `check-flip-gates` `check-list-controls` `check-dropped-css` `check-affordances` `check-scope-anchors` `check-heading-ids` `check-text-literal` `check-mdc-eval` `check-aria-current` `check-icon-box` |
-| 仪器自检 | 1 | `preview-guard-selftest` |
+| 产品门禁 | 12 | `check-icon-swap` `check-flip-gates` `check-list-controls` `check-dropped-css` `check-affordances` `check-scope-anchors` `check-heading-ids` `check-text-literal` `check-mdc-eval` `check-aria-current` `check-icon-box` `check-component-fence` |
+| 仪器自检 | 1 | `preview-guard-selftest`（**只属于 `full` 档**，见下） |
 | 线上门禁 | 7 | `live:sitemap` `live:head` `live:ui-parity` `live:style-parity` `live:ui-parity-mobile` `live:style-parity-mobile` `live:style-parity-dark` |
-| 构建告警 | 1 | `check-build-warnings` |
+| 构建告警 | 1 | `check-build-warnings`（读步骤 2 那次构建的日志，**不再自己构建**） |
+
+### 分档：本地只跑基础档，切换/发布前才跑 full
+
+`acceptance.ps1` 带 `-Profile`（`offline` / `full`，**默认 `offline`**）。错档由
+`ValidateSet` 直接拒（`-Profile ofline` 是参数绑定错误，不是静默回落）。
+
+| 档 | 入口 | 内容 | 实测墙钟 |
+| --- | --- | --- | --- |
+| `offline`（默认） | `pnpm accept` | 29 道只读 `dist/` 与 `src/` 的门禁 + `check-build-warnings`，**零网络、零浏览器、不占端口** | **33.9 s，36/36 绿** |
+| `full` | `pnpm accept:full` | 上面 + `preview-guard-selftest` + `live:sitemap` / `live:head` / `live:ui-parity` | **~20–25 min**，大头是 `live:ui-parity` |
+
+`-Styles` / `-Mobile` / `-Dark` 只影响 `full`。
+
+**默认档在 2026-10-03 从 `full` 改成 `offline`**，这是用户的明确决定。原先把 `full`
+设为默认的理由（收窄默认值与悄悄丢门禁是同一种错）**在实践上是错的**：默认档要 20 分钟，
+于是谁都不会跑，重档等于永远不存在——那比它要防的失败更糟。现在的约定是
+**本地只做基础扫描，重档必须显式点名**。
+
+`live:ui-parity` 的成本实测：**63 页 × 两侧，约 20 s/页**（`live:sitemap` 与 `live:head`
+很快，大头全在这一道）。它贵在每页都要真实 headless Chrome 导航、跨域请求全拦以固定
+前提、测不稳还要重测。**这三道是唯一能看见「Astro 生成的 URL 集合内部自洽但与线上不同」、
+从而把切换变成全站 404 而所有离线门禁全绿的仪器**——所以别删，只是别默认跑。
+
+`preview-guard-selftest` 归在 `full` 有三条理由，其中第三条是硬冲突：
+
+1. 它**不验站点**，只验 `preview-guard` 的端口协商——只有马上要跑需要它的
+   `live:*` 浏览器门禁时它才有意义。
+2. 它是全流水线最贵的一步，而且比旧注释自称的 ~30 s 贵得多：实测 **120.8 s**。
+   `waitUp` 每次都 shell 出去跑一次 PowerShell `Get-NetTCPConnection` 轮询，
+   每次 preview 启动都是真的 `astro preview`。
+3. 它**硬编码 4391 / 4393** 并在其上 spawn/kill 进程。2026-10-03 第一次跑
+   `offline` 档时它就是红的：用户自己起了一个 preview 占着 4391，而自检的
+   「别人的 preview」场景正好落在那个端口上。`CLAUDE.md` 明写 preview 服务器
+   由用户管理，一个会去碰用户可能正占用的端口的自检，**无论多快都不该在日常档里**。
+
+`interaction-check.mjs` **两档都不进**（§4a 已记：流水线里不可靠、单跑可靠）。
+它原先被怀疑的元凶是「对着共享工作树再跑一次全量构建」，而第 5 步已经不这么做了——
+但这只是假设不是实测，要验就得把它接回 `offline` 档跑一次。
+
+### 门禁耗时（2026-10-03 实测单步墙钟）
+
+**改前 → 改后：`offline` 档 150.8 s（且 1 道红）→ 33.9 s（36/36 绿）。** 三处：
+
+- `audit-css-blocks.mjs` 的 BOM 段写的是 `walk(ROOT)`（仓库根）而不是 `walk(SRC)`，
+  于是把 `node_modules` 的 5.8 万个文件递归了一遍，只为筛出其中的 `.astro` / `.css`
+  —— **21.3 s → 0.18 s**。修前它是全套离线门禁里最慢的一道，第二名 `check-dropped-css`
+  只有 1.1 s。
+- `check-build-warnings` 原本为了拿日志自己再跑一次隔离构建（`--outDir <tmp>`），
+  现在读步骤 2 已经写下的日志 —— **省掉一次 ~15 s 的全量构建**（该步 0.3 s），
+  顺带取消了当年「它必须跑在最后、因为它会打开一个让浏览器门禁变 flaky 的窗口」
+  这个排序约束。`check-build-warnings.ps1` 的 `-LogPath` 早就有，只是没接上。
+  代价是它拿不到构建退出码了——不需要，步骤 2 的 `$LASTEXITCODE` 就在管这件事，
+  而且是同一次构建。
+- `preview-guard-selftest` 移出日常档 —— 见上，省掉 120.8 s 并消除一处端口冲突。
+
+**一道门禁一个进程**是这个结构的固定成本：29 道 ≈ 11 s 纯解释器启动开销
+（PowerShell 每道 ~0.4 s，node 每道 ~0.2 s）。也就是说 33.9 s 里有约三分之一是
+`powershell.exe` / `node.exe` 的冷启动，真要再压就得把门禁合并成单个进程内
+runner，那是一次结构性改动，不在当前范围内。剩下的 33.9 s ≈ 3 s install +
+15 s build + 14 s 门禁，门禁本身已经很平（最慢的 `check-dead-css` 1.4 s）。
 
 **两道存在但没接线的门禁**（§85.4 的老问题，接管后更需要处理）：
 
@@ -84,9 +159,9 @@ node scripts/freeze-baseline.mjs --help   # 重新冻结 Nuxt 基线的用法
 | `compare-dom.ps1` | 跑得通，但报 **15 处 marker 不一致**且自身 exit 0。见「开放项」 |
 
 CI 侧只有一条流水线 `.github/workflows/build.yml`（push main 即发布），跑
-**9 道无浏览器门禁**：`check-self-contained` `check-mdc-eval` `check-heading-ids`
+**10 道无浏览器门禁**：`check-self-contained` `check-mdc-eval` `check-heading-ids`
 `check-text-literal` `check-scope-anchors` `check-aria-current` `check-icon-box`
-`audit-css-blocks` `check-ci-triggers`。它**不**跑 `acceptance.ps1`（需要未入库的基线、
+`check-component-fence` `audit-css-blocks` `check-ci-triggers`。它**不**跑 `acceptance.ps1`（需要未入库的基线、
 PowerShell 入口、打线上站的 headless Chrome，干净 CI 里都不成立），也**不**跑
 `interaction-check.mjs`（流水线里不可靠而单跑可靠）。
 
@@ -105,7 +180,13 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 Pal
 - `edgeone.json`（`/api/*` → `application/json`、`*.opml` → `application/xml`）**不在仓库里
   被任何流水线消费**——两条流水线都只推 `dist/`。它靠 EdgeOne 控制台配置生效，改它要去控制台。
 
-## 迁移期最容易重蹈的坑（实测记录在 `docs/astro-phase1-findings.md`，85 节）
+## 迁移期最容易重蹈的坑（实测记录 85 节已随 docs/ 清理移出工作树，取回：`git show a4603b0^:docs/astro-phase1-findings.md`）
+
+> ✅ **`a4603b0` 已由 tag `archive/astro-migration-2026` 锚定**（2026-10-03 收尾时打）。
+> 原本它只存在于本地分支 `feat/migrate-astro`、远端没有该分支，本文与 `MIGRATION-BRIEF.md`
+> 共 4 处 `git show a4603b0^:docs/…` 引用全靠它。tag 会随 `git push --tags` 上传，
+> 之后任何新 clone 都取得到；分支已删，引用不再悬空。
+> **推 tag 是这批改动的必要步骤之一，漏推等于把 4 处引用留给运气。**
 
 1. **Astro 不做 attribute fallthrough。** `<Icon class="x" />` 的 `class` 会被**静默丢弃**，
    必须显式声明 prop 再合并。已导致封面图丢失 `aspect-ratio`、渲染高 6 倍。
@@ -222,8 +303,7 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 Pal
     **`.ps1` 必须是 ASCII-only**（无 BOM 的 `.ps1` 里的非 ASCII 字节会吞掉换行）。
 28. **`.ps1` 里的路径必须从 `$PSScriptRoot` 解析。** `Resolve-Path '..\x'` 跟的是**进程 CWD**，
     不是脚本位置——`check-dates` 与 `compare-urls` 因此指向过从未存在的路径
-    （`compare-urls.ps1` 一直读 `..\baseline-urls.txt`，那个文件全仓库不存在，
-    `docs/baseline-nuxt.md:105` 却还引用着它）。接管时全部改成 `$PSScriptRoot` 锚定。
+    （`compare-urls.ps1` 一直读 `..\baseline-urls.txt`，那个文件全仓库不存在）。接管时全部改成 `$PSScriptRoot` 锚定。
 29. **「查了少了一个值」之前，先确认查询覆盖了全部路径。** §67.3：glob 只覆盖 `dist/*.html`、
     而归档页在 `dist/archive/index.html`，差点把一条根本没丢的字体规则报成缺陷。
     §76.4.1 是加强版：新门禁里「这个选择器命中 N 页」的口径连错四次，每次都往相反方向错。
@@ -240,38 +320,121 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 Pal
     报 `/drive/` 少一段，实为**源里的 markdown 链接**与**产物里 `<svg>` 替换留下的空格**
     拼接方式不同，判据改成去空白比对才对。④ 每一次负控都要打在**会被采样的行**上——
     第一次负控注入的行号没被采样，脚本报绿，我差点把它当成「门禁不灵」。
-31. **「钉住未复核」不等于「批准」。** 接管时 `check-scope-anchors` 有 32 条顶层裸
+31. **「钉住未复核」不等于「批准」。** 接管时 `check-scope-anchors` 有 33 条顶层裸
     `:global()` 全部需要 `:global()`（主体由子组件 / slot / 第三方库渲染、`::view-transition-*`
     天然全局）。逐条补可达性不变式是独立的复核工作，接管不做。做法是按**完整选择器**
     钉进 `UNREVIEWED` 并显式标注未复核——比计数棘轮强（改名/删除会被抓到），
     又不等于替它们背书。
+32. **围栏的 info string 是唯一的事实源，而它只存在于源文件里。** 新增
+    `Component` 围栏（`src/plugins/component-fence.ts`）把组件示例收进一个围栏：
+    正文按 MDX 解析后真实渲染、正文原文当用法、磁盘文件当源码，三栏同出一处。
+    但两个派生代码块**只存在于合成文本里**，而 `prose.ts` 的 `scanFences()` 是去
+    **读 .mdx 原文**扫 info 的（meta 从 mdast 传不到 hast）⇒ 图注靠「同语言、同顺序」
+    配对。**配错位时每个源码栏仍然有名字，只是拿了别人的文件，构建与所有几何门禁全绿。**
+    三条必须同时成立：① `componentFenceInfos()` 的返回顺序 = 插件产出 code 节点的顺序；
+    ② 树里的顺序是 tab1（正文，含正文里的围栏）→ tab2 → tab3，所以 `scanFences()`
+    必须**先**推正文里那些围栏的 meta；③ 围栏长度必须严格大于正文里最长的反引号串
+    （`position.end.offset` 是**闭合围栏之后**的偏移，且闭合围栏可能带缩进）。
+    `scripts/check-component-fence.mjs` 把每个源码栏的正文读回来与磁盘文件逐字比对，
+    已验红绿双向。
+
+33. **Astro 的 `data-astro-cid` 是构建期属性，脚本重建的节点一个都没有。**
+    `src/**/*.astro` 里凡是选择器带 cid 的规则，只对**构建期渲染出来**的那些节点生效。
+    谁在客户端用 `document.createElement` / `createElementNS` 重建了带样式的元素，
+    那条规则就只对首屏那一个命中，换个选项 / 翻一页之后样式**静默全掉**。
+    2026-10-03 逮到两处，同一个根因：
+    - `Pagination.astro` 的 `> .pagination-num` → `src/pages/index.astro` 的
+      `syncPager()` 每次排序 / 分类 / 翻页都重建页码按钮 ⇒ `width:3em`、
+      `&.active` 高亮、`&:hover` 三条同时失效，四个页码糊成 `1234`。
+    - `Tab.astro` 的 `.combobox-check` → combobox 换选项时用 `createElementNS`
+      重建对勾 ⇒ `width/height:1em` 失效，SVG 退化成默认尺寸（实测约 90px 高，
+      把下拉项从 20px 撑到 140px）。
+    **为什么所有门禁都看不见**：① 静态产物里规则确实匹配得到（首屏节点带 cid），
+    所以 `audit-dead-scope` 不报；② 门禁量的是**首屏那份 DOM**，重建发生在交互之后；
+    ③ 分页那条是**横向**差异，页高根本看不见。
+    修法是**把锚点留住、只对被重建的那一个 class 豁免作用域**，不要写顶层裸
+    `:global()`：`.pagination[data-astro-cid] > .pagination-num`、
+    `.combobox-wrapper[data-astro-cid] .combobox-check`。顶层裸 `:global()` 能让门禁变绿
+    但会判红（`check-scope-anchors` 拦的就是这个），而且确实会让规则泄漏到组件外。
+    **反过来在脚本里补 cid 属性是错的**：那个 hash 随组件内容变，脚本无从得知。
+    排查这类问题的判据很简单：`grep -rn "createElement" src` 之后，
+    逐个问「这个新建元素有没有 class 命中某条带 cid 的规则」。
+
+34. **astro-icon 的 `<symbol>` 全局只有一份，挂在首次出现处；整块替换 DOM 会连它一起杀。**
+    `astro-icon` 1.2.0 每个图标实例渲染成
+    `<svg class="iconify" data-icon="X"><symbol id="ai:X">…</symbol><use href="#ai:X"></use></svg>`，
+    但 **symbol 定义只在文档顺序里第一个用到该图标的 `<svg>` 上**，其余全是纯 `<use>`。
+    `<use>` 按文档级 id 解析 ⇒ 那一份没了，**全站所有引用同时变空白**，不是某个图标坏。
+    2026-10-03 实测：首页 `?page=2` 时 `menu.replaceChildren(...)` 把首屏第一张卡连同
+    `ai:tabler:pencil-minus` / `ai:tabler:pilcrow` 的唯一定义一起丢掉，于是卡片上
+    **日期图标和字数图标消失、分类图标还在**——因为 `tabler:bulb` 的定义排在
+    OrderToggle 的分类下拉里，落在 `<menu>` 之外。这个「只坏一部分」的症状最有迷惑性。
+    排查判据：`document.querySelectorAll('symbol[id^="ai:"]')` 的数量在交互前后对不上，
+    或 `use.getBBox()` 是 `[0,0]`。
+    修法是 `src/lib/icon-sprite.ts` 的 `hoistIconSprites(root)`：**在替换子树之前**把
+    `root` 内的 symbol 搬到挂在 `document.body` 下的常驻宿主（`<use>` 解析与它在哪个
+    `<svg>` 里无关）。`index.astro` / `archive.astro` 各调一次。
+    - 宿主**不能**用 `display:none`（部分浏览器不给 `<use>` 展开影子树），用零尺寸 +
+      `aria-hidden`。
+    - `archive.astro` 那一次目前是 **no-op**（实测它的 35 个 symbol 都不在被替换的
+      `[data-archive-list]` 子树内），属同类预防，不是已修的缺陷。
+    - `IntegrationOptions` 只有 `include` / `iconDir` / `svgoOptions`，**没有**共享
+      sprite 容器开关，所以只能在应用侧兜。
+    - 这个变化是**解析期**发生的：MutationObserver 记录不到任何移除事件（HTML 两份
+      逐字节相同，`curl` 对比过），别指望用 observer 抓。
+
+35. **SEO 上有两处是「主动偏离线上」，不是缺陷——`live:head` 会报差异，别去修。**
+    2026-10-03 收尾审计时全站扫了 68 页的 head，顺手改了三处。改之前逐字核对过
+    Nuxt 基线，**两处都是线上也有的老问题**，所以它们是改进而非回归：
+
+    | 项 | 改前 | 改后 | 位置 |
+    | --- | --- | --- | --- |
+    | meta description 长度 | 26/38 篇超 160 字符，最长 406（frontmatter 写的就是首段原文） | 全部 ≤155，超长为 0 | `Base.astro` 的 `SEO_DESCRIPTION_MAX` |
+    | 重复 description | 1 组覆盖 25 页（`content/games/` 下 20 个 mdx 没有 `description`，全落到站点简介） | 0 组 | `[...slug].astro` 合成 `「标题」——站点名` |
+    | `/archive/` 的 h1 | 0 个（页面按设计没有可见标题） | 1 个 `.sr-only` | `archive.astro` + `reusable.css` |
+
+    **因此 `live:head` 会报出 26 页 head 差异**（都落在 description 上），那是预期内的。
+    要回退就把 `SEO_DESCRIPTION_MAX` 调大或整段注释掉，别当成回归去"对齐"。
+    - 游戏区那 20 条合成 description 是**占位**，质量上限有限；真正该写进 frontmatter
+      的 `description:`（schema 已是 `z.string().optional()`，写了优先）。
+    - `/archive/` 用 `.sr-only` 而不是可见 h1，是因为 Nuxt 基线那页同样 0 个 h1，
+      补可见标题会让页高偏离基线（容差 40 px）。`.sr-only` 用
+      `position:absolute + clip-path:inset(50%)`，**不能用 `display:none`**，
+      那会把元素从无障碍树里摘掉，等于没加。
 
 ## 开放项（接管后新增，勿当成已解决）
 
 | 项 | 证据 | 状态 |
 | --- | --- | --- |
-| `dist` 是指向 `.output/public` 的**悬空 junction** | 硬安全策略禁止任何 CLI 永久删除，`mavis-trash` 拒收 reparse point ⇒ **需要你手动 `rmdir dist`**（只删链接，不动数据） | 未解决；本次靠重建 `.output/public` 让链接恢复有效才跑通构建 |
-| `astro-site/` 只剩 `node_modules` 未删 | 目录里的源码与配置副本已在接管提交中清空，剩 369.6 MB 的 `node_modules`。**回收站通道删不了它**：`mavis-trash` 报 `The system call level is not correct`，因为 `.pnpm` 里全是 junction，而永久删除命令被硬安全策略禁止 | 需要你在 cmd 里跑（`rd` 不会跟随 reparse point）：`rmdir /s /q astro-site\node_modules` 再 `rmdir astro-site` |
 | `games/galgames/clannad` 表格差异 | 源 `clannad/index.mdx` 1113 行、508 行表格、17 个 `<Folding>`；Astro 渲染 31 张表（310 处 `md-table`），**Nuxt 基线 0** | 未分类。`compare-dom` 报出的 15 处 marker 不一致里最大的一条，机制待查（Nuxt Content 的 GFM 表格在 MDC 块里是否被解析） |
 | `/2025/10/clarity-resource-list` 代码块计数 | 基线（用**当前源码**重建）nuxt=1 / astro=2；该页页高 d=0，两道几何门禁都看不见 | 未分类，根因同上（围栏代码块嵌在 MDC tab 槽位里，两侧解析不同） |
 | `compare-dom` 15 处 marker 不一致 | 脚本自身 exit 0（§85.5 那族「打了分不算红」） | 未接线、未分类，因此没进 `acceptance.ps1` |
 | `check-content-preservation` 围栏跟踪有漏 | 逐行采样（1458 行）会浮出 10 条假阳性，集中在 3 页，都是**围栏代码块里**的样本：缩进围栏、或 info string 里带反引号的围栏没被跟随。因此生产步长取 1/8（88 行、0 假阳性）。要提高密度得先修围栏跟踪 | 已知取舍，未修 |
 | `compare-titles` 缺 `exit` | 打印 RESULT 但退出码恒 0 | 属 §85.5 那族（8 道里只修了 `check-integration`），未逐道补 |
-| 32 条顶层裸 `:global()` 未复核 | `check-scope-anchors` 的 `UNREVIEWED` | 钉住但未复核，见坑位 31 |
-| `vue` / `@astrojs/vue` 是死重量 | `src/` 下 **0 个 `.vue` 文件**，这两个依赖只服务 `astro.config.mjs` 的 `vue()` | 未摘。摘之前先确认不再引入 Vue 岛 |
+| 33 条顶层裸 `:global()` 未复核 | `check-scope-anchors` 的 `UNREVIEWED` | 钉住但未复核，见坑位 31。**条数是棘轮**，门禁会全量打印清单，改动后自己数一遍（2026-10-03 发现文档写 32、实际 33） |
+| ~~`vue` / `@astrojs/vue` 是死重量~~ | `src/` 下 **0 个 `.vue` 文件**，这两个依赖只服务 `astro.config.mjs` 的 `vue()` | **已摘**（2026-10-03）。三处同步删：`package.json` 两条依赖、`pnpm-workspace.yaml` 的 `ui` catalog 两条、`astro.config.mjs` 的 import + `vue()`。`pnpm install` 少装 150 个包，`pnpm build` 68 页绿、`typecheck` / `lint` / `check-self-contained` 干净，产物里搜不到 Vue runtime。**验收已补跑：`pnpm accept`（基础档）36/36 绿；`pnpm accept:full` 未跑完（中途停止），重档待补** |
 | 基线缺 Nuxt 的 `atom.xml` / `subscriptions.opml` | 首次冻结只收 html+css（`freeze-baseline.mjs` 的理由漏了 xml），已把 `*.xml` 补进白名单 | **不可本地修复**（Nuxt 源码树已删）。要取回只能抓 https://blog.sotkg.com/atom.xml |
-| 分享按钮两侧不同步 | §85 选的是「两侧同步改、先不部署」，但 Nuxt 侧（`app/components/popover/Share.vue` + `PostHeader.vue`）**从未改**，随树删除一并消失 ⇒ 线上仍有按钮，Astro 已删 ⇒ 每篇文章页 −10~−11px 且少一个 button | 随接管自然消解（Nuxt 侧已不存在），但**第一次 push main 部署后线上会真的少掉这个按钮** |
+| 分享按钮两侧不同步 | §85 选的是「两侧同步改、先不部署」。**Nuxt 侧其实改了**——`chore/nuxt-fork-maintenance:382a2fb` 删掉了 `app/components/popover/Share.vue`（226 行）与 `PostHeader.vue` 的分享相关段；该提交信息明说「只删 Nuxt 侧，Astro 侧那份在 astro-site/ 里，两边都清掉才能避免反向漂移」，而 **Astro 侧从未跟进**。那条分支未并入 main，改动随工作树删除而丢失 ⇒ 线上仍有按钮、Astro 已无 ⇒ 每篇文章页 −10~−11px 且少一个 button | 随接管自然消解，但**第一次 push main 部署后线上会真的少掉这个按钮**。要让线上一致只能二选一：把 Astro 侧分享补回，或在旧部署上补一次并等 CDN 刷新。`style-parity` 实测 62/62 页命中 `.button: nuxt=1 astro=0`，是当前唯一贯穿全站的计算样式差异 |
 | `live:*` 三道门禁未在新布局下重跑 | 本次只跑了离线门禁 | 未验证 |
 
-## 当前状态（2026-10-03，接管当日）
+## 当前状态（2026-10-03，`00c4401` 之后 in-flight）
 
-- Astro 7 接管仓库根完成：`pnpm build` 出 **68 页**（11.7s），`dist` 264 文件 / 12.77 MB
-- 依赖合并完成：5 组 catalogs / 45 条，**逐条对齐 `astro-site/node_modules` 的实装版本**
-- 冻结基线 67 路由 / 120 文件 / 6.65 MB，来源提交 `fa9f2b3`
-- 离线门禁实测：**11 道 PowerShell 门禁中 10 绿 1 红**（`check-dead-css` 的
-  `clarity-resource-list` 代码块计数，见开放项）、**15 道 node 门禁全绿**、CI 形状门禁绿
-- 接管期顺手修掉的真缺陷：`build.yml` 的 4 处 YAML 缺引号（照抄旧文件带过来的）、
-  `Tip.astro` 的 `.tip-icon` 永不匹配、`compare-urls.ps1` 指向不存在的文件、
-  `check-dates.ps1` 判据不兼容导致 40/40 全红、`audit-dead-scope` 因 3 条已查明死规则永久红、
-  `audit-css-blocks` 假定产物目录已存在、`.ps1` 的 CWD 相对路径一族
-- **全部改动尚未提交**（`git status` 里 `src/` `scripts/` 等仍为 untracked）
+> 上一节「接管当日」的状态已被 `00c4401` 提交取代（86 文件、Nuxt 树删除、68 页构建绿），
+> 当日的数字与「顺手修掉的缺陷」清单记在该提交信息里，不再双写。
+>
+- **组件示例页改为 `Component` 围栏**：`src/plugins/component-source.ts`（空围栏 +
+  `source=`，只解决源码不腐烂，**没解决重复书写**）退役，换成
+  `src/plugins/component-fence.ts`。`example.mdx` 的 26 个组件示例从
+  「`<Tab>` + 三个 `<div slot>`，组件手写两遍」变成一个围栏，正文即实际写法；
+  文件从 1010 行降到 682 行，构建产物不变（68 页 / 264 文件）
+- 顺带修掉：围栏正文里内嵌围栏的 meta 曾会静默失效（`scanFences()` 现在先推正文里
+  那些 meta）；`example.mdx` 里指向本页的 GitHub 链接仍是接管前的
+  `astro-site/src/content-mdx/` 路径（404）；乐谱/图表两节仍在讲一个**本仓库并不存在**
+  的 `remark-code-component` 插件
+- 新增门禁 `check-component-fence.mjs`（已接进 `acceptance.ps1` 与 CI，CI 侧 9→10 道），
+  验红绿双向做过：语言写死 ⇒ 源码栏配错位；只注入前 5 行 ⇒ 内容对不上
+- 门禁实测：**11 道 PowerShell 静态门禁全绿**（`check-dead-css` 现为 PASS，接管当日
+  记的那条红已不复现，原因未查）、**10 道 node 门禁全绿**
+- `live:*` 七道线上门禁**未跑**（需要 headless Chrome 打线上站 + 用户自管的 preview
+  server），因此本页的**页高与计算样式尚未与 Nuxt 基线对过账**
+- 本次改动**未提交**

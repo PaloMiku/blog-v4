@@ -132,7 +132,7 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 	 * cid；写在这里却会被编译成 `…[data-astro-cid-<Collection 的 cid>]` 而永不匹配。
 	 * 父选择器 `.collection-header` 是本组件渲染的，保持 scoped 即可——
 	 * 所以影响面仍然限定在 Collection 的 header 内。
-	 * 见 docs/astro-phase1-findings.md §50。
+	 * 见 git: a4603b0^:docs/astro-phase1-findings.md §50。
 	 */
 	> :global(.collection-icon) {
 		display: flex;

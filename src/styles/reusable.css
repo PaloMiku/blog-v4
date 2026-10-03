@@ -206,3 +206,24 @@
 	from { transform: scale(0.8); }
 	to { transform: scale(1.25); }
 }
+
+/**
+ * 视觉隐藏但保留在无障碍树 / 爬虫索引里的元素。
+ *
+ * 存在的理由是 `/archive/`：那一页按设计**没有可见的页面级标题**（站点外壳承担
+ * 标题语义），产物里因此一个 `<h1>` 都没有——Nuxt 基线同样如此，所以补一个可见
+ * h1 会打破页高对齐。改用这个类：SEO 与屏幕阅读器拿得到标题，布局零影响。
+ *
+ * ⚠️ 不要用 `display:none` 或 `visibility:hidden`，两者都会把元素从无障碍树里摘掉，
+ * 等于没加。`clip-path` + 1px 尺寸是 Visually Hidden 的标准写法。
+ */
+.sr-only {
+	position: absolute;
+	overflow: hidden;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	border: 0;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}

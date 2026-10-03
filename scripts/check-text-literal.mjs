@@ -57,7 +57,7 @@
  * 代码块按构造就是**逐字**的：remark 把围栏与缩进代码解析成 `code` 节点，
  * smartypants 是文本转换器、不会碰节点值。所以「产物里的字符多于源」在代码块上
  * **永远不可能**是 smartypants 造成的，只能来自某个正当地把代码注进正文的插件。
- * 本项目就有一个：`plugins/component-source.ts` 把 25 个组件源码（92157 字符）
+ * 本项目就有一个：`plugins/component-fence.ts` 把 26 个组件源码（9 万余字符）
  * 注入 `/previews/example` 的源码栏，实测带来 `…` +15 / `—` +40。
  *
  * 这与本文件已有的推理是同一件事的两面：判据写的是 `产物 ≤ 源`，
@@ -180,7 +180,7 @@ console.error('\n  先分辨是哪一种，别照抄结论：')
 console.error('    (a) 文本转换真的开了：看产物里 “ ” 是否也**成对**变多。')
 console.error('        是的话查 astro.config.mjs 的 createProcessor() 是否仍是 `smartypants: false`')
 console.error(`        （smartypants 会把 ${JSON.stringify(CONVERTED['…'])} → ${JSON.stringify('…')}、${JSON.stringify(CONVERTED['—'])} → ${JSON.stringify('—')}、直引号 → 弯引号）。`)
-console.error('    (b) 有插件把 markdown 源之外的内容注入了正文（本项目有 component-source.ts）：')
+console.error('    (b) 有插件把 markdown 源之外的内容注入了正文（本项目有 component-fence.ts）：')
 console.error('        拿超出量去对被注入文件的同名字符数，对得上就是它。')
 console.error('    两者都不是的话，把 <article> 逐段 dump 出来定位到具体那一段，别在总数上猜。')
 process.exit(1)

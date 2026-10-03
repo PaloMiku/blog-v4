@@ -6,7 +6,13 @@
 > `见 MIGRATION-BRIEF …` 的注释全部指向空。现在它回来了，并且 12 个组件的注释
 > 都能在这份文档里找到落点。
 >
-> 实测记录（85 节）在 `docs/astro-phase1-findings.md`；本文只写**约定与陷阱**。
+> 实测记录（85 节）已随 2026-10-03 的 docs/ 清理移出工作树，需要时
+> `git show a4603b0^:docs/astro-phase1-findings.md` 取回；本文只写**约定与陷阱**。
+>
+> ✅ **`a4603b0` 已由 tag `archive/astro-migration-2026` 锚定**（2026-10-03 收尾时打）。
+> 本文与 `CLAUDE.md` 共 4 处 `git show a4603b0^:docs/…` 引用全靠它，而它原本只存在于
+> 本地分支 `feat/migrate-astro`（远端没有该分支）。tag 随 `git push --tags` 上传，
+> 新 clone 同样取得到；分支已删，引用不再悬空。
 
 ---
 
@@ -29,16 +35,17 @@
 | `src/content/` | 内容唯一真相源，`.mdx`，由 `src/content.config.ts` 的 glob loader 读 |
 | `src/components/` | 自研 UI 组件（`blog/` `content/` `post/` `partial/` `popup/` `util/` `widget/`） |
 | `src/pages/` | 文件路由；`build.format: 'directory'` ⇒ `Astro.url.pathname` **带尾斜杠** |
-| `src/plugins/` | rehype/remark 管线（heading-ids / math-code / prose / component-source） |
+| `src/plugins/` | rehype/remark 管线（heading-ids / math-code / prose / component-fence） |
 | `src/styles/` | 唯一的 `.css` 入口，token 在这 |
 | `src/lib/` | 框架无关的共享层（`app-config.ts` / `content.ts` / `img.ts` / `shared/*`） |
 | `scripts/` | 门禁 + 工具，`acceptance.ps1` 是单一验收入口 |
 | `baseline/nuxt/` | **冻结的 Nuxt 产物**（未入库），离线门禁的锚点，见该目录 `BASELINE.md` |
-| `docs/astro-phase1-findings.md` | 实测记录，读它不要读我 |
+| git 历史 `a4603b0^:docs/astro-phase1-findings.md` | 85 节实测记录（2026-10-03 移出工作树，读它前先读 §3 的压缩版） |
 
 ## §3 作用域与样式陷阱
 
-这五条是迁移期最高频的缺陷来源，全部在 `docs/astro-phase1-findings.md` 里有实测案例。
+这五条是迁移期最高频的缺陷来源，逐条实测案例在 git 历史的
+`docs/astro-phase1-findings.md`（取回命令见 §2）。
 
 ### 陷阱 1：Astro 不做 attribute fallthrough
 
@@ -97,19 +104,27 @@ Vue 的「组件根元素」不能翻译成「枚举父元素」——`ProseCode
 
 ### 陷阱 5：顶层裸 `:global()` 是需要论证的
 
-`src/` 里目前有 32 条顶层裸 `:global()`，全部由 `check-scope-anchors.mjs` 按完整选择器
+`src/` 里目前有 33 条顶层裸 `:global()`，全部由 `check-scope-anchors.mjs` 按完整选择器
 钉在 `UNREVIEWED` 清单里。**新增一条会红**，必须论证「主体是不是真的加不了锚点」，
 然后要么给它加回锚点，要么补进 `UNREVIEWED`（钉住待复核）或者带 DOM 不变式补进
-`KNOWN`（已复核）。别把 32 条现状当成「已批准」。
+`KNOWN`（已复核）。别把 33 条现状当成「已批准」。
+
+条数是**棘轮**：门禁会把清单全量打出来，改动前后自己数一遍，别让文档里的数字
+和 `UNREVIEWED` 清单悄悄分叉（2026-10-03 发现文档写 32、实际 33）。
 
 ## §4 基础设施
 
 ### Icon 封装
 
-`src/components/Icon.astro` 包了 astro-icon，接受 `name` / `size` / `class` / `style`。
-**它不接受未声明的 prop**——`error.vue` 传下来的 `class="error-icon"` 会被丢弃，
-所以调用方在外面套一层 `.error-icon` 承载样式。加新 prop 必须先在 `Icon.astro`
-里显式声明，否则它会静默消失。
+`src/components/Icon.astro` 包了 astro-icon，**只接受 `name` / `class` / `style`**。
+（早期版本这份文档写的是「`name` / `size` / `class` / `style`」——`size` 早就不存在了，
+留着会正好踩中下面这句警告：传一个未声明的 prop 过去**不会报错**，`size` 会被静默
+丢弃，图标尺寸退回 `main.css` 的 `:where(.iconify){font-size:1.2em}`。）
+
+`class` 必须在 `Icon.astro` 里显式声明并与内置的 `iconify` 合并，调用方写在
+`<Icon class="x" />` 上的 `class` 才会落到根元素；`error.vue` 那条 `class="error-icon"`
+就是这么丢的，所以调用方在外面又套了一层 `.error-icon` 承载样式。加新 prop 同理——
+先在 `Icon.astro` 里显式声明，否则它会静默消失。
 
 ### prose 层
 
@@ -128,7 +143,7 @@ MDX 里免 import 使用组件，靠 `src/lib/content-components.ts` 的 26 项�
 
 MDC → MDX 的 codemod（`mdc-to-mdx.ts`）在接管时退役：`.mdx` 已是一手内容源，
 `content/` 原文树已删除，codemod 的「原文是事实源、产物可重跑」前提不存在。
-转换报告留在 `docs/mdc-to-mdx-report.md`。
+转换报告留在 git 历史：`git show a4603b0^:docs/mdc-to-mdx-report.md`。
 
 ## §5 主题
 

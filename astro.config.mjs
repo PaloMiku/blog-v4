@@ -1,7 +1,6 @@
 import { unified } from '@astrojs/markdown-remark'
 import mdx from '@astrojs/mdx'
 import sitemap from '@astrojs/sitemap'
-import vue from '@astrojs/vue'
 import {
 	transformerNotationDiff,
 	transformerNotationErrorLevel,
@@ -13,7 +12,7 @@ import icon from 'astro-icon'
 import { defineConfig } from 'astro/config'
 import rehypeKatex from 'rehype-katex'
 import remarkMath from 'remark-math'
-import { remarkComponentSource } from './src/plugins/component-source'
+import { remarkComponentFence } from './src/plugins/component-fence'
 import { rehypeNuxtHeadingIds } from './src/plugins/heading-ids'
 import { rehypeMathCode } from './src/plugins/math-code'
 import { rehypeProseChrome } from './src/plugins/prose'
@@ -50,15 +49,15 @@ import { rehypeProseChrome } from './src/plugins/prose'
 //    实测 20 页受影响，最极端的 `/games/galgames/clannad`：`”` 111 个 vs 2 个、
 //    `…` 24 个 vs 2 个。例：`安装"飞牛播放器"登录 NAS` 线上是 `&quot;…&quot;`，
 //    本地被改成 `”…”`。
-// 10. remarkComponentSource 排在最前：它把 ```` ```astro [X.astro] source=… ````
-//     这种空围栏的正文换成磁盘上的组件源码。换在 remark 阶段意味着下游**什么都没变**——
-//     还是 Astro 自己的 shiki → transformerLineNumbers 的 data-line → rehypeProseChrome
-//     的 figure.z-codeblock → prose-enhance 的换行/复制/折叠按钮，
-//     所以展示出来的源码与页面上任何人工围栏外观逐字一致，也不会像快照那样腐烂。
-//     详见 src/plugins/component-source.ts 的文件头。
+// 10. remarkComponentFence 排在最前：它把 ```` ```Component [X.astro] ```` 围栏
+//     展开成 <Tab> 的三个页签（组件 = 正文按 MDX 真实渲染、用法 = 正文原文、
+//     源码 = 从磁盘读进来的组件文件）。排在最前是为了让下游 remark 插件看到的是
+//     展开后的树；下游还有 rehypeProseChrome 负责给两个派生围栏套上
+//     figure.z-codeblock 外壳、走与页面上任何人工围栏完全相同的那条路。
+//     详见 src/plugins/component-fence.ts 的文件头。
 function createProcessor() {
 	return unified({
-		remarkPlugins: [remarkComponentSource, remarkMath],
+		remarkPlugins: [remarkComponentFence, remarkMath],
 		rehypePlugins: [rehypeNuxtHeadingIds, rehypeMathCode, rehypeProseChrome, [rehypeKatex, { throwOnError: false, strict: false }]],
 		smartypants: false,
 	})
@@ -91,7 +90,6 @@ function transformerLineNumbers() {
 export default defineConfig({
 	site: 'https://blog.sotkg.com',
 	integrations: [
-		vue(),
 		mdx({ processor: createProcessor() }),
 		sitemap({
 			// 基线的 robots.txt 明确 Disallow /preview 与 /previews/*，

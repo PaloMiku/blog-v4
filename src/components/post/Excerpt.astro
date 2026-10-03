@@ -217,7 +217,7 @@ const collapsible = excerpt.length > 80
  * Vue 侧不存在这个问题，因为子组件根元素会同时带父 scope id。
  *
  * 该 class 全站只此一处使用，改成 :global 不会波及别处。
- * 见 docs/astro-phase1-findings.md §50，scripts/audit-dead-scope.mjs 可复现。
+ * 见 git: a4603b0^:docs/astro-phase1-findings.md §50，scripts/audit-dead-scope.mjs 可复现。
  */
 :global(.ai-gpt-icon) {
 	width: 0.85rem;

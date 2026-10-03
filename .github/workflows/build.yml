@@ -8,7 +8,7 @@
 #
 # 这里**不**跑 acceptance.ps1：它是 PowerShell 入口、需要未入库的 Nuxt 冻结基线
 # （`baseline/nuxt/`，见 scripts/freeze-baseline.mjs）、并且要拿 headless Chrome 打线上站，
-# 三者在干净 CI checkout 里都不成立。下面这 9 道是能在 CI 跑的**无浏览器**子集，
+# 三者在干净 CI checkout 里都不成立。下面这 10 道是能在 CI 跑的**无浏览器**子集，
 # 每一道都对应一个曾经悄悄上线过的失效模式：
 #
 #   check-self-contained  import 逃出仓库 / 引入已删除的 Nuxt 运行时依赖
@@ -18,6 +18,7 @@
 #   check-scope-anchors   顶层 :global() 丢了 scope 锚点 → 样式在不该生效的地方生效
 #   check-aria-current    aria-current 缺失或过标（屏幕阅读器播报内容，视觉与几何都无感）
 #   check-icon-box        .nav-icon 里的 svg 退回 inline，贴基线漂 1.7px
+#   check-component-fence Component 围栏的源码栏配错位（每个栏都还「有名字」，构建全绿）
 #   audit-css-blocks      <style> 块被批量改写损坏（构建照绿，规则被静默丢弃）
 #   check-ci-triggers     本文件自身的 YAML 可解析 + 触发器形状正确
 #
@@ -116,6 +117,13 @@ jobs:
 
       - name: 'Gate: icon box'
         run: node scripts/check-icon-box.mjs
+
+      # 源码栏的图注靠「同语言、同顺序」与扫描到的 info string 配对
+      # （meta 从 mdast 传不到 hast）。配错位时每个源码栏**仍然有名字**，
+      # 只是拿的是别人的文件——构建与所有几何门禁都不会报。这道门禁把
+      # 每个源码栏的正文读回来与磁盘文件逐字比对。
+      - name: 'Gate: component fence source panes'
+        run: node scripts/check-component-fence.mjs
 
       - name: 'Gate: style blocks intact'
         run: node scripts/audit-css-blocks.mjs

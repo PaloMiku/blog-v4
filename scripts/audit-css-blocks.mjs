@@ -232,8 +232,17 @@ else {
 
 // BOM 单列：它不破坏 CSS，但会破坏 .ps1 / 其它按字节读的消费者，
 // 而且本仓库已经因此踩过一次（中文注释 + 无 BOM = 静默吞行）。
+//
+// ⚠️ 收窄到 SRC，不要用 walk(ROOT)。两者差别不是「多扫一点」：walk(ROOT) 会
+// 递归整个仓库再按扩展名过滤，也就是把 node_modules 的 5.8 万个文件全走一遍，
+// 只为了确认里面有没有一个 .astro / .css 带 BOM。实测这道门禁因此要 21.3 s，
+// 是全套离线门禁里最慢的一道（第二名 check-dropped-css 1.1 s）；改成 walk(SRC)
+// 后降到约 0.2 s。
+//
+// 语义上没有损失：EXTS 只有 {.astro, .css}，原写法唯一多做的事是去检查
+// node_modules 里第三方包的 BOM——那既不属于本仓库，也不构成任何风险。
 const bomFiles = []
-for (const f of walk(ROOT).filter(p => EXTS.has(p.slice(p.lastIndexOf('.'))))) {
+for (const f of walk(SRC)) {
 	const buf = readFileSync(f)
 	if (buf.length >= 3 && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF)
 		bomFiles.push(relative(ROOT, f).replace(/\\/g, '/'))

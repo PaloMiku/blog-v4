@@ -88,6 +88,12 @@ const listStates = ['date', 'updated'] as const
 	    嵌套 main 是无效 HTML。基线产物里 #main-content 的子元素就是
 	    `div.archive.proper-height`，没有多余层级。 */}
 	<div class="archive proper-height">
+		{/*
+		  本页按设计没有可见的页面级标题（外壳承担），产物里因此一个 `<h1>` 都没有。
+		  Nuxt 基线同样如此，所以**不能**补可见 h1——那会让 `/archive/` 页高偏离基线。
+		  `sr-only` 让标题留在无障碍树与索引里，布局零影响（见 reusable.css 的说明）。
+		*/}
+		<h1 class="sr-only">归档</h1>
 		<OrderToggle
 			sortOrder={sortOrder}
 			isAscending={isAscending}
@@ -237,11 +243,19 @@ const listStates = ['date', 'updated'] as const
 	 * 段内按该序重排；段序按年份升降（Nuxt 是 `isAscending ? groupList : groupList.reverse()`，
 	 * 而分组键来自 `groupBy` 的插入序，故升序即年份升序）。
 	 */
+	import { hoistIconSprites } from '../lib/icon-sprite'
+
 	function initArchiveList() {
 		const root = document.querySelector('[data-archive-list]')
 		if (!(root instanceof HTMLElement) || root.dataset.sortReady)
 			return
 		root.dataset.sortReady = '1'
+
+		/*
+		 * 与 index.astro 同一个坑：`menu.replaceChildren(...)` 会连同 astro-icon 内联在
+		 * 首条里的 `<symbol>` 定义一起丢掉，其余 `<use>` 全部变空白。详见 src/lib/icon-sprite.ts。
+		 */
+		hoistIconSprites(root)
 
 		const groups = [...root.querySelectorAll('[data-archive-group]')]
 		const dataset = document.querySelector('[data-archive-dataset]')
