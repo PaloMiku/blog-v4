@@ -1,4 +1,5 @@
 *               text=auto eol=lf
 *.md            linguist-detectable
+# 内容源在接管后是 .mdx（src/content/**/*.mdx），原文 .md 树已删除
+*.mdx           linguist-detectable
 pnpm-lock.yaml  -linguist-detectable
-app/feeds.ts    -linguist-detectable

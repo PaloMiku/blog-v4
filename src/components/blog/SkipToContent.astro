@@ -1,0 +1,30 @@
+---
+/**
+ * SkipToContent 组件（Astro 版），对应 `app/components/blog/SkipToContent.vue`。
+ * 纯静态，无 props。
+ *
+ * 目标 id `#main-content` 由布局层产出（Nuxt 侧 `app/layouts/default.vue`）。
+ */
+---
+
+<!-- 若使用 NuxtLink 则键盘焦点不会切换 -->
+<a href="#main-content" class="skip-link gradient-card active">
+	跳转到主要内容 / Skip to content
+</a>
+
+<style>
+.skip-link {
+	position: fixed;
+	top: -100%;
+	width: 80%;
+	margin: 1rem;
+	padding: 0.5rem;
+	text-align: center;
+	/* calc(infinity) 是 CSS Values 4 的 <infinity> 常量，语义即「最大 z 层」 */
+	z-index: calc(infinity);
+}
+
+.skip-link:focus {
+	top: auto;
+}
+</style>

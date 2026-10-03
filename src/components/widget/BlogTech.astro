@@ -1,0 +1,244 @@
+---
+/**
+ * BlogTech 组件（Astro 版），对应 `app/components/widget/BlogTech.vue`。
+ *
+ * ## 数据来源
+ * 原组件混了三处来源，Astro 侧全部收敛为**构建期常量**：
+ * - `version` / `packages.{vue,nuxt,@nuxt/content}` / `packageManager`
+ *   原先跨树读 Nuxt 根的 `package.json` 与 `pnpm-workspace.yaml`（`catalogs`
+ *   经 `es-toolkit/object` 的 `merge(...Object.values(catalogs))` 摊平成一张表），
+ *   现已冻结为下方字面量——**不再读任何树外文件**，理由见下方常量处的注释。
+ * - `runtimeConfig.public.{arch,ci,nodeVersion,platform}` ←
+ *   Nuxt 在 `nuxt.config.ts` 里从 `process.*` / `process.env` 取的值。
+ *   静态构建下这些同样是构建期常量，直接在 frontmatter 里算。
+ *
+ * ## 两组 DlGroup 的版式
+ * - `service`（构建平台 / 图片存储 / 协议 / 许可 / 域名）：`medium` 两列并排，
+ *   **与线上一致，未动**。
+ * - `techstack`（构建信息，用户 2026-10-02 要求）：改成 Astro 版数据，
+ *   并从 `small`（多项挤一行、无图标）改为 `stack`（**一行一项、每项带图标**）。
+ *   这是**有意偏离线上基线**，不是迁移缺陷。
+ *
+ * ## 交互
+ * `ZExpand` 的 `v-model` 折叠，用一段原生脚本 + `hidden` 替代；
+ * Icon 不接受 class，故图标外面套一层 `<span class="tech-icon">` 承载 `1.2em` 尺寸。
+ */
+import Icon from '../Icon.astro'
+import BlogWidget from '../blog/BlogWidget.astro'
+import DlGroup, { type DlItem } from '../blog/DlGroup.astro'
+import { appConfig } from '../../lib/app-config'
+import { ciIcons, getDomain } from '../../lib/shared'
+
+/*
+ * 构建期常量，**不再跨树读 Nuxt 根的文件**。
+ *
+ * 原来这里是以 `import.meta.url` 为基准**向上走四层**，再用 `node:fs` 去读
+ * 根 `package.json` 与根 `pnpm-workspace.yaml`。
+ * 那是 `import.meta.url` 少算一层的老坑（见 docs/astro-phase1-findings.md §35）：
+ * 组件被复制到仓库外单独构建时，它会一路向上找到某个**碰巧存在**的
+ * `package.json`（本项目实测：复制到 %TEMP% 后它读的是 `%TEMP%\package.json`，
+ * 构建直接 ENOENT 失败）。词法层的自包含门禁当时看不见这种运行时读文件——
+ * 该门禁现已补上 `runtime-escape` 规则专门盯这个。
+ *
+ * 实际只用到 5 个值，逐个冻结在此：
+ *   Blog 3.8.0 / Astro ^7.3.5 / Vue ^3.5.42 / MDC ^3.11.1 / pnpm 12.5.1
+ *
+ * ⚠️ 值本身已不再是 Nuxt 那一套：用户 2026-10-02 要求「构建信息改成 Astro 版」。
+ * 即便如此**仍然冻结为字面量**，不去 import 本站的 package.json：
+ * 自包含门禁盯的是「不读树外文件」，这里要守的是另一件事——冻结写法让这 5 个值
+ * 在 diff 里始终可见，改版本号是一次有记录的改动，而不是某次 `pnpm update` 的副产品。
+ * 取值来源 = `astro-site/package.json` 里的 semver **range**（与 Nuxt 侧从 pnpm
+ * catalogs 取 range、而不是从 lockfile 取实装版本的做法一致）。
+ *
+ * ⚠️⚠️ 写这段注释时踩过一次门禁：`check-self-contained.mjs` 是**词法**扫描，
+ * 不认注释，于是「反面示例」里那条包着引号的 package.json 相对路径被判成
+ * 越界 import（`[missing] ../../package.json`）。**注释里不要出现可解析的
+ * 相对 import 路径**，哪怕是拿来说「不要这么写」的。
+ */
+const SITE_VERSION = '3.8.0'
+const PM_NAME = 'pnpm'
+const PM_VERSION = '12.5.1'
+const ASTRO_VERSION = '^7.3.5'
+const VUE_VERSION = '^3.5.42'
+const MDC_VERSION = '^3.11.1'
+
+/*
+ * 对应 nuxt.config.ts 的 runtimeConfig.public：
+ *   arch / platform / nodeVersion  ← process.*
+ *   ci ← 复刻 nuxt.config.ts:100 的 `TENCENTCLOUD_RUNENV === 'SCF' ? 'EdgeOne' : ciName || ''`：
+ *        EdgeOne 分支优先（SCF 环境里构建时，即使跑在 GitHub Actions 上也显示 EdgeOne）；
+ *        其余情况只认 GITHUB_ACTIONS，替代 Nuxt 侧的 ci-info 探测——Astro 侧刻意不引该依赖
+ *        （astro-site 依赖表刻意精简，且要求与 Nuxt 解耦独立运行）。
+ *        取不到值则整行不渲染，等价于原版的 `...ci ? [...] : []`。
+ */
+const arch = process.arch
+const platform = process.platform
+const nodeVersion = process.version
+let ci = ''
+if (process.env.TENCENTCLOUD_RUNENV === 'SCF')
+	ci = 'EdgeOne'
+else if (process.env.GITHUB_ACTIONS === 'true')
+	ci = 'GitHub Actions'
+
+/** 图标可能是 http 图标（此时用 <img>），也可能是 iconify 名 */
+const ciIconName = ciIcons[ci as keyof typeof ciIcons]
+const ciIconIsImg = ciIconName?.startsWith('http')
+
+const [pm, pmVersion] = [PM_NAME, PM_VERSION] as [string, string]
+
+/** 'devicon:cloudflare' 等固定图标 */
+const CLOUD_ICON = 'devicon:cloudflare'
+
+/*
+ * 平台图标。`process.platform` 只给出 `win32` / `linux` / `darwin` 三个裸值，
+ * 值本身不带品牌线索，所以按值映射成 logo。
+ * ⚠️ `linux` 在 tabler 里**没有** brand-linux（只有 brand-ubuntu / brand-debian），
+ * 这类「我以为有」的名字必须先查 icons.json —— 见本轮记录。
+ */
+const osIcons: Record<string, string> = {
+	// @keep-sorted
+	'darwin': 'tabler:brand-apple',
+	'linux': 'simple-icons:linux',
+	'win32': 'tabler:brand-windows',
+}
+
+const service: DlItem[] = [
+	...(ci
+		? [{
+			label: '构建平台',
+			// 原版 value 是 `h(span, {}, [iconNode, ' ' + ci.split(' ')[0]])`，
+			// 这里拆成 icon/iconImg + value 表达同一段输出
+			icon: ciIconIsImg ? undefined : ciIconName,
+			iconImg: ciIconIsImg ? ciIconName : undefined,
+			value: ` ${ci.split(' ')[0]}`,
+		}]
+		: []),
+	{ label: '图片存储', icon: CLOUD_ICON, value: ' R2' },
+	{ label: '软件协议', value: 'MIT' },
+	{ label: '文章许可', value: appConfig.copyright.abbr },
+	{ label: '规范域名', value: getDomain(appConfig.url) },
+]
+
+/*
+ * 「构建信息」组，8 项——与 Nuxt 侧同为 8 项，便于逐项对照：
+ *   Nuxt ^4.5.2     → Astro ^7.3.5   （本项目正在做的迁移本身）
+ *   Content ^3.16.0 → MDC ^3.11.1    （`remark-mdc`，MDC 语法层。
+ *                                      Astro 的内容集合 `astro:content` 是框架内置的，
+ *                                      没有独立版本号可列；@astrojs/mdx 只服务
+ *                                      previews/ 下那两篇 .mdx，不是正文主链路）
+ * 版式同时改为 `size="stack"`：一行一项、每项带图标（见 DlGroup 的 stack 说明）。
+ * 图标逐个查过 icons.json 存在，不靠记忆。
+ */
+const techstack: DlItem[] = [
+	{ label: 'Blog', value: SITE_VERSION, icon: 'tabler:file-text' },
+	{ label: 'Astro', value: ASTRO_VERSION, icon: 'simple-icons:astro' },
+	{ label: 'Vue', value: VUE_VERSION, icon: 'simple-icons:vuedotjs' },
+	{ label: 'MDC', value: MDC_VERSION, icon: 'catppuccin:markdown' },
+	{ label: 'Node', value: nodeVersion, icon: 'simple-icons:nodedotjs' },
+	{ label: pm, value: pmVersion, icon: 'simple-icons:pnpm' },
+	{ label: 'OS', value: platform, icon: osIcons[platform] ?? 'tabler:device-desktop' },
+	{ label: 'Arch', value: arch, icon: 'tabler:cpu-2' },
+]
+---
+
+<BlogWidget card grayscale title="技术信息">
+	<DlGroup items={service} class="tech-service" />
+
+	<div class="z-expand">
+		<div class="expand-content" hidden data-expand-content>
+			<DlGroup size="stack" items={techstack} class="tech-stack" />
+		</div>
+
+		<button class="toggle-btn in-place" type="button" aria-expanded="false" data-expand-toggle>
+			<span class="tech-icon"><Icon name="tabler:chevrons-down" /></span>
+			<span data-expand-label>展开构建信息</span>
+		</button>
+	</div>
+</BlogWidget>
+
+<script>
+	function initExpand() {
+		for (const btn of document.querySelectorAll('[data-expand-toggle]')) {
+			if (btn.dataset.expandReady)
+				continue
+			btn.dataset.expandReady = '1'
+
+			btn.addEventListener('click', () => {
+				const open = btn.getAttribute('aria-expanded') === 'true'
+				btn.setAttribute('aria-expanded', open ? 'false' : 'true')
+				btn.classList.toggle('expand', !open)
+
+				// in-place 时按钮排在内容前面，收起/展开要互换文案
+				const label = btn.querySelector('[data-expand-label]')
+				if (label)
+					label.textContent = open ? '展开构建信息' : '收起构建信息'
+
+				const content = btn.parentElement?.querySelector('[data-expand-content]')
+				if (content)
+					content.hidden = open
+			})
+		}
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initExpand)
+	else
+		initExpand()
+	document.addEventListener('astro:page-load', initExpand)
+</script>
+
+<style>
+.z-expand {
+	margin-top: 0.2em;
+	display: flex;
+	flex-direction: column;
+}
+
+/* 内联自 app/components/partial/Expand.vue */
+.toggle-btn {
+	display: block;
+	width: fit-content;
+	margin: 0 auto;
+	padding: 0.3em;
+	font-size: 0.9em;
+	color: var(--c-text-2);
+
+	&.in-place {
+		order: -1;
+	}
+}
+
+.tech-icon {
+	display: inline-block;
+	transition: transform 0.2s;
+}
+
+.toggle-btn.expand .tech-icon {
+	transform: scaleY(-1);
+}
+
+/*
+ * DlGroup 是独立组件，带它自己的 scope；其内部元素不带本组件 scope，
+ * 故后代选择器需要 :global()（陷阱 2/3）。
+ *
+ * 只剩 `img` 需要在这里约束：service 组那枚 ciIcons 是**外链 favicon**（EdgeOne），
+ * 走 `<img>` 分支——img 不按字号算尺寸，没有约束会按固有像素（32px）撑高整行。
+ * iconify 那条不需要：字号由 main.css 的 `:where(.iconify)` 给，包装层继承即可。
+ * 原版 `.dl-group :deep(img)` 对两个 DlGroup 都生效，但**只有 service 组真有 img**，
+ * 故这里只留它；日后若给 tech-stack 加 `iconImg`，`.dl-group.stack > .dl-icon`
+ * 的 1.2em 宽槽装不下 32px 的固有尺寸，得同时补一条 img 约束。
+ *
+ * ⚠️ `.tech-service` / `.tech-stack` 自身也必须 global。
+ * 它们是经 `<DlGroup class="…" />` 传给**子组件**的，渲染出的元素带 DlGroup 的
+ * cid、不带本组件的，所以只放开后代还不够——父级选择器照样匹配不上。
+ * 此前这三条规则整组失效，EdgeOne 那枚外链 favicon 因此没有 1.2em 约束、
+ * 会按固有像素（32px）撑高整行。两个 class 名全站各只出现一次，无扩散风险。
+ * 见 docs/astro-phase1-findings.md §50，scripts/audit-dead-scope.mjs 可复现。
+ *
+ * 注：tech-stack 的 `.dl-icon` 尺寸已由 DlGroup 自己的 `.dl-group.stack` 规则接管，
+ * 这里原先那条 `:global(.tech-stack) :global(.dl-icon)` 随之删除，避免两处都写。
+ */
+:global(.tech-service) :global(img) {
+	height: 1.2em;
+}
+</style>

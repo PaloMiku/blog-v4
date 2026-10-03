@@ -1,0 +1,263 @@
+---
+/**
+ * OrderToggle 组件（Astro 版）：归档页的「分类 + 排序」控制条。
+ *
+ * ═══ 三个 defineModel 的 API 决策（Astro 无对应物）═══
+ * 原组件是 `v-model:category` / `v-model:sort-order` / `v-model:is-ascending`。
+ * Astro 组件的 props 不能携带函数，故无法「传回调给组件」。
+ * 统一改为与 Toggle/Slider/Expand/Pagination 相同的模式：
+ *   1. 三个值都是**单向 prop**（构建期初始态），组件自管运行时状态；
+ *   2. 根元素 `data-category` / `data-sort-order` / `data-ascending` 反映当前状态；
+ *   3. 每次变化从根元素派发冒泡的
+ *      `CustomEvent('partial:change', { detail: { category, sortOrder, isAscending } })`。
+ *
+ * 页面级契约（`/archive` 的实现方需要知道）：
+ * 排序与筛选是**构建期**计算（列表本身来自 getCollection），
+ * 所以控制条本身不持有列表数据，只负责产出状态。
+ * 页面有两种接法，择一：
+ *   A. 监听 `partial:change` 后 `history.replaceState` 写回查询参数，
+ *      并自行对已有列表做筛选/重排（列表已在内存里，无需重新请求）；
+ *   B. 让 Astro 为每种 (category, sortOrder, isAscending) 组合预渲染静态页。
+ * 组件本身**不写 URL**，避免与页面路由策略耦合。
+ *
+ * ═══ 其他 ═══
+ * - `useArticleCategory` / `useArticleSort` **不移植**：它们的产物
+ *   （categories 去重、orderBy 排序）属于列表页的构建期计算，
+ *   按 Phase 3 约定在页面里内联，不重建 composable 体系。
+ * - `appConfig.article.order` 取自根 `blog.config.ts`；
+ *   `appConfig.pagination.allowAscending` 由 `src/lib/app-config.ts` 提供。
+ * - `getCategoryIcon` 内联自 `app/utils/article.ts`。
+ * - `ZDropdown` 的 content slot 原本收到 `{ hide }` 函数（点击后手动收起）。
+ *   Astro 的 slot 收不到 slot props，改为约定：面板内按钮加
+ *   `data-dropdown-item` 后由 Dropdown 的脚本自动收起（见 Dropdown.astro 头注）。
+ */
+import Icon from '../Icon.astro'
+import blogConfig from '../../config/blog'
+import { appConfig } from '../../lib/app-config'
+import Dropdown from '../partial/Dropdown.astro'
+
+interface Props {
+	/** 强制允许或禁止升序 */
+	enableAscending?: boolean
+	disableAscending?: boolean
+	/** 可选分类列表；不传则禁用分类按钮 */
+	categories?: (string | undefined)[]
+	secretDelay?: string
+
+	/* 以下三个对应原组件的三个 defineModel（构建期初始值） */
+	category?: string
+	sortOrder?: string
+	isAscending?: boolean
+}
+
+const {
+	enableAscending,
+	disableAscending,
+	categories,
+	secretDelay,
+	category,
+	sortOrder = appConfig.pagination.sortOrder,
+	isAscending = false,
+} = Astro.props
+
+/* —— 内联自 app/utils/article.ts —— */
+function getCategoryIcon(value?: string) {
+	return blogConfig.article.categories[value ?? '']?.icon ?? 'tabler:folder'
+}
+
+const orderMap = blogConfig.article.order as Record<string, string>
+const orderKeys = Object.keys(orderMap)
+
+/** 配置文件中允许升序时，且未明确禁用升序时，允许升序 */
+const allowAscending = appConfig.pagination.allowAscending ? !disableAscending : enableAscending
+---
+
+<div
+	class="order-toggle"
+	style={{ '--secret-delay': secretDelay }}
+	data-order-toggle-root
+	data-category={category ?? ''}
+	data-sort-order={sortOrder}
+	data-ascending={String(isAscending)}
+	data-allow-ascending={String(allowAscending ?? false)}
+>
+	<slot />
+
+	<Dropdown trigger="focusin" tabindex="0">
+		<button type="button" disabled={!categories} data-category-btn>
+			<Icon name={getCategoryIcon(category)} />
+			<span class="order-text">{category ?? '全部分类'}</span>
+		</button>
+
+		<Fragment slot="content">
+			<button
+				type="button"
+				class:list={{ active: !category }}
+				data-category-item=""
+				data-dropdown-item
+			>
+				<Icon name={getCategoryIcon()} />
+				<span>全部分类</span>
+			</button>
+
+			{categories?.map(item => (
+				<button
+					type="button"
+					class:list={{ active: item === category }}
+					data-category-item={item ?? ''}
+					data-dropdown-item
+				>
+					<Icon name={getCategoryIcon(item)} />
+					<span>{item}</span>
+				</button>
+			))}
+		</Fragment>
+	</Dropdown>
+
+	<span>
+		{allowAscending && (
+			<button
+				type="button"
+				aria-label="切换排序方向"
+				class="direction-btn"
+				data-order-direction
+			>
+				<span class="toggle-direction" class:list={{ ascending: isAscending }} aria-hidden="true">
+					<Icon name="tabler:sort-descending" />
+				</span>
+			</button>
+		)}
+
+		<button
+			type="button"
+			data-order-sort
+			data-order-keys={orderKeys.join(',')}
+			data-order-labels={JSON.stringify(orderMap)}
+		>
+			{!allowAscending && <Icon name="tabler:sort-descending" />}
+			<span class="order-text">{orderMap[sortOrder] ?? sortOrder}</span>
+		</button>
+	</span>
+</div>
+
+<script>
+	// 原生脚本会被 Astro 去重合并，故用 data 属性定位各个实例
+	function initOrderToggle(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.orderToggleReady)
+			return
+		root.dataset.orderToggleReady = '1'
+
+		const orderBtn = root.querySelector('[data-order-sort]')
+		const dirBtn = root.querySelector('[data-order-direction]')
+		const categoryLabel = root.querySelector('[data-category-btn] .order-text')
+		const directionIcon = root.querySelector('[data-order-direction] .toggle-direction')
+		const allowAscending = root.dataset.allowAscending === 'true'
+
+		function emit() {
+			root.dispatchEvent(new CustomEvent('partial:change', {
+				bubbles: true,
+				detail: {
+					category: root.dataset.category || undefined,
+					sortOrder: root.dataset.sortOrder,
+					isAscending: root.dataset.ascending === 'true',
+				},
+			}))
+		}
+
+		// 分类项：面板内的 [data-category-item]，由 Dropdown 负责收起面板
+		root.addEventListener('click', (e) => {
+			const item = e.target.closest?.('[data-category-item]')
+			if (!item || !root.contains(item))
+				return
+			const next = item.dataset.categoryItem || undefined
+			root.dataset.category = next ?? ''
+			if (categoryLabel)
+				categoryLabel.textContent = next ?? '全部分类'
+			// 同步下拉面板里的高亮
+			for (const btn of root.querySelectorAll('[data-category-item]'))
+				btn.classList.toggle('active', (btn.dataset.categoryItem || undefined) === next)
+			emit()
+		})
+
+		// 排序方式：在配置声明的键之间循环（键与显示名的映射在构建期烘进 data 属性）
+		orderBtn?.addEventListener('click', () => {
+			const orderText = orderBtn.querySelector('.order-text')
+			const keys = (orderBtn.dataset.orderKeys ?? '').split(',').filter(Boolean)
+			let labels = {}
+			try {
+				labels = JSON.parse(orderBtn.dataset.orderLabels ?? '{}')
+			}
+			catch { /* 映射缺失时回退到直接显示键名 */ }
+
+			const current = root.dataset.sortOrder ?? ''
+			if (!keys.length)
+				return
+			const next = keys[(keys.indexOf(current) + 1) % keys.length] || current
+			root.dataset.sortOrder = next
+			if (orderText)
+				orderText.textContent = labels[next] ?? next
+			emit()
+		})
+
+		if (allowAscending) {
+			dirBtn?.addEventListener('click', () => {
+				const next = root.dataset.ascending !== 'true'
+				root.dataset.ascending = String(next)
+				directionIcon?.classList.toggle('ascending', next)
+				emit()
+			})
+		}
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('[data-order-toggle-root]'))
+			initOrderToggle(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.order-toggle {
+	display: flex;
+	gap: 1rem;
+	color: var(--c-text-2);
+
+	/*
+	 * 原本是 `:deep(button), :deep(a)`。按钮与链接都由本组件及 Dropdown 子组件渲染，
+	 * 但 Dropdown 是独立 scope，其根元素拿不到本组件的 scope 属性，
+	 * 故对来自子组件的部分用 :global()（见 MIGRATION-BRIEF 陷阱 1/2）。
+	 */
+	button,
+	:global(a) {
+		transition: color 0.2s;
+
+		&:hover {
+			color: var(--c-primary);
+		}
+	}
+
+	.toggle-direction {
+		display: inline-block;
+		margin-inline-end: 0.1em;
+		transition: transform 0.2s;
+
+		&.ascending {
+			transform: scaleY(-1);
+		}
+	}
+}
+
+/* 原本是 `:deep(.secret-container)`，即调用方传入的 ZSecret 根元素（子组件 scope） */
+:global(.secret-container) {
+	margin-inline-end: auto;
+}
+
+:global(.icon) + .order-text {
+	margin-inline-start: 0.2em;
+}
+</style>

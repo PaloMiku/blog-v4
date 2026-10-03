@@ -1,0 +1,271 @@
+---
+/**
+ * FeedCard 组件（Astro 版），对应 `app/components/content/FeedCard.vue`。
+ * 单条友链卡片：触发区是「头像 + 博主名 + 站点昵称」，详细信息挂在 tooltip 上。
+ *
+ * ## 与 Nuxt 版的差异
+ * 1. **UtilLink 不复用，改为就地渲染 `<a>` / `<span>`。**
+ *    原版靠 Vue 的 attribute fallthrough 把 `class="feed-card gradient-card"`
+ *    落到 UtilLink 的根元素上（因此 `.feed-card` 拿到本组件的 scope，样式生效）。
+ *    Astro 没有 fallthrough，若把根元素交给子组件渲染，本组件 `<style>` 里的
+ *    `.feed-card { … }` 会**永不匹配**（MIGRATION-BRIEF 陷阱 1/2）。
+ *    故这里内联 UtilLink 的两分支：`to` 为空 → `<span>`，否则外链加 `target="_blank"`
+ *    **并**带 `rel="noopener"`。后半句同样出自原版：FeedCard.vue:45 显式传了
+ *    `rel="noopener"`，它会把 NuxtLink 对 `_blank` 的自动值 `noopener noreferrer`
+ *    整体顶掉。故**`noreferrer` 缺失是 Nuxt 基线本来的样子**（实测基线 37 个
+ *    feed-card 外链一律 `rel="noopener"`）——照搬即 parity，不要「补全」成新差异。
+ *    根元素留在本组件，样式与作用域均与 Vue 版一致。
+ * 2. **Tooltip（vue-tippy）未移植，属 Phase 4。**
+ *    原版 `<Tooltip>` 渲染出 `<span data-v-tippy role="link">`，其中 `#content`
+ *    插槽挂在同级的 `<span style="display:none">` 里——**SSR 阶段就是隐藏的**。
+ *    这里照搬该初始状态（含 `data-v-tippy` 标记与内联 `display:none`），
+ *    即产物的可见性与基线首屏完全一致；内容仍在 HTML 里，
+ *    等 Phase 4 接上 tippy 时只要把 `data-tippy-content` 认领走即可。
+ * 3. **`isInspect` 调试分支（`import.meta.dev` + `?inspect`）未移植**：仅开发态可见。
+ * 4. **`NuxtImg` → 裸 `<img>`**（astro:assets 属 Phase 5）：无 srcset / 尺寸优化。
+ * 5. **`<Icon>` 的 `title` 属性丢失**：`Icon.astro` 未声明 `title` prop，
+ *    未声明的属性会被静默丢弃（陷阱 1 同源）。故架构徽章的原生 tooltip 暂缺，
+ *    只影响悬停提示，不影响可见文本。
+ *
+ * ## 作用域要点
+ * `.avatar` / `.author` / `.site-content` 等由本组件渲染，同 scope；
+ * `<Icon>`（`.no-feed` / `.domain-mark`）是子组件根元素，**不带本组件 scope**，
+ * 对应的规则必须逐层写 `:global()`（陷阱 2/3）。
+ */
+import { Temporal } from 'temporal-polyfill'
+import Icon from '../Icon.astro'
+import blogConfig from '../../config/blog'
+import { appConfig } from '../../lib/app-config'
+import { getArchIcon, getDomain, getDomainIcon, getDomainType, getMainDomain, isExtLink } from '../../lib/shared'
+
+/** 与 `app/types/feed.ts` 的 `FeedEntry` 同构 */
+interface Props {
+	author: string
+	sitenick?: string
+	title?: string
+	desc?: string
+	link: string
+	feed?: string
+	icon: string
+	avatar: string
+	archs?: string[]
+	date?: string
+	comment?: string
+	error?: string
+}
+
+const {
+	author,
+	sitenick = '',
+	title,
+	desc,
+	link,
+	feed,
+	icon,
+	avatar,
+	archs,
+	date,
+	comment,
+	error,
+} = Astro.props
+
+const cardTitle = title ?? sitenick ?? author
+const domainTip = getDomainType(getMainDomain(link, true))
+const domainIcon = getDomainIcon(link)
+
+/* —— 内联自 app/util/Link.vue（UtilLink）的两分支 —— */
+const to = error ? undefined : link
+const Target = to === undefined ? 'span' : 'a'
+const target = to && !to.startsWith('#') && isExtLink(to) ? '_blank' : undefined
+---
+
+<span data-v-tippy role="link" data-feed-card>
+	<Target
+		class="feed-card gradient-card"
+		href={to}
+		rel={to ? 'noopener' : undefined}
+		target={target}
+		data-error={error}
+		data-transition-enter
+	>
+		<div class="avatar" title={feed ? undefined : '无订阅源'}>
+			<img class="round-cobblestone" src={avatar} alt={author} loading="lazy" />
+			{appConfig.link.remindNoFeed && !feed && <Icon class="no-feed" name="tabler:bell-off" />}
+		</div>
+
+		<span class="author">{author}</span>
+		<span class="sitenick">{sitenick}</span>
+	</Target>
+
+	<span class="feed-tip" data-tippy-content style="display: none;">
+		<div class="site-content">
+			<img class="site-icon" src={icon} alt={cardTitle} loading="lazy" />
+
+			<div class="site-info">
+				<h3 class="text-creative">
+					{cardTitle}
+				</h3>
+
+				<code class="domain" title={domainTip}>
+					<span>{getDomain(link)}</span>
+					{domainIcon && <Icon class="domain-mark" name={domainIcon} />}
+				</code>
+			</div>
+
+			{archs?.map(arch => <Icon class="arch" name={getArchIcon(arch as never)} />)}
+		</div>
+
+		<div class="desc-content">
+			{date && (
+				<div class="date">
+					{/* SSR 阶段 mounted=false，原版走 appConfig.language 分支 */}
+					{Temporal.PlainDate.from(date).toLocaleString(blogConfig.language)}
+				</div>
+			)}
+
+			<p>{error ?? desc}</p>
+
+			{comment && (
+				<p>
+					<Icon name="tabler:message-dots" />
+					{comment}
+				</p>
+			)}
+		</div>
+	</span>
+</span>
+
+<style>
+	.feed-card {
+		display: flex;
+		align-items: center;
+		gap: 0.2em;
+		width: 14em;
+		margin: 1em auto;
+		padding: 0.5em;
+		line-height: 1.4;
+		transition: transform 0.2s;
+		animation: float-in 0.2s var(--delay) backwards;
+
+		&:hover {
+			transform: translateY(-2px);
+		}
+
+		&[data-error] {
+			opacity: 0.5;
+			cursor: not-allowed;
+		}
+
+		.avatar {
+			position: relative;
+			margin: 0 0.5em 0 0;
+
+			.inspect-info {
+				position: absolute;
+				left: 100%;
+				white-space: nowrap;
+			}
+
+			img {
+				display: block;
+				width: 2.5rem;
+				height: 2.5rem;
+				border-radius: 50%;
+				box-shadow: var(--box-shadow-2);
+				background-color: var(--ld-bg-card);
+				object-fit: cover;
+			}
+
+			/* .no-feed 是 Icon.astro 的根元素，拿不到本组件 scope */
+			:global(.no-feed) {
+				position: absolute;
+				inset-inline-end: -0.5em;
+				bottom: 0;
+			}
+		}
+
+		.author {
+			overflow: hidden; /* 长词折行 */
+		}
+
+		.sitenick {
+			opacity: 0.4;
+			font-size: 0.8em;
+		}
+	}
+
+	/* 原组件写在根级（非嵌套）的规则，作用对象同样是 Icon 的根元素 */
+	.feed-card :global(.no-feed) {
+		opacity: 0.6;
+		font-size: 0.8em;
+	}
+
+	/*
+	 * 这两条在原版是**嵌套**的：`:deep() ~ [data-tippy-root] > .tippy-box` 里再套
+	 * `&[data-placement="top"] > .tippy-svg-arrow`，编译后是
+	 * `[data-v-022c6617] ~ [data-tippy-root] > .tippy-box[data-placement=top] > .tippy-svg-arrow`
+	 * ——即箭头那条**同样带 `[data-v-022c6617] ~` 前缀**。
+	 * 拆成两条时前缀必须各自补齐，否则第二条会命中全站任意 tippy 箭头。
+	 * 这里用 `[data-feed-card]` 代替 cid 做锚点：包装 span 上有这个属性，
+	 * 语义（同一组件的相邻兄弟）与 cid 锚点等价（与上一条同款写法）。
+	 */
+	:global([data-feed-card]) ~ :global([data-tippy-root]) > :global(.tippy-box) {
+		overflow: hidden;
+		overflow: clip; /* 需保留气泡箭头 */
+		padding: 0;
+	}
+
+	:global([data-feed-card]) ~ :global([data-tippy-root]) > :global(.tippy-box[data-placement='top']) > :global(.tippy-svg-arrow) {
+		fill: var(--c-bg-1);
+	}
+
+	.site-content {
+		display: flex;
+		align-items: center;
+		gap: 0.5em;
+		padding: 0.5em 1em;
+
+		.site-icon {
+			width: 1.5rem;
+			height: 1.5rem;
+			border-radius: 4px;
+			object-fit: contain;
+		}
+
+		.site-info {
+			flex: 1;
+			margin-inline-end: 0.5em;
+
+			.domain {
+				font-size: 0.9em;
+			}
+
+			/* .domain-mark 是 Icon.astro 的根元素 */
+			:global(.domain-mark) {
+				font-size: 0.8em;
+				vertical-align: super;
+			}
+		}
+	}
+
+	.desc-content {
+		position: relative;
+		padding: 0.5em 1em;
+		background-color: var(--c-bg-1);
+
+		p + p {
+			margin-top: 0.5em;
+		}
+
+		.date {
+			position: absolute;
+			opacity: 0.1;
+			inset-inline-end: -0.1em;
+			bottom: -0.3em;
+			font-size: 3em;
+			font-weight: bold;
+			white-space: nowrap;
+			pointer-events: none;
+		}
+	}
+</style>

@@ -1,0 +1,136 @@
+---
+/**
+ * Button 组件（Astro 版）。纯静态（事件由调用方在页面级脚本里挂）。
+ *
+ * API 变化 / 显式 props：
+ * 1. 根元素按 Nuxt 版 `<component :is="to ? UtilLink : 'button'">` 的三分支展开
+ *    （`to` 为 undefined → `<button>`；`#` 开头 → 纯 `<a>`；否则带 target 的 `<a>`），
+ *    照搬 `UtilLink` 的判断逻辑。
+ * 2. Vue 的 attribute fallthrough 在 Astro 里不存在（见 MIGRATION-BRIEF 陷阱 1），
+ *    而实际调用方会传 `class` / `disabled` / `aria-label`（Pagination、error.vue、
+ *    Mermaid、ProseTable），所以必须显式声明并写回。
+ */
+import Icon from '../Icon.astro'
+import { isExtLink } from '../../lib/shared'
+
+interface Props {
+	variant?: 'button' | 'text'
+	icon?: string
+	text?: string
+	to?: string
+	desc?: string
+	primary?: boolean
+
+	/* 以下为原组件未声明、靠 fallthrough 落地的属性 */
+	class?: string
+	disabled?: boolean
+	title?: string
+	'aria-label'?: string
+}
+
+const {
+	variant = 'button',
+	icon,
+	text,
+	to,
+	desc,
+	primary = false,
+	class: className,
+	disabled = false,
+	title,
+	'aria-label': ariaLabel,
+	// 未声明的 data-* / tabindex 在 Astro 里不会自动落到根元素上，
+	// 调用方（Slide 的 data-slide-prev/next、tabindex）会静默丢掉，故统一透传
+	...rest
+} = Astro.props
+
+// 照搬 Nuxt 侧 UtilLink 的分支：锚点链接不加 target
+const target = to && !to.startsWith('#') && isExtLink(to) ? '_blank' : undefined
+// `primary` 之前只解构未合并，导致所有调用方都拿不到 `.button.primary` 规则
+const classes = ['z-button', variant, primary && 'primary', className]
+---
+
+{to === undefined
+	? (
+		<button class:list={classes} disabled={disabled} title={title} aria-label={ariaLabel} type="button" {...rest}>
+			<div class="button-main">
+				{icon && <Icon name={icon} />}
+				<slot>{text}</slot>
+			</div>
+			{desc && <div class="button-desc">{desc}</div>}
+		</button>
+	)
+	: (
+		<a href={to} class:list={classes} title={title} aria-label={ariaLabel} target={target} rel={target === '_blank' ? 'noopener noreferrer' : undefined} {...rest}>
+			<div class="button-main">
+				{icon && <Icon name={icon} />}
+				<slot>{text}</slot>
+			</div>
+			{desc && <div class="button-desc">{desc}</div>}
+		</a>
+	)}
+
+<style>
+.z-button {
+	display: inline-block;
+	transition: color 0.1s, background-color 0.2s;
+
+	&.text {
+		&:hover {
+			color: var(--c-primary);
+		}
+	}
+
+	&:disabled {
+		color: var(--c-text-3);
+		cursor: not-allowed;
+	}
+
+	& + .button {
+		margin-inline-start: 0.8em;
+	}
+}
+
+.button {
+	padding: 0.4em 0.6em;
+	border: 1px solid var(--c-bg-soft);
+	border-radius: 0.5em;
+	box-shadow: var(--box-shadow-1);
+	background-color: var(--ld-bg-card);
+	line-height: 1.2;
+	vertical-align: middle;
+	cursor: pointer;
+
+	&.primary {
+		background-color: var(--c-primary);
+		color: var(--c-bg);
+	}
+
+	&:hover {
+		box-shadow: var(--box-shadow-2);
+		background-color: var(--c-bg-2);
+		color: var(--c-text);
+	}
+
+	&:active {
+		background-color: var(--ld-shadow);
+	}
+
+	&:disabled {
+		background-color: var(--c-bg-1);
+	}
+}
+
+.button-main {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.2em;
+}
+
+.button-desc {
+	font-size: 0.75em;
+	text-align: center;
+	color: var(--c-text-2);
+}
+</style>

@@ -1,0 +1,150 @@
+---
+/**
+ * PostSurround 组件（Astro 版）—— 文章页的上一篇 / 下一篇。
+ *
+ * 数据来源：Nuxt 侧是
+ *   queryCollectionItemSurroundings('content', path, { fields: [...] })
+ *     .order('date', 'ASC').where('stem', 'LIKE', 'posts/%')
+ * Astro 内容层没有 SQL，等价实现见 `src/lib/content.ts` 的 `getSurroundings()`。
+ *
+ * 原版用 `createReusableTemplate` 复用左右两处的 DOM；Astro 无此 API，
+ * 改用一个局部 Fragment 函数在两次调用间复用标记。
+ *
+ * 日期原版是 `<UtilDate class="date" :date>`（不传 format，走 NuxtTime 默认形态：
+ * 「4月1日」/「25年5月19日」，跨年才补年份）。此前这里手写
+ * `toLocaleDateString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit' })`
+ * 且没出 `<time>`，与原版不一致，现收敛到 `util/Date.astro`。
+ */
+import Icon from '../Icon.astro'
+import UtilDate from '../util/Date.astro'
+import { getSurroundings, toPath } from '../../lib/content'
+
+interface Props {
+	/** 当前文章的 entry id */
+	currentId: string
+}
+
+const { currentId } = Astro.props
+
+const { prev, next } = await getSurroundings(currentId)
+---
+
+{prev || next
+	? (
+		<div class="surround-post" dir="ltr">
+			<a
+				class="surround-link"
+				href={next ? toPath(next) : undefined}
+				data-transition-key={next ? toPath(next) : undefined}
+				class:list={{ 'align-end': false }}
+			>
+				<Icon class:list={{ 'rtl-flip': Boolean(next) }} name={next ? 'tabler:arrow-left' : 'tabler:file-plus'} />
+				<div class="surround-text">
+					<strong class:list={['title', `text-${next?.data.type || 'tech'}`]}>
+						{next?.data.title || '新故事即将发生'}
+					</strong>
+					{next?.data.date && <UtilDate class="date" date={next.data.date} />}
+				</div>
+			</a>
+
+			<a
+				class="surround-link"
+				href={prev ? toPath(prev) : undefined}
+				data-transition-key={prev ? toPath(prev) : undefined}
+				class:list={{ 'align-end': true }}
+			>
+				<Icon class:list={{ 'rtl-flip': Boolean(prev) }} name={prev ? 'tabler:arrow-right' : 'tabler:movie'} />
+				<div class="surround-text">
+					<strong class:list={['title', `text-${prev?.data.type || 'tech'}`]}>
+						{prev?.data.title || '已抵达博客尽头'}
+					</strong>
+					{prev?.data.date && <UtilDate class="date" date={prev.data.date} />}
+				</div>
+			</a>
+		</div>
+	)
+	: null}
+
+<style>
+.surround-post {
+	contain: layout;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1rem;
+	margin: 3rem 1rem;
+}
+
+.surround-link {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	transition: color 0.2s;
+
+	&:not([href]) {
+		opacity: 0.4;
+		user-select: none;
+	}
+
+	&[align-end] {
+		/* direction: rtl 会导致末尾标点居左 */
+		flex-direction: row-reverse;
+		margin-inline-start: auto;
+		text-align: end;
+	}
+
+	> .surround-text {
+		text-wrap: balance;
+		transition: transform 0.2s;
+
+		/*
+		 * `:global()` 是必须的（下面 `> :global(.iconify)` 同理，这里是同一类陷阱）：
+		 * `.date` 是经 `<UtilDate class="date" />` 传给子组件的，`<time>` 由 UtilDate
+		 * 渲染、带着**它自己的** cid。写 scoped 会被编译成
+		 * `… > .date[data-astro-cid-<本组件>]` 而永不匹配。
+		 *
+		 * 后果实测：日期从独占一行变成跟在标题后面同一行，
+		 * `.surround-text` 由 41px 变 23px、`.surround-link` 由 41px 变 32px，
+		 * 链接整体还宽了 116px，于是本来一行放得下的两个链接被挤成两行，
+		 * `.surround-post` 41px → 80px。**每一篇文章都受影响。**
+		 *
+		 * 父选择器 `.surround-link` / `.surround-text` 由本组件渲染，保持 scoped，
+		 * 所以影响面仍然限定在上下篇导航里。
+		 */
+		> :global(.date) {
+			display: block;
+			opacity: 0.6;
+			font-size: 0.8rem;
+		}
+	}
+
+	/*
+	 * `:global()` 是必须的：这里的 `.iconify` 是经 `<Icon name="…" />` 渲染的，
+	 * 元素由 astro-icon 产出、带着**它自己的** cid；写在这里会被编译成
+	 * `.surround-link[data-astro-cid-<本组件>] > .iconify[data-astro-cid-<同>]`
+	 * 而永不匹配。父选择器 `.surround-link` 是本组件渲染的，保持 scoped 即可，
+	 * 影响面仍限定在本组件内。见 docs/astro-phase1-findings.md §50。
+	 */
+	> :global(.iconify) {
+		opacity: 0.5;
+		font-size: 2rem;
+		transition: transform 0.2s;
+	}
+
+	&[href]:hover {
+		color: var(--c-primary);
+
+		> .surround-text {
+			transform: translateX(-1em);
+		}
+
+		&[align-end] > .surround-text {
+			transform: translateX(1em);
+		}
+
+		> :global(.iconify) {
+			opacity: 0.2;
+			transform: scale(2);
+		}
+	}
+}
+</style>

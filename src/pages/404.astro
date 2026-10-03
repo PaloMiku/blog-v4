@@ -1,0 +1,61 @@
+---
+/**
+ * 404 页。
+ *
+ * ═══ 它对应的是 `[...slug].vue`，不是 `error.vue` ═══
+ *
+ * 源项目有**两条**互不相干的 404 路径，此前一直以为 404 页 = `app/error.vue`，
+ * 实测证明不是：
+ *
+ * 1. `app/error.vue` —— Nuxt **抛错**时的应用级错误页。静态站不会抛错，
+ *    所以它在这条链路上**永远不执行**。
+ * 2. `app/pages/[...slug].vue:56-60` —— catch-all 路由在「查不到 post」时
+ *    就地渲染 `<ZError icon="line-md:document-delete-twotone" title="内容为空或页面不存在" />`，
+ *    同时 `setResponseStatus(event, 404)` 且 `route.meta.title = '404'`。
+ *
+ * GitHub Pages 对任何不存在的路径都返回 `404.html`（Nuxt 的 SPA 壳），
+ * 壳水合后由 vue-router 匹配到 `[...slug]` → 走第 2 条。
+ * 证据：线上 404 的 Nuxt payload 是 `[{"prerenderedAt":1,"serverRendered":2}, …]`，
+ * `serverRendered: false`——静态壳里根本没有错误页 HTML，错误块是客户端画出来的。
+ *
+ * ═══ 实测基线（CDP，1600×1000，prefers-color-scheme: light，水合后）═══
+ *   <title>                404 | Mikuの极光星
+ *   .error.proper-height   784×700，x=400.5 y=0，flex column / gap 32px / 居中
+ *   ├ <div>                空占位（Error.vue 模板第一个子节点）
+ *   ├ span.error-icon      font-size 80px，color var(--c-text-3)，80×80
+ *   ├ div.error-title      「内容为空或页面不存在」，font-size 24px
+ *   └ div.operation        **空**——`[...slug].vue` 没给 ZError 传 operation 插槽
+ *   侧栏                   blog-log（更新日志）
+ *   head                   有 og:type/og:title/og:url/og:site_name/og:locale/twitter:card/robots
+ *                          **无** description / og:description / og:image / canonical
+ *
+ * ⚠️ 唯一无法复刻的一项：`og:url`。线上给的是**被请求的那个路径**
+ * （`https://blog.sotkg.com/<任意不存在的路径>`），静态 `404.html` 承载全部 404 请求，
+ * 构建期无从得知，只能给 `/404`。
+ */
+import Blog from '../layouts/Blog.astro'
+import BlogLog from '../components/widget/BlogLog.astro'
+import Error from '../components/partial/Error.astro'
+---
+
+{/*
+ * `title="404"` 对应 `[...slug].vue:29` 的 `route.meta.title = '404'`，
+ * 经 app.head.titleTemplate（`%s | <站名>`）得到线上的 `404 | Mikuの极光星`。
+ * 此前不传 title，产物里是裸站名，与线上不一致。
+ *
+ * `minimalSeo` 去掉 description / og:description / og:image / canonical 四项，
+ * 因为线上这条链路上它们压根不存在（见文件头实测表）。
+ *
+ * 没有 `hasAside` 之外的包装层：`[...slug].vue` 是把 ZError 直接放进布局默认插槽的，
+ * `app/error.vue` 那层 `.app-error { margin: 1rem }` 属于第 1 条路径，不适用。
+ */}
+<Blog title="404" hasAside noindex minimalSeo>
+	<Error
+		icon="line-md:document-delete-twotone"
+		title="内容为空或页面不存在"
+	/>
+
+	<Fragment slot="aside">
+		<BlogLog />
+	</Fragment>
+</Blog>

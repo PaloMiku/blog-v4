@@ -1,0 +1,271 @@
+---
+/**
+ * InfoCard：Bangumi 信息卡，支持条目（media）与角色（character）。
+ *
+ * ⚠️ 数据获取已留空 —— 这是**有意为之**，不是遗漏。
+ *
+ * 背景：Bangumi 功能已于 2026-09-30 从项目中整体移除（模块未引入，源码在仓库外
+ * `D:/Projects/Bangumi-Clarity`）。原组件的全部逻辑都在 `onMounted` 里
+ * `fetch` Bangumi API，且依赖 `useRuntimeConfig().public.bangumi`——
+ * Astro 静态站没有 runtimeConfig，那套配置也无从注入。
+ * 更关键的是：**线上这个组件渲染出来是一个坏掉的卡片**。
+ * 原组件在 `onMounted` 里 fetch Bangumi API，而模块已随功能一起移除，
+ * 请求必然失败 → `status` 走到 `error` 分支 →
+ * 「暂时无法加载{条目|角色}信息」+ 一个点了也没用的「重新加载」按钮，
+ * 实测每个 **59px**。
+ *
+ * ⚠️ 此前这里写的是「线上本来就渲染成空」，**那是错的**——是照着源组件的
+ * 状态机初值（`idle`）推出来的，没有核对产物。2026-10-02 用页高对比实测：
+ * 线上 59px / Astro 0px，仅 `nukitashi-gv-end`(×5) 与 `piece-hy1`(×3) 两页，
+ * 合计 295 / 177px。
+ *
+ * 因此这里的选择是：**只输出空外壳，不复刻那个加载失败的错误卡**
+ * （用户 2026-10-02 拍板）。DOM 结构与 CSS 全部按原版保留
+ * （含 loading 骨架、错误态、内容态三套样式的完整定义），不编造任何假的 fetch。
+ * 代价是两页与线上存在已知差异，已写进 `scripts/compare-ui-parity.mjs` 的
+ * ACCEPTED 豁免清单（带上限，不是默默放过）。
+ * 要恢复时按下述步骤接线即可，样式无需改动：
+ *
+ * 1. 取回原组件源码（仓库外 `D:/Projects/Bangumi-Clarity`），或改为构建期抓取
+ *    （静态站其实更适合在 `astro build` 时抓取并把数据内联，避免客户端再请求一次）。
+ * 2. 数据源：条目 `/api/subject/{id}`、角色 `/api/character/{id}`；
+ *    apiBase 为空时走同源 `/api`。原实现用 `useRuntimeConfig().public.bangumi.apiBase`，
+ *    静态站可改用环境变量（`import.meta.env.PUBLIC_BANGUMI_API_BASE`）或直接写死。
+ * 3. 响应字段（BgmEntity）：`id` `name` `name_cn` `img` `images.{common,grid,large,medium,small}`
+ *    `summary` `url` `rating.{score,total}`。
+ * 4. 展示派生规则：name = `name_cn || name`；originalName = `name_cn && name !== name_cn ? name : ''`；
+ *    cover = `img || images.common`；summary 需把连续空白折叠成单空格并 trim；
+ *    link = `url || https://bgm.tv/{subject|character}/{id}`；rating 仅在 `score > 0` 时显示（保留一位小数）。
+ *    typeLabel = character → 「角色」，否则「条目」。
+ * 5. 把下面 `status` / `data` 换回真实状态后，模板的三个分支即可原样启用。
+ *
+ * props（`id` / `type`）与原版保持一致，MDX 里的 8 处调用无需改动。
+ * 是否恢复 Bangumi 功能属独立决策，不在本次移植范围内。
+ */
+interface Props {
+	/** media=条目 / character=角色 */
+	type?: 'media' | 'character'
+	id: number | string
+	/** MDX 传入的 className；Astro 没有 attribute fallthrough，需显式接收后合并 */
+	class?: string
+}
+
+const { type = 'media', id, class: className } = Astro.props
+
+const isCharacter = type === 'character'
+const entityId = Number(id)
+const typeLabel = isCharacter ? '角色' : '条目'
+
+/** 原状态机取值；接线后由数据获取过程驱动 */
+type Status = 'idle' | 'loading' | 'success' | 'error'
+
+/** 展示层数据（由 BgmEntity 按上方注释里的派生规则算出） */
+interface DisplayData {
+	name: string
+	originalName: string
+	cover: string
+	summary: string
+	link: string
+	rating: number | null
+}
+
+/*
+ * 静态站不再发起请求，恒为 'idle'，因此下面三个分支都不会命中，只输出空外壳。
+ * ⚠️ 这**不是**「与线上一致」——线上渲染的是那张加载失败的错误卡（每处 59px，
+ * 8 处共 177px 差值，已记进 `scripts/compare-ui-parity.mjs` 的 ACCEPTED 清单）。
+ * 类型仍按完整状态机声明，这样恢复数据获取时三个分支的代码无需改动即可启用。
+ */
+const status: Status = 'idle'
+const data: DisplayData | null = null
+---
+
+<section
+	class:list={['info-card', 'card', className]}
+	data-info-card={isCharacter ? 'character' : 'media'}
+	data-info-card-id={entityId}
+>
+	{/* 加载骨架 */}
+	{status === 'loading' && (
+		<div class="info-card-body" aria-hidden="true">
+			<div class="info-card-cover info-card-skeleton" />
+			<div class="info-card-content">
+				<div class="info-card-line info-card-skeleton info-card-line--eyebrow" />
+				<div class="info-card-line info-card-skeleton info-card-line--title" />
+				<div class="info-card-line info-card-skeleton info-card-line--summary" />
+			</div>
+		</div>
+	)}
+
+	{/* 错误态 */}
+	{status === 'error' && (
+		<div class="info-card-body info-card-body--error">
+			<p class="info-card-error-text">
+				暂时无法加载{typeLabel}信息
+			</p>
+			<button class="info-card-retry" type="button">
+				重新加载
+			</button>
+		</div>
+	)}
+
+	{/* 内容 */}
+	{status === 'success' && data && (
+		// `rel="noopener"` 少个 noreferrer 是**照搬原版**（InfoCard.vue:110 完全相同），
+		// 属基线 parity，不是本次改写引入的缺陷，别「补全」。本分支恒不渲染（status 恒 idle），
+		// 产物里 0 个外链；真要接线时以 Nuxt 原版为准。
+		<a class="info-card-body" href={data.link} target="_blank" rel="noopener">
+			{data.cover && (
+				<img class="info-card-cover" src={data.cover} alt={data.name} loading="lazy" decoding="async" />
+			)}
+			<div class="info-card-content">
+				<span class="info-card-eyebrow">
+					{typeLabel}
+					{data.rating !== null && (
+						<span class="info-card-rating">★ {data.rating.toFixed(1)}</span>
+					)}
+				</span>
+				<span class="info-card-title">{data.name}</span>
+				{data.originalName && (
+					<span class="info-card-original">{data.originalName}</span>
+				)}
+				{data.summary && (
+					<p class="info-card-summary">
+						{data.summary}
+					</p>
+				)}
+			</div>
+		</a>
+	)}
+</section>
+
+<style>
+.info-card {
+	margin: 1em 0;
+	font-size: 0.9em;
+
+	&:hover {
+		box-shadow: var(--box-shadow-2);
+	}
+}
+
+.info-card-body {
+	display: flex;
+	align-items: center;
+	gap: 0.8em;
+	padding: 0.8em;
+
+	&--error {
+		gap: 0.5em;
+	}
+}
+
+.info-card-cover {
+	flex-shrink: 0;
+	width: 4em;
+	height: 4em;
+	border-radius: 0.3em;
+	background-color: var(--c-bg-2);
+	object-fit: cover;
+}
+
+.info-card-content {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2em;
+	min-width: 0;
+}
+
+.info-card-line {
+	height: 0.8em;
+	border-radius: 0.3em;
+
+	&--eyebrow {
+		width: 30%;
+	}
+
+	&--title {
+		width: 60%;
+		height: 1.2em;
+	}
+
+	&--summary {
+		width: 100%;
+		height: 2.4em;
+	}
+}
+
+.info-card-eyebrow {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+	font-size: 0.85em;
+	color: var(--c-text-3);
+}
+
+.info-card-rating {
+	color: var(--c-warning);
+}
+
+.info-card-title {
+	font-size: 1.1em;
+	font-weight: 700;
+	color: var(--c-text);
+}
+
+.info-card-original {
+	font-size: 0.9em;
+	color: var(--c-text-2);
+}
+
+.info-card-summary {
+	display: -webkit-box;
+	overflow: hidden;
+	font-size: 0.95em;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	color: var(--c-text-2);
+	-webkit-box-orient: vertical;
+}
+
+.info-card-error-text {
+	font-size: 0.9em;
+	color: var(--c-text-2);
+}
+
+.info-card-skeleton {
+	background:
+		linear-gradient(
+			90deg,
+			var(--c-bg-2) 25%,
+			var(--ld-bg-card) 50%,
+			var(--c-bg-2) 75%
+		);
+	background-size: 200% 100%;
+	animation: info-card-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes info-card-shimmer {
+	from {
+		background-position: 200% 0;
+	}
+
+	to {
+		background-position: -200% 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.info-card-skeleton {
+		animation: none;
+	}
+}
+
+.info-card-retry {
+	flex-shrink: 0;
+	padding: 0.2em 0.6em;
+	border-radius: 0.3em;
+	background-color: var(--c-primary);
+	font-size: 0.85em;
+	color: #FFF;
+}
+</style>

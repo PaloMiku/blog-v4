@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { intro, log, outro, select, spinner, text } from '@clack/prompts'
 import { Temporal } from 'temporal-polyfill'
-import blogConfig from '../blog.config'
+import blogConfig from '../src/config/blog'
 
 function normalize(val: string | symbol | undefined): string | undefined {
 	return typeof val === 'symbol' ? undefined : val?.trim()
@@ -19,7 +19,9 @@ const usePermalink = blogConfig.article.useRandomPremalink
 const now = Temporal.Now.plainDateTimeISO()
 const dateStr = now.toLocaleString('sv')
 
-const dir = join('content', 'posts', now.year.toString())
+// 内容根在 `src/content/`（Astro 7 的 glob loader base，见 src/content.config.ts），
+// 扩展名是 `.mdx`：接管时 `content/**/*.md` 已被 `.mdx` 取代为唯一内容源。
+const dir = join('src', 'content', 'posts', now.year.toString())
 
 if (!fs.existsSync(dir))
 	fs.mkdirSync(dir, { recursive: true })
@@ -29,7 +31,7 @@ intro(usePermalink ? '📝 使用中文名 + 随机 URL 新建文章' : '📝 �
 
 // #region 传入文件名
 if (fileName)
-	log.info(`文件名: ${join(dir, fileName)}.md`)
+	log.info(`文件名: ${join(dir, fileName)}.mdx`)
 
 const permalink = usePermalink
 	? `/posts/${randomBytes(4).toString('hex').slice(1)}`
@@ -80,7 +82,7 @@ do {
 // #endregion
 
 // #region 生成路径
-const mdPath = join(dir, `${usePermalink ? title : fileName}.md`)
+const mdPath = join(dir, `${usePermalink ? title : fileName}.mdx`)
 if (!process.argv[2])
 	log.info(`文件名: ${mdPath}`)
 
@@ -141,7 +143,7 @@ if (type === 'custom') {
 	if (!customType)
 		process.exit(0)
 
-	log.warn('新建分类后，建议在 blog.config.ts 中添加对应配置')
+	log.warn('新建分类后，建议在 src/config/blog.ts 中添加对应配置')
 	type = customType
 }
 // #endregion
@@ -170,7 +172,7 @@ fs.writeFileSync(mdPath, `---\n${Object.entries(frontmatter)
 
 ## 从${title}说起
 
-\`\`\`md wrap
+\`\`\`mdc wrap
 <!-- 你可以在此处书写大纲，并在上方完成文章 -->
 \`\`\`
 `, 'utf8')

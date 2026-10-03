@@ -1,0 +1,87 @@
+---
+// ImgService 与 Nuxt 侧同源，临时跨项目引用，正式实现见 Phase 5（astro:assets）
+import type { ImgService } from '../../lib/img'
+import { getDomain, isExtLink, joinWith } from '../../lib/shared'
+
+interface Props {
+	banner?: string
+	/** 图片镜像服务，Phase 5 接入 astro:assets 后才会被消费 */
+	mirror?: ImgService
+	title: string
+	description?: string
+	link: string
+	/**
+	 * 原来这里没有 class prop，靠 Vue 的 attribute fallthrough 接收 MDX 传入的 className。
+	 * Astro 没有 fallthrough（已实测：传入的 class 会被丢弃），必须显式接收再合并。
+	 */
+	class?: string
+}
+
+const { banner, title, description, link, class: className } = Astro.props
+
+// 照搬 Nuxt 侧 UtilLink 的分支：锚点链接不加 target
+const target = !link.startsWith('#') && isExtLink(link) ? '_blank' : undefined
+/*
+ * rel 是该分支的另一半（见 LinkCard 同处注释）：Nuxt 侧靠 NuxtLink 自动补，
+ * 这里就地渲染裸 `<a>`，只能自己补。
+ * 现状：22 处调用的 link 全是站内路径或 `#锚点`，因此**当前产物里 0 个外链**，
+ * 这行是零风险的补齐（与 LinkCard / Badge 的实测 20 / 11 处不同）。
+ */
+const relValue = target === '_blank' ? 'noopener noreferrer' : undefined
+---
+
+<a
+	href={link}
+	class:list={['link-banner card', className]}
+	data-transition-key={link}
+	title={joinWith([title, description, link])}
+	target={target}
+	rel={relValue}
+>
+	{banner && <img class="link-banner-bg" src={banner} alt="" />}
+	<div class="link-banner-header" />
+	<div class="link-banner-info">
+		<div class="link-banner-title">
+			{title}
+		</div>
+		<div class="link-banner-desc">
+			{description ?? getDomain(link)}
+		</div>
+	</div>
+</a>
+
+<style>
+.link-banner {
+	line-height: 1.4;
+
+	/* 同 LinkCard：article 属于父级作用域，必须 :global() */
+	:global(article) & {
+		max-width: 528px;
+		margin: 2rem auto;
+	}
+
+	.link-banner-bg {
+		display: block;
+		width: 100%;
+		aspect-ratio: 2.4;
+		margin-bottom: -5%;
+		mask-image: linear-gradient(#FFF 50%, transparent);
+		object-fit: cover;
+	}
+
+	.link-banner-info {
+		padding: 0.5em 1em;
+	}
+
+	.link-banner-title {
+		font-size: 1.2em;
+		color: var(--c-text);
+	}
+
+	.link-banner-desc {
+		margin-top: 0.5em;
+		font-size: 0.8em;
+		color: var(--c-text-2);
+	}
+}
+</style>

@@ -1,0 +1,203 @@
+---
+/**
+ * MusicScore 组件（Astro 版）：abc 记谱法乐谱渲染 + 播放。
+ *
+ * 不做成 Vue 岛：构建期只输出两个空容器，abcjs 由原生 `<script>` 在客户端动态 import。
+ * 这符合全站「静态优先、只在必要时上 Vue」的方向，也避免了把 Vue runtime 拉进
+ * 只有 2 处使用的组件。
+ */
+interface Props {
+	abc: string
+	/** MDX 传入的 className；Astro 没有 attribute fallthrough，需显式接收后合并 */
+	class?: string
+}
+
+const { abc, class: className } = Astro.props
+---
+
+<div class:list={['music-score', className]}>
+	<div data-abcjs-container data-abc={abc} />
+	<div data-abcjs-synth />
+</div>
+
+<script>
+	/*
+	 * abcjs 会把自己的 DOM 注入到上面两个容器里，这些节点不属于本组件的模板，
+	 * 因此 CSS 里所有面向它们的层级选择器都必须逐层写 :global()（见 <style>）。
+	 */
+	async function checkSoundFonts() {
+		try {
+			const res = await fetch('https://paulrosen.github.io/midi-js-soundfonts/', { method: 'HEAD' })
+			return res.ok
+		}
+		catch (e) {
+			console.error('[music-abc] 无法连接 SoundFonts，不启用播放能力\n', e)
+			return false
+		}
+	}
+
+	async function initScore(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.scoreReady)
+			return
+		root.dataset.scoreReady = '1'
+
+		const container = root.querySelector('[data-abcjs-container]')
+		const synthEl = root.querySelector('[data-abcjs-synth]')
+		if (!container || !synthEl)
+			return
+
+		const { renderAbc, synth } = await import('abcjs')
+
+		const abcVisualParams = { responsive: 'resize' }
+		const synthVisualOptions = {
+			displayLoop: true,
+			displayRestart: true,
+			displayPlay: true,
+			displayProgress: true,
+			displayWarp: true,
+		}
+
+		const tuneObj = renderAbc(container, container.dataset.abc ?? '', abcVisualParams)[0]
+
+		if (!synth.supportsAudio() || !(await checkSoundFonts()))
+			return
+
+		const controller = new synth.SynthController()
+		controller.load(synthEl, null, synthVisualOptions)
+		controller.setTune(tuneObj, false)
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('.music-score'))
+			initScore(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.music-score {
+	line-height: 1.4;
+
+	/*
+	 * 以下整块原本是 `:deep()`。Astro 侧这些节点由 abcjs 运行时注入，
+	 * 拿不到本组件的 scope class，所以 :global() 必须**逐层**写——
+	 * 它不会向下传播到嵌套选择器，漏一层那条规则就整条失效。
+	 */
+	:global(.abcjs-inline-audio) {
+		display: flex;
+		align-items: center;
+		gap: 0.5em;
+		padding: 0.2em 0.5em;
+		border-radius: 4px;
+		background-color: var(--c-bg-2);
+		font-size: 0.8em;
+		font-variant-numeric: tabular-nums;
+
+		:global(> .abcjs-btn) {
+			width: 1em;
+			padding: 0.2em;
+			box-sizing: content-box;
+			background: none;
+			line-height: 1;
+
+			:global(> svg) {
+				display: block;
+			}
+
+			:global(g) {
+				fill: currentcolor;
+				stroke: currentcolor;
+			}
+		}
+
+		:global(> .abcjs-btn:hover), :global(> .abcjs-btn.abcjs-pushed) {
+			color: var(--c-primary);
+		}
+
+		:global(> .abcjs-midi-start) {
+			:global(> .abcjs-pause-svg), :global(> .abcjs-loading-svg) {
+				display: none;
+			}
+		}
+
+		:global(> .abcjs-midi-start.abcjs-pushed .abcjs-pause-svg) {
+			display: block;
+		}
+
+		:global(> .abcjs-midi-start.abcjs-pushed), :global(> .abcjs-midi-start.abcjs-loading) {
+			:global(> .abcjs-play-svg) {
+				display: none;
+			}
+		}
+
+		:global(> .abcjs-midi-progress-background), :global(> .abcjs-midi-progress-indicator) {
+			border: 8px solid transparent;
+			border-radius: 12px;
+			box-sizing: content-box;
+			background-clip: padding-box;
+		}
+
+		:global(> .abcjs-midi-progress-background) {
+			flex-grow: 1;
+			position: relative;
+			height: 4px;
+			background-color: var(--c-bg-soft);
+		}
+
+		:global(.abcjs-midi-progress-indicator) {
+			position: absolute;
+			top: -10px;
+			width: 8px;
+			height: 8px;
+			margin-left: -10px;
+			background-color: var(--c-text-1);
+		}
+
+		:global(.abcjs-midi-clock) {
+			display: inline-block;
+		}
+
+		:global(.abcjs-tempo-wrapper) {
+			display: flex;
+			align-items: center;
+		}
+
+		:global(input.abcjs-midi-tempo) {
+			position: relative;
+			width: 3em;
+			text-align: end;
+		}
+
+		:global(.abcjs-loading .abcjs-loading-svg) {
+			display: inherit;
+		}
+
+		:global(.abcjs-loading) {
+			outline: none;
+			animation: abcjs-spin 1s linear infinite;
+		}
+
+		:global(.abcjs-loading-svg circle) {
+			stroke: var(--c-text-1);
+		}
+
+		:global(.abcjs-css-warning) {
+			display: none;
+		}
+	}
+
+	:global(.abcjs-inline-audio.abcjs-disabled) {
+		opacity: 0.5;
+	}
+}
+
+@keyframes abcjs-spin {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+</style>

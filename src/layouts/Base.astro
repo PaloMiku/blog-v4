@@ -1,0 +1,316 @@
+---
+/**
+ * 根布局：`<html>` 外壳 + head。
+ *
+ * head 分两块：
+ * 1. `app.head` 的静态项（charset / author / generator / 脚本 / 字体），逐条照搬源项目。
+ * 2. **页面级 SEO 元信息**（description / og:* / twitter:card / robots / canonical /
+ *    JSON-LD），对应源项目里 unhead 的 `useSeoMeta` + `schemaOrgGraph`。
+ *
+ * ## 第 2 块的取值为什么在布局里自己算
+ *
+ * 源项目里这些字段由各页面 `useSeoMeta` 逐页声明（`app/pages/index.vue:5`、
+ * `app/pages/[...slug].vue:19`、`app/pages/archive.vue:7`、`app/pages/link.vue:12`、
+ * `app/pages/preview.vue:3`）。Astro 没有 `useSeoMeta`，而本页是唯一被所有页面
+ * 共享的 head，所以改为「布局按当前 URL 反查内容集合」：
+ * 页面不传 prop 时，内容页取该文章 frontmatter，其余页取站点级 / 内置表。
+ * 这样不必改动 `Blog.astro` 与各个页面即可拿到按页变化的值。
+ * 需要覆盖时仍可显式传 `description` / `image` / `ogType`。
+ */
+import { pascalCase } from 'es-toolkit/string'
+import blogConfig from '../config/blog'
+import { themeHomepage, themeName, themeVersion } from '../config/site-meta'
+import { isNoindexPath } from '../lib/noindex-paths'
+import '../styles/index.css'
+
+interface Props {
+	/** 页面标题，留空时只输出站点标题 */
+	title?: string
+	/** 文档语言，默认取 blogConfig.language（源项目 site.defaultLocale） */
+	lang?: string
+	/** 页面摘要，缺省时内容页取 frontmatter、其余页取站点级 description */
+	description?: string
+	/** og:image，缺省时内容页取 frontmatter 封面 */
+	image?: string
+	/** og:type，默认内容页 article、其余页 website */
+	ogType?: 'website' | 'article' | 'profile'
+	/** 输出 `noindex, nofollow`（404 等不应被索引的页面） */
+	noindex?: boolean
+	/**
+	 * 只保留 og:type / og:title / og:url / og:site_name / og:locale /
+	 * twitter:card / robots 这几项，**不输出** `description`、`og:description`、
+	 * `og:image` 与 `<link rel="canonical">`。
+	 *
+	 * 存在的唯一理由是 404 页：线上 404 走的是 SPA 壳 + 客户端渲染，
+	 * `[...slug].vue` 的「无 post」分支**不调 `useSeoMeta`**，
+	 * 所以那四项在它上面根本不存在。实测（CDP，水合后 dump `<head>`）：
+	 *   线上 404 有：title / og:title / og:url / og:site_name / og:locale /
+	 *                og:type=website / twitter:card / robots=noindex,nofollow
+	 *   线上 404 无：description / og:description / og:image / canonical
+	 * 与其在这里给 404 写一张「特例表」，不如把「不要这些」做成页面可声明的能力。
+	 *
+	 * ⚠️ `og:url` 仍会输出，且静态站只能给出 `/404`——线上给的是**被请求的路径**
+	 * （`https://blog.sotkg.com/<任意不存在的路径>`）。这是静态 404.html
+	 * 承载全部 404 请求的固有差异，无法在构建期复刻，故保留 `/404`。
+	 */
+	minimalSeo?: boolean
+	/**
+	 * 内容页追加的 JSON-LD 节点（目前是 BlogPosting）。
+	 * 由 `[...slug].astro` 传入：结构化数据属于页面自己的数据。
+	 */
+	jsonLd?: Record<string, unknown>[]
+}
+
+const {
+	title,
+	lang = blogConfig.language,
+	description: descriptionProp,
+	image: imageProp,
+	ogType: ogTypeProp,
+	noindex = false,
+	minimalSeo = false,
+	jsonLd,
+} = Astro.props
+
+// 源项目 app.head.templateParams.separator
+const separator = '|'
+// 源项目 app.head.titleTemplate: `%s %separator ${blogConfig.title}`
+const documentTitle = title ? `${title} ${separator} ${blogConfig.title}` : blogConfig.title
+// 源项目 app.head.meta 第一项
+const author = [blogConfig.author.name, blogConfig.author.email].filter(Boolean).join(', ')
+// 源项目 app.head.script = blogConfig.scripts，src 之外的属性（defer / data-*）原样透传
+const thirdPartyScripts = blogConfig.scripts.map(({ src, ...attrs }) => ({ src, attrs }))
+
+/* ---------------- 页面级 SEO 元信息 ---------------- */
+
+/** 站点绝对地址，取 astro.config.mjs 的 site */
+const siteUrl = Astro.site ?? new URL(blogConfig.url)
+
+/**
+ * 当前页路径。去掉尾斜杠的非根路径再拼绝对地址，
+ * 使 canonical 与源项目（`app/app.vue` 经 unhead 产出 `/2024/10/xxx` 无尾斜杠）对齐。
+ * `og:url` 复用同一个变量，两处天然一致。
+ */
+const pathname = Astro.url.pathname.replace(/\/+$/, '') || '/'
+const canonical = new URL(pathname, siteUrl).toString()
+
+/**
+ * 页面级 SEO 数据全部由调用方传入——对应源项目 unhead 的**逐页**
+ * `useSeoMeta` 声明（`app/pages/index.vue:5-8`、`link.vue:12-16` 等，
+ * `app/app.vue` 里并没有 useSeoMeta）。
+ *
+ * 布局不做 pathname -> 描述的映射，也不去 `getCollection` 反查条目：
+ * 那是把页面自己的数据搬到布局里，与源项目结构相反，而且每个非静态页
+ * 都要全表扫一遍内容集合。取不到时回落到站点级描述。
+ */
+const description = descriptionProp ?? blogConfig.description
+const ogType = ogTypeProp ?? 'website'
+/** 源项目首页 `ogImage: appConfig.author.avatar`；内容页由页面传 frontmatter 封面，缺封面时同头像 */
+const ogImage = imageProp ?? blogConfig.author.avatar
+const ogImageUrl = ogImage && new URL(ogImage, siteUrl).toString()
+/** 源项目输出 `zh_CN`（unhead 把 html lang 的连字符换成下划线） */
+const ogLocale = lang.replace('-', '_')
+/**
+ * nuxt-robots 的 indexable 规则原文。
+ * `Blog.astro` 只把 `title` 往下传，故 404 页不依赖调用方传 `noindex`，
+ * 直接按路由判定（源项目 `.output/public/404.html` 的 robots 即 `noindex, nofollow`）。
+ *
+ * ⚠️ 此前只判定了 404，漏掉了 robots.txt 里 Disallow 的那批路径：
+ * 线上 `/preview` 与 `/previews/*` 的 meta robots 都是 `noindex, nofollow`
+ * （nuxt-robots 对被 Disallow 的路径会额外输出 meta noindex），
+ * 而这里曾输出 `index, follow, max-image-preview:large, …`。
+ * 只靠 robots.txt 的 Disallow 不构成完整屏蔽——被禁的 URL 爬虫根本不会抓，
+ * meta noindex 反而永远没机会生效。
+ * 判定口径见 `src/lib/noindex-paths.ts`（与 sitemap 过滤同源）。
+ */
+const robots = noindex || pathname === '/404' || isNoindexPath(pathname)
+	? 'noindex, nofollow'
+	: 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'
+
+/**
+ * frontmatter 日期形如 `2024-10-17 19:24:26`（blog.config.ts:23 的 timeZone = Asia/Shanghai，
+ * 自 1991 年起无夏令时，固定 +08:00），转成 schema.org 期望的 ISO 8601。
+ */
+function toIsoDate(value?: string) {
+	if (!value)
+		return undefined
+	const [date, time = '00:00:00'] = value.split(' ')
+	return `${date}T${time}+08:00`
+}
+
+/**
+ * JSON-LD：先原样复刻源项目 unhead `schemaOrgGraph` 的 `@graph`
+ *（WebSite + WebPage 两节点，`.output/public/index.html` 可见），
+ * 内容页再由调用方追加 `BlogPosting` 节点，补上源项目没有的
+ * datePublished / dateModified / author / image。
+ *
+ * 追加的节点走 `jsonLd` prop，而不是在这里反查内容集合：
+ * 结构化数据属于页面自己的数据，与 `description` / `image` 同一套来源。
+ */
+const schemaOrgGraph: Record<string, unknown>[] = [
+	{
+		'@id': `${blogConfig.url}#website`,
+		'@type': 'WebSite',
+		'name': blogConfig.title,
+		'url': blogConfig.url,
+	},
+	{
+		'@id': `${canonical}#webpage`,
+		'@type': 'WebPage',
+		'name': documentTitle,
+		'url': canonical,
+		'isPartOf': { '@id': `${blogConfig.url}#website` },
+		'potentialAction': [{ '@type': 'ReadAction', 'target': [canonical] }],
+	},
+]
+
+if (jsonLd?.length)
+	schemaOrgGraph.push(...jsonLd)
+
+/** `<` 转成 <，防止 frontmatter 里的 `</script>` 截断脚本块 */
+const jsonLdText = JSON.stringify({ '@context': 'https://schema.org', '@graph': schemaOrgGraph }).replace(/</g, '\\u003c')
+---
+
+<!-- 三栏 grid 布局的锚点，对应源项目 app.rootAttrs -->
+<html lang={lang}>
+	<head>
+		<meta charset="utf-8">
+		<!-- Nuxt 默认注入、app.head 里没有；缺了移动端断点会失效 -->
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>{documentTitle}</title>
+
+		<meta name="author" content={author}>
+		<meta name="color-scheme" content="light dark">
+		<!-- 此处为元数据的生成器标识，不建议修改 -->
+		<meta name="generator" content={`${pascalCase(themeName)} ${themeVersion}`} data-github-repo={themeHomepage}>
+		<meta name="mobile-web-app-capable" content="yes">
+
+		<!--
+			页面级 SEO，对应源项目 unhead 的 `useSeoMeta`（各页声明）+ `app.head.link` 的 canonical。
+			字段来源见文件头注第 2 节。
+		-->
+		<meta property="og:type" content={ogType}>
+		{!minimalSeo && <meta name="description" content={description}>}
+		<meta property="og:title" content={documentTitle}>
+		{!minimalSeo && <meta property="og:description" content={description}>}
+		{!minimalSeo && ogImageUrl && <meta property="og:image" content={ogImageUrl}>}
+		<meta property="og:url" content={canonical}>
+		<meta property="og:site_name" content={blogConfig.title}>
+		<meta property="og:locale" content={ogLocale}>
+		<meta name="twitter:card" content="summary_large_image">
+		<meta name="robots" content={robots}>
+		{!minimalSeo && <link rel="canonical" href={canonical}>}
+		<!--
+			JSON-LD。源项目由 unhead 的 `schemaOrgGraph` 注入
+			（`data-nuxt-schema-org` + `data-hid` 两个属性是 Nuxt 的标记，静态站不需要）。
+			`is:inline` 保证该标签不被编译器接管，否则可能被改写成 `type="module"`。
+		-->
+		<script is:inline type="application/ld+json" set:html={jsonLdText} />
+
+		<link rel="icon" href={blogConfig.favicon}>
+		<link rel="alternate" type="application/atom+xml" href="/atom.xml">
+		<link rel="preconnect" href={blogConfig.twikoo.preload}>
+		<link rel="stylesheet" href="https://s4.zstatic.net/npm/katex@0.16.44/dist/katex.min.css">
+		<!-- "InterVariable", "Inter" -->
+		<link rel="stylesheet" href="https://s4.zstatic.net/npm/inter-ui@4.1.1/inter-variable.css">
+		<link rel="stylesheet" href="https://s4.zstatic.net/npm/inter-ui@4.1.1/inter.css">
+		<!-- LXGW WenKai 屏幕优化版；onload 走展开写法，避免被当成事件监听器解析 -->
+		<link
+			{...{
+				'rel': 'stylesheet',
+				'href': 'https://s4.zstatic.net/ajax/libs/lxgw-wenkai-screen-webfont/1.7.0/style.min.css',
+				'media': 'print',
+				'onload': 'this.media=\'all\'',
+			}}
+		>
+		<!-- "Ephesis" 页脚签名, "JetBrains Mono", 思源黑体 "Noto Sans SC", 思源宋体 "Noto Serif SC" -->
+		<link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin="">
+		<link rel="stylesheet" href="https://fonts.googleapis.cn/css2?family=Ephesis&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Noto+Sans+SC:wght@200..900&family=Noto+Serif+SC:wght@200..900&display=swap">
+		<!-- 抖音美好体 "DOUYINSANSBOLD-GB" -->
+		<link rel="stylesheet" href="https://fonts.bytedance.com/dfd/api/v1/css?family=DOUYINSANSBOLD-GB&display=swap">
+
+		<!--
+			color-mode：@nuxtjs/color-mode 的替代。
+			preference: 'system'（无 localStorage 记录时跟随系统）、fallback: 'light'、classSuffix: ''。
+			必须同步内联在 head 中且不能是 module，否则 <html> 上的类来不及生效会闪烁。
+		-->
+		<script is:inline>
+			(() => {
+				const root = document.documentElement
+				const colorSchemes = ['dark', 'light']
+				// storageKey: 'nuxt-color-mode'
+				const preference = getStoredPreference() || 'system'
+				let value = preference === 'system' ? getColorScheme() : preference
+				// 允许服务端强制指定主题
+				const forced = root.getAttribute('data-color-mode-forced')
+				if (forced)
+					value = forced
+				addColorScheme(value)
+				window.__NUXT_COLOR_MODE__ = { preference, value, getColorScheme, addColorScheme, removeColorScheme }
+
+				// classSuffix 为空串，主题类直接挂在 <html> 上，color.css 依赖 .light / .dark
+				function addColorScheme(scheme) {
+					root.classList.add(scheme)
+				}
+
+				function removeColorScheme(scheme) {
+					root.classList.remove(scheme)
+				}
+
+				function getColorScheme() {
+					if (window.matchMedia) {
+						for (const scheme of colorSchemes) {
+							if (window.matchMedia(`(prefers-color-scheme: ${scheme})`).matches)
+								return scheme
+						}
+					}
+					return 'light'
+				}
+
+				function getStoredPreference() {
+					try {
+						return window.localStorage.getItem('nuxt-color-mode')
+					} catch {
+						return null
+					}
+				}
+			})()
+		</script>
+
+		<!--
+			anti-mirror：源项目 modules/anti-mirror 往 head 注入的内联脚本，逻辑与框架无关，原样照搬。
+			黑名单来自该模块内的局部常量（未导出），同步到此处时需一并维护。
+		-->
+		<script is:inline define:vars={{ target: blogConfig.url }}>
+			((sources, target) => {
+				const isBadMirror = sources.some(domain => location.hostname === domain || location.hostname.endsWith(`.${domain}`))
+				if (isBadMirror) {
+					const canonical = document.querySelector('link[rel="canonical"]')
+					if (canonical)
+						canonical.href = canonical.href.replace(location.host, target)
+					location.host = target
+				}
+			})(['dgjlx.com', 'dgvhqt.com', 'hcmsla.com', 'wmlop.com', 'yswjxs.com'], target)
+		</script>
+
+		{thirdPartyScripts.map(({ src, attrs }) => (
+			<script is:inline src={src} {...attrs} />
+		))}
+	</head>
+	<body>
+		{/*
+		 * `#blog-root` 是三栏 grid 的容器，必须**包住布局内容**。
+		 *
+		 * Nuxt 侧的 `rootAttrs: { id: 'blog-root' }` 挂在应用根 div 上，
+		 * 它包着 `default.vue` 模板产出的内容，所以 `#blog-root` 的 grid 子项
+		 * 就是 `#blog-sidebar` / `main` / `.blog-aside-track`。
+		 *
+		 * 若把 id 放到 `<html>` 上，三栏就成了 `<html>` 的**孙级** ——
+		 * grid 完全不生效，页面退化成上下堆叠（侧栏占满首屏、正文被推到下方）。
+		 * 曾因此误判为「主内容不渲染」，实际是布局根本没生效。
+		 */}
+		<div id="blog-root">
+			<slot />
+		</div>
+	</body>
+</html>

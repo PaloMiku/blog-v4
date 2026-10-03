@@ -1,0 +1,315 @@
+---
+/**
+ * Toc 组件（Astro 版），对应 `app/components/widget/Toc.vue`。
+ *
+ * ## 目录数据来源
+ * Nuxt 侧 `useArticle().toc` 来自 `@nuxt/content` 的 `body.toc`，是一棵
+ * `TocLink[]` 树。Astro 侧对应物是 `render(entry)` 返回的 `headings`
+ * （`MarkdownHeading[]`：`{ depth, slug, text }`），是**扁平**的。
+ * 故本组件接收 `headings`，在构建期按 `depth` 还原成嵌套树
+ * （与 @nuxt/content 内部构树逻辑一致：depth 变深就压栈，否则回退到上一层）。
+ *
+ * 布局层接法（不在本组件范围内）：
+ *   const { Content, headings } = await render(entry)
+ *   <Toc headings={headings} />
+ *
+ * ## 与 Nuxt 版的差异
+ * 1. `createReusableTemplate` 递归模板 → 构建期递归函数（纯渲染，输出完全一致）。
+ * 2. `useToc` composable（`app/composables/useToc.ts`）拆成两半：
+ *    - `tocOffsets` 用来算 `minHeight`，等价于**标题总数**，
+ *      构建期直接从 `headings.length` 得到，无需测量 DOM；
+ *    - `activeHeadingId` 滚动高亮 + 把高亮项滚进可视区，需要真实
+ *      `getBoundingClientRect`，留在客户端脚本里（下方 `<script>`）。
+ *      倒序查找（`findLast` 的替代）、`scroll-margin-top` 读取、
+ *      `scrollTo` 定位等逻辑逐行照搬。
+ * 3. `useTemplateRef('toc')` + `defineExpose({ body })` 换成
+ *    `root.querySelector('.widget-body')`——Nuxt 侧 `scrollableEl` 取的
+ *    正是 BlogWidget 暴露出来的 `.widget-body`（`shrink` 让它可滚动）。
+ *
+ * ## 注释区锚点
+ * 原模板固定指向 `#twikoo`（评论系统容器），该容器属 Phase 4 的评论区，
+ * 此处保留锚点，行为与原来一致（目标不存在时浏览器不跳转）。
+ */
+import BlogWidget from '../blog/BlogWidget.astro'
+import Icon from '../Icon.astro'
+
+/** 与 @nuxt/content 的 MarkdownHeading 同构 */
+export interface TocHeading {
+	depth: number
+	slug: string
+	text: string
+}
+
+interface TocLink {
+	id: string
+	text: string
+	children?: TocLink[]
+}
+
+interface Props {
+	/** `render(entry)` 返回的 headings（扁平，按文档顺序） */
+	headings?: TocHeading[]
+	class?: string
+}
+
+const { headings = [], class: className } = Astro.props
+
+/**
+ * 扁平 headings → 嵌套 TocLink 树。
+ * 规则与 @nuxt/content 一致：维护一个按 depth 索引的栈，
+ * 比栈顶更深就是子级，否则回退到对应深度再挂。
+ */
+function buildTocTree(flat: TocHeading[]): TocLink[] {
+	const root: TocLink[] = []
+	const stack: TocLink[] = []
+
+	for (const heading of flat) {
+		const node: TocLink = { id: heading.slug, text: heading.text }
+		// depth 从 1 开始，栈里第 i 层对应 depth === i + 1
+		const level = Math.max(heading.depth, 1)
+		const parent = stack[level - 2]
+
+		if (parent) {
+			(parent.children ??= []).push(node)
+		}
+		else {
+			root.push(node)
+		}
+
+		stack[level - 1] = node
+		stack.length = level
+	}
+
+	return root
+}
+
+const links = buildTocTree(headings)
+
+/** 判断某节点自身或其子树是否包含当前高亮标题 */
+function hasHeading(node: TocLink, heading: string): boolean {
+	return node.id === heading || !!node.children?.some(child => hasHeading(child, heading))
+}
+
+/** 等价于 Nuxt 侧 `tocOffsets.length`（flattenToc 后的条目数 = 标题总数） */
+const headingCount = headings.length
+
+function renderToc(tree: TocLink[]): string {
+	const li = tree.map((entry) => {
+		const child = entry.children?.length ? renderToc(entry.children) : ''
+		return `<li data-toc-id="${entry.id}"><a href="#${entry.id}" title="${escapeAttr(entry.text)}">${escapeText(entry.text)}</a>${child}</li>`
+	}).join('')
+	return `<ol>${li}</ol>`
+}
+
+function escapeText(s: string) {
+	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function escapeAttr(s: string) {
+	return escapeText(s).replace(/"/g, '&quot;')
+}
+
+/*
+ * 原模板用 `createReusableTemplate` 递归渲染成真实 DOM（带 has-active / active 绑定）。
+ * 这里的 active 状态只能在客户端算出来，构建期渲染不了，
+ * 故改为「构建期把整棵树渲染成 HTML 字符串（set:html 输出），
+ * 客户端脚本再按 data-toc-id 挂 active / has-active」。
+ * 层级 <ol>/<li>/<a> 结构与原版逐层一致。
+ */
+const tocHtml = links.length ? renderToc(links) : ''
+---
+
+<BlogWidget title="文章目录" shrink class={className} style={{ minHeight: `clamp(4rem, ${headingCount}rem, 20rem)` }}>
+	<Fragment slot="action">
+		<!-- use <a> for anchor -->
+		<a href="#main-content" aria-label="返回开头">
+			<Icon name="tabler:arrow-bar-to-up" />
+		</a>
+
+		<a href="#twikoo" aria-label="评论区">
+			<Icon name="tabler:message-dots" />
+		</a>
+	</Fragment>
+
+	{tocHtml
+		? <div class="toc" data-toc set:html={tocHtml} />
+		: <p class="no-toc">暂无目录信息</p>}
+</BlogWidget>
+
+<script>
+	function initToc(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.tocReady)
+			return
+		root.dataset.tocReady = '1'
+
+		const items = [...root.querySelectorAll('[data-toc-id]')]
+
+		/** 标题 id → 文档内绝对 top；倒序排列，便于从后往前找命中项 */
+		const offsets = items
+			.map((li) => {
+				const heading = document.getElementById(li.dataset.tocId)
+				return {
+					id: li.dataset.tocId,
+					offsetTop: heading
+						? heading.getBoundingClientRect().top + (window.scrollY ?? 0)
+						: undefined,
+				}
+			})
+			.reverse()
+
+		// Nuxt 侧是 `useTemplateRef('toc').body`，即 BlogWidget 暴露的 .widget-body
+		const scrollableEl = root.closest('.blog-widget')?.querySelector('.widget-body')
+
+		function getActiveHeading() {
+			// 主题可能给 html 上的自定义属性留了 scroll-margin-top
+			const scrollMargin = Number.parseFloat(
+				getComputedStyle(document.documentElement).getPropertyValue('scroll-margin-top'),
+			)
+			const scrollOffset = window.scrollY + (scrollMargin || 64)
+			// 为兼容性不使用 findLast，而是使用倒序的 offsets
+			return offsets.find(item => item.offsetTop && item.offsetTop <= scrollOffset)?.id
+		}
+
+		function scrollToActiveTocItem(activeId) {
+			const active = root.querySelector(`a[href="#${activeId}"]`)
+			if (scrollableEl && active) {
+				scrollableEl.scrollTo({
+					top: active.offsetTop - scrollableEl.clientHeight / 4,
+					behavior: 'smooth',
+				})
+			}
+		}
+
+		function sync(activeId) {
+			for (const li of items) {
+				li.classList.toggle('active', li.dataset.tocId === activeId)
+				li.classList.toggle('has-active', hasHeading(li, activeId))
+			}
+		}
+
+		// 与 frontmatter 里的 hasHeading 保持一致（两处不能互相 import）
+		function sync(activeId) {
+			for (const li of items) {
+				li.classList.toggle('active', li.dataset.tocId === activeId)
+
+				// has-active：本节点自身、或任一祖先 <li> 是当前高亮项
+				let hasActive = false
+				for (let node = li; node; node = node.parentElement?.closest('li')) {
+					if (node.dataset.tocId === activeId) {
+						hasActive = true
+						break
+					}
+				}
+				li.classList.toggle('has-active', hasActive)
+			}
+		}
+
+		let last
+		function update() {
+			const activeId = getActiveHeading()
+			if (activeId === last)
+				return
+			last = activeId
+			sync(activeId)
+			scrollToActiveTocItem(activeId)
+		}
+
+		// 原版用 refThrottled(scrollY)，这里用 rAF 自己做节流
+		let ticking = false
+		function onScroll() {
+			if (ticking)
+				return
+			ticking = true
+			requestAnimationFrame(() => {
+				ticking = false
+				update()
+			})
+		}
+
+		window.addEventListener('scroll', onScroll, { passive: true })
+		// 正文高度变化（图片/代码块加载完）要重算 offset
+		window.addEventListener('resize', onScroll, { passive: true })
+		update()
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('[data-toc]'))
+			initToc(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.toc {
+	position: relative;
+
+	&::before {
+		content: "";
+		position: absolute;
+		inset: 0.3rem;
+		width: 3px;
+		border-radius: 1rem;
+		background-color: var(--c-bg-soft);
+	}
+}
+
+/*
+ * 目录树是 set:html 注入的字符串，拿不到本组件的 scope 属性，
+ * 故凡是面向它的后代选择器都要 :global()（陷阱 2/3）。
+ * .toc 外壳本身是本组件渲染的，仍走 scoped。
+ */
+:global(.toc ol) {
+	padding-inline-start: 0.8rem;
+}
+
+:global(.toc li) {
+	opacity: 0.6;
+	font-size: 0.94em;
+	color: var(--c-text);
+	transition: opacity 0.2s;
+
+	&:hover {
+		opacity: 0.94;
+	}
+
+	&.has-active, &.active {
+		opacity: 1;
+		font-size: 1em;
+	}
+
+	&.active::before {
+		content: "";
+		position: absolute;
+		inset-inline-start: 0.3rem;
+		margin: 0.2rem 0;
+		padding: 0.6rem 1.5px;
+		border-radius: 1rem;
+		background-color: var(--c-primary);
+	}
+
+	> a {
+		display: block;
+		overflow: hidden;
+		padding: 0.2em 0.5em;
+		border-radius: 0.5em;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		transition: all 0.2s;
+
+		&:hover {
+			background-color: var(--c-bg-soft);
+		}
+	}
+}
+
+.no-toc {
+	padding: 1em;
+	text-align: center;
+	color: var(--c-text-3);
+}
+</style>

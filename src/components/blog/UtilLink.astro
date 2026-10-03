@@ -1,0 +1,72 @@
+---
+/**
+ * UtilLink 组件（Astro 版），对应 `app/components/util/Link.vue`。
+ *
+ * 三个分支照搬原实现：
+ * 1. `to` 以 `#` 开头 → `<a href>`，不加 target
+ * 2. `to` 为 undefined → `<span>`（原实现如此；样式里有 `&[href]:hover`，必须区分）
+ * 3. 其余 → `<a href>`，外链加 `target="_blank"`
+ *
+ * 与 Nuxt 版的差异：`NuxtLink` → 裸 `<a>`（静态站不需要客户端路由）。
+ * 另外 Nuxt 的 attribute fallthrough 在 Astro 侧不存在，
+ * 常见用法里的 `aria-current` / `aria-label` / `aria-expanded` 只能逐个显式声明。
+ *
+ * ## rel（对应 NuxtLink 的自动行为）
+ * `NuxtLink` 对 `_blank` 会自动补 `rel="noopener noreferrer"`，这里照搬：
+ * **只有外链**（即 `target="_blank"` 的那条分支）加。同源链接 Nuxt 也不加，
+ * 全站乱加就是一处新差异了。`rel` 同时开放成 prop：它是「调用方的显式决定」，
+ * 不该出现「传了却被静默吞掉」的情况（`ResourceList` / `InfoCard` 就自己写过 `rel="noopener"`）。
+ */
+import { currentPageHref, isExtLink } from '../../lib/shared'
+
+interface Props {
+	/** 目标地址；不传则渲染为 `<span>` */
+	to?: string
+	class?: string
+	/**
+	 * 原生 `title`。显式声明而不是靠 `{...rest}` 兜住：`/preview` 的 h1 里就有一处
+	 * `<UtilLink to="/" title="返回首页">`（`app/pages/preview.vue:20-21`），
+	 * Nuxt 靠 attribute fallthrough 自动落到 `<a>` 上，Astro 侧必须自己接。
+	 */
+	title?: string
+	'aria-current'?: 'page' | 'true' | undefined
+	'aria-label'?: string
+	'aria-expanded'?: string
+	/** 显式覆盖默认的 `noopener noreferrer`（传 `undefined` 走默认） */
+	rel?: string
+}
+
+const {
+	to,
+	class: className,
+	rel,
+	title,
+	'aria-current': ariaCurrentProp,
+	...rest
+} = Astro.props
+
+const target = to && !to.startsWith('#') && isExtLink(to) ? '_blank' : undefined
+const Tag = to === undefined ? 'span' : 'a'
+const relValue = rel ?? (target === '_blank' ? 'noopener noreferrer' : undefined)
+
+/*
+ * `NuxtLink` 的自动行为：指向**当前页**的链接带 `aria-current="page"`。
+ * 线上首页 4 个 `href="/"` 的链接全都带，文章页一个都不带。
+ * 显式传入的值优先——`BlogSidebar` 自己算的 `currentMark`
+ * （精确命中 `page`、栏目命中 `true`）语义更细，不能被自动值覆盖。
+ * 边界见 `lib/shared/link.ts` 的 `currentPageHref`。
+ */
+const ariaCurrent = ariaCurrentProp ?? currentPageHref(to, Astro.url.pathname)
+---
+
+<Tag
+	class:list={className}
+	href={to}
+	title={title}
+	target={target}
+	rel={relValue}
+	aria-current={ariaCurrent}
+	{...rest}
+>
+	<slot />
+</Tag>

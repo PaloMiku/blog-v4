@@ -1,0 +1,209 @@
+---
+/**
+ * BlogPanel 组件（Astro 版），对应 `app/components/blog/BlogPanel.vue`。
+ * 右下角悬浮开关：右侧栏（平板以下）+ 左侧栏（手机以下）。
+ *
+ * `hasAside` 决定是否渲染右侧栏按钮，同时被布局层用来决定三栏/两栏 grid。
+ *
+ * ## 遗留取舍：useAvoidTransform 未移植（**已实测确认是空操作**）
+ * 原组件用 `useAvoidTransform(panelRef, layoutStore.avoidTargets)` 让面板
+ * 主动避开注册过 `useAvoidTarget` 的元素（归档页的调参面板、分页组件）。
+ * 注册方查 `app/` 全量引用只有 `pages/archive.vue` 和 `partial/Pagination.vue` 两处。
+ *
+ * ⚠️ 早先这里写的理由是「站点外壳自身从不注册 → transform 恒为 `''`」——
+ * **依据是错的**：origin 是面板自己，注册的是**目标方**，两者不是一回事。
+ * 正确理由是**几何上永不重叠**，已用 CDP 逐状态量过：
+ *   1600×1000：面板里的两个开关都带 `hide-above-tablet` / `hide-above-mobile`，
+ *              被隐藏成 0×0，`.panel-anchor` 退化成 (1569, 968) 的零宽点。
+ *   390×844  ：面板 42.9×85.8，x ∈ [331.1, 374]；sticky 分页收拢时
+ *              x ∈ [83, 307]（横向不重叠），展开时虽全宽 x ∈ [16, 374]
+ *              但 y ∈ [384.3, 418.2]，远在面板 y ∈ [726.3, 812] 之上（纵向不重叠）。
+ * 扫过 / /archive /about /link /games /2025/10/lemmy-fediverse-deploy
+ * 七个页面 × 两个视口 × 四个滚动状态，`#blog-panel` 的 transform 全是 `none`。
+ *
+ * 所以本组件**省略**该 transform 在当前站点上与线上不可区分。
+ * 但这是**几何巧合**（两个开关恰好都在右下、分页恰好在底部居中），不是不变式：
+ * 若日后移动端出现第三栏、或分页改为贴右，改动会立刻让差异显形。
+ * 真要接回来时，`avoidTargets` 要一并接回 `src/lib/layout-state.ts`。
+ */
+import Icon from '../Icon.astro'
+
+interface Props {
+	/** 本页是否有 aside 内容；控制右侧栏按钮是否渲染 */
+	hasAside?: boolean
+	class?: string
+}
+
+const { hasAside, class: className } = Astro.props
+
+// 同 BlogAside：裸属性传的是空串，先归一成布尔
+const showAside = Boolean(hasAside)
+---
+
+<!-- 固定外层提供不受避让动画影响的测量位置。 -->
+<div class:list={['panel-anchor', className]}>
+	<div id="blog-panel">
+		{showAside && (
+			<button
+				class="toggle-aside hide-above-tablet"
+				type="button"
+				aria-label="切换侧边栏"
+				aria-expanded="false"
+				data-layout-toggle="aside"
+			>
+				<span class="rtl-flip"><Icon name="tabler:align-right" /></span>
+			</button>
+		)}
+
+		<button
+			class="toggle-sidebar hide-above-mobile"
+			type="button"
+			aria-label="切换菜单"
+			aria-expanded="false"
+			data-layout-toggle="sidebar"
+		>
+			<span class="rtl-flip">
+				{/*
+				 * 原版是 `<Icon v-show="false" name="layout-sidebar-filled">` 预加载图标，
+				 * 再用三元表达式在两个 Icon 之间切换。Astro 侧脚本换不了组件，
+				 * 故两个都渲染、靠 hidden 切换。
+				 * 注意：注释文本里不能出现连续斜杠加星号，否则会提前闭合本注释。
+				 */}
+				<span data-panel-icon="filled" hidden><Icon name="tabler:layout-sidebar-filled" /></span>
+				<span data-panel-icon="outline"><Icon name="tabler:layout-sidebar" /></span>
+			</span>
+		</button>
+	</div>
+</div>
+
+<script>
+	import { bindLayoutGlobals, subscribeLayout } from '../../lib/layout-state'
+
+	function initPanel() {
+		const panel = document.querySelector('#blog-panel')
+		if (!panel || panel.dataset.panelReady)
+			return
+		panel.dataset.panelReady = '1'
+
+		// [data-layout-toggle] 的事件委托在 src/lib/layout-state.ts 的
+		// bindLayoutGlobals() 里统一处理，这里只负责把状态映射成按钮外观。
+		subscribeLayout((state) => {
+			panel.classList.toggle('has-active', state !== 'none')
+
+			for (const btn of panel.querySelectorAll('[data-layout-toggle]')) {
+				const on = state === btn.dataset.layoutToggle
+				btn.classList.toggle('active', on)
+				btn.setAttribute('aria-expanded', on ? 'true' : 'false')
+			}
+
+			// 菜单开合时换图标：展开用实心，收起用描边
+			const open = state === 'sidebar'
+			panel.querySelector('[data-panel-icon="filled"]')?.toggleAttribute('hidden', !open)
+			panel.querySelector('[data-panel-icon="outline"]')?.toggleAttribute('hidden', open)
+		})
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initPanel)
+	else
+		initPanel()
+	document.addEventListener('astro:page-load', initPanel)
+
+	bindLayoutGlobals()
+</script>
+
+<style>
+.panel-anchor {
+	position: fixed;
+	inset-inline-end: min(1rem, 5%);
+	bottom: min(2rem, 5%);
+	pointer-events: none;
+	z-index: var(--z-index-popover);
+}
+
+#blog-panel {
+	contain: paint;
+	border-radius: 0.5rem;
+	background-color: var(--c-bg-a50);
+	backdrop-filter: blur(0.5rem);
+	font-size: 1.4rem;
+	transition: transform 0.1s;
+	pointer-events: auto;
+
+	:root[data-article-transition] & {
+		transition: none !important;
+		view-transition-name: article-panel;
+	}
+
+	@media (max-height: 528px) {
+		display: flex;
+	}
+
+	&.has-active {
+		box-shadow: var(--box-shadow-1), var(--box-shadow-3);
+	}
+}
+
+button {
+	display: block;
+	padding: 0.5rem;
+	/*
+	 * `line-height: 1` 不是随手加的，是量出来的。
+	 *
+	 * 按钮是 `display:block` 但只装一个行内图标，于是会形成行盒。行盒高度取
+	 * 「strut（继承的 line-height）」与「行内盒」的较大者：
+	 *
+	 *   Nuxt  内容盒 26.9px = 1em（unplugin-icons 渲成不带内层 <svg> 的 <span>，
+	 *                              没有额外的行盒高度）
+	 *   Astro 内容盒 31.4px = 继承的 line-height（astro-icon 渲成
+	 *                              <svg><symbol><use>，<svg> 参与行盒把它撑满）
+	 *   差 4.48px = line-height 1.4em − 图标 1.2em
+	 *
+	 * 面板里两个按钮各差 4.48，合计 8.96px —— 就是 `scripts/probe-subtree.mjs`
+	 * 在 390×844 下量到的 `div.panel-anchor` +8.9px。
+	 *
+	 * 桌面下量不到：两个按钮分别带 `hide-above-mobile` / `hide-above-tablet`，
+	 * 在 1600px 宽时都是隐藏的。**这正是「只在一个视口量过就收官」会漏掉的那类。**
+	 *
+	 * 把 strut 压回 1em，行盒高度就等于图标高度，与 Nuxt 逐值相等。
+	 * 两个按钮里只有图标、没有文字，压 line-height 不会挪动任何字形。
+	 *
+	 * ⚠️ 改完之后，两侧这个按钮的**计算 `line-height` 值是不等的**
+	 * （Nuxt 31.36px / Astro 22.4px），但**渲染几何完全相等**（都 42.9px）——
+	 * 因为 Nuxt 那边 strut 根本没参与行盒高度。用户看得见的是几何，不是这个值。
+	 * `compare-ui-parity.mjs` 的 `STYLE_PROPS` 含 `line-height`，但
+	 * `STYLE_SELECTORS` 里没有 `.panel-anchor button`，所以样式门禁不会报它。
+	 * 哪天有人把这个选择器加进列表，报出来的会是**假阳性**，别顺手改回来。
+	 */
+	line-height: 1;
+	transition: all 0.2s;
+
+	&:hover {
+		background-color: var(--c-bg-a80);
+		color: var(--c-primary);
+	}
+
+	&.active {
+		background-color: var(--ld-bg-active);
+		color: var(--c-primary);
+	}
+}
+
+/* 正文有独立快照，在 Panel 的快照层重新合成磨砂背景。 */
+:global(::view-transition-group(article-panel)) {
+	border-radius: 0.5rem;
+	backdrop-filter: blur(0.5rem);
+	/* 元素先完成避让定位，由快照在新旧位置之间播放位移动画。 */
+	animation-duration: 0.1s;
+	animation-timing-function: ease;
+	z-index: 1;
+}
+
+:global(::view-transition-new(article-panel)) {
+	animation: none;
+}
+
+:global(::view-transition-old(article-panel)) {
+	display: none;
+}
+</style>

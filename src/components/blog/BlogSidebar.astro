@@ -1,0 +1,761 @@
+---
+/**
+ * BlogSidebar 组件（Astro 版），对应 `app/components/blog/BlogSidebar.vue`。
+ *
+ * ## 交互取舍（本组件的核心决策）
+ * Nuxt 版 371 行里，只有两类逻辑：
+ *
+ * A. **纯计算**（`navGroups` / `isActive` / `matchesRoute` / `currentMark` /
+ *    `collectUrls` / `sectionPaths` / `inSection`）——全部只依赖
+ *    `appConfig.nav` 和「当前路径」。静态站里当前路径是**构建期常量**
+ *    （`Astro.url.pathname`），所以这整块直接内联成构建期计算，
+ *    连 `openMenuKeys` 都不需要：`watch(route.path, openActiveMenus, {immediate:true})`
+ *    的效果等价于「构建期就把命中当前路由的分组展开」。
+ *    → 产物是纯静态 HTML，首屏零 JS 即可正确高亮与展开。
+ *
+ * B. **纯交互**（折叠/展开、搜索按钮、抽屉开关、快捷键）——用一段原生脚本 +
+ *    `data-` 属性自我初始化。理由：
+ *    1. 这类逻辑全是「切 class / 切 hidden」，几十行 JS 足够；
+ *    2. 做成 Vue 岛要跨框架传 nav 数据（MDX/布局层 → 岛），
+ *       既脆弱又给首屏加 Vue runtime 负担，与全站「静态优先」方向相反；
+ *    3. 抽屉状态本来就得跨组件共享，已由 `src/lib/layout-state.ts`
+ *       这个零依赖单例承担（见该文件头注释）。
+ *
+ * ## 依赖处置
+ * - `useLayoutStore` → `src/lib/layout-state.ts`
+ * - `useSearchStore.label` → **简化**：见下方「遗留取舍」
+ * - `ZIconNavList`（`app/components/partial/IconNavList.vue`）→ 内联在页脚
+ *   （全站只有这里用；`v-tip` tooltip 属 Phase 4，改用原生 `title`）
+ * - `UtilLink` → 本目录 `UtilLink.astro`
+ *
+ * ## 遗留取舍
+ * 1. **搜索框标签固定为「搜索」**。Nuxt 侧 `searchStore.label` 是
+ *    `防抖的选中文本 || 已输入的词 || '搜索'`，后两者都要等搜索弹层起来之后
+ *    才拿得到。构建期没有弹层状态可读，故渲染常量 '搜索'。
+ *    ⚠️ 这里**曾经**还记着一条「搜索按钮只切状态，不弹窗，按钮不会产生可见反馈」——
+ *    那条注释**已经不成立**：`SearchModal.astro` 早已订阅 `subscribeLayout`，
+ *    按钮与 Ctrl/⌘+K 都会真的弹出搜索弹层。它多半就是 `@press` 一直没接上的
+ *    原因（照着注释读代码的人会以为弹窗不存在），故在此显式记下「注释要对着产物核」。
+ * 2. **折叠动画已接回**。原版是 `<Transition name="collapse">`（`max-height` 过渡），
+ *    类名定义在全局 `src/styles/animation.css`——那份规则**早已移植到位**
+ *    （enter/leave 四组 + reduced-motion 兜底），缺的从来只是打类名的那段代码。
+ *    见下方脚本的 `setCollapsed`。
+ *
+ * ## 作用域提醒
+ * `#blog-sidebar` 由布局层的 `#blog-root` 网格定位；本组件只负责它自己的
+ * 内部样式。`.hide-above-mobile` 等工具类来自全局 CSS，同样待移植。
+ */
+import type { NavItem } from '../../lib/app-config'
+import BlogHeader from './BlogHeader.astro'
+import Icon from '../Icon.astro'
+import Key from '../content/Key.astro'
+import Mask from './Mask.astro'
+import ThemeToggle from './ThemeToggle.astro'
+import UtilLink from './UtilLink.astro'
+import { appConfig } from '../../lib/app-config'
+import { currentPageHref, isExtLink, normalizeContentPath } from '../../lib/shared'
+
+/*
+ * 构建期就能定死的东西：当前路径。
+ * 静态站不需要客户端路由匹配，active / current 判定全部在构建期完成。
+ */
+const path = Astro.url.pathname
+
+const itemKey = (groupIndex: number, itemIndex: number) => `g${groupIndex}-i${itemIndex}`
+
+const subnavId = (key: string) => `sidebar-subnav-${key}`
+
+const hasChildren = (item: NavItem) => Boolean(item.children?.length)
+
+/** 叶子项自己也占一行列表，模板才能只保留一份链接标记 */
+function linkItems(item: NavItem): NavItem[] {
+	return item.children?.length ? item.children : [item]
+}
+
+function collectUrls(items: NavItem[]): string[] {
+	return items.flatMap((item) => {
+		const self = item.url && item.url !== '#' && !isExtLink(item.url) ? [item.url] : []
+		return [...self, ...collectUrls(item.children ?? [])]
+	})
+}
+
+/** 除根路径外的栏目，用于判断当前页面是否属于某个具体栏目 */
+const sectionPaths = collectUrls(appConfig.nav.flatMap(group => group.items))
+	.filter(url => url !== '/')
+
+/*
+ * 栏目判定同样要归一化：`/link` 页的 pathname 是 `'/link/'`，
+ * 不归一化就只能靠 `startsWith('/link/')` 兜住——能过，但换种写法就又会错。
+ * 归一化后的判定与原先逐个路由核对过，结论完全一致。
+ */
+const inSection = sectionPaths.some(url => normalizeContentPath(path) === url || normalizeContentPath(path).startsWith(`${url}/`))
+
+function matchesRoute(url: string) {
+	if (!url || url === '#' || isExtLink(url))
+		return false
+
+	// 根路径会前缀匹配所有路由，指向 `/` 的「文章」只在没有栏目命中时高亮
+	if (url === '/')
+		return !inSection
+
+	return path === url || path.startsWith(`${url}/`)
+}
+
+function isActive(item: NavItem): boolean {
+	if (matchesRoute(item.url))
+		return true
+
+	return Boolean(item.children?.some(isActive))
+}
+
+/** 精确命中当前页才用 page，仅属于某个栏目时用通用的 true */
+function currentMark(item: NavItem) {
+	/*
+	 * 必须走 `currentPageHref`（它内部归一化尾斜杠），不能直接写 `path === item.url`。
+	 *
+	 * `build.format: 'directory'` 让 `Astro.url.pathname` 带尾斜杠：
+	 * `/link` 页上它是 `'/link/'`，而 `item.url` 是 `'/link'`，于是
+	 * `path === item.url` 恒不成立，**精确命中会退化成栏目的 `'true'`**。
+	 * 实测线上 `/link` / `/archive` / `/games` 三页给的都是 `page`。
+	 * 首页之所以「看起来是对的」，只是因为 `item.url` 恰好也是 `/`。
+	 */
+	if (currentPageHref(item.url, path))
+		return 'page'
+
+	return isActive(item) ? 'true' : undefined
+}
+
+function toLink(item: NavItem) {
+	return {
+		url: item.url,
+		icon: item.icon,
+		text: item.text,
+		active: isActive(item),
+		current: currentMark(item),
+		ext: isExtLink(item.url),
+	}
+}
+
+/** 把配置预处理成模板直接可用的行模型，省掉模板里反复计算 */
+const navGroups = appConfig.nav.map((group, groupIndex) => ({
+	title: group.title,
+	rows: group.items.map((item, itemIndex) => {
+		const key = itemKey(groupIndex, itemIndex)
+		const collapsible = hasChildren(item)
+		const active = isActive(item)
+
+		return {
+			key,
+			icon: item.icon,
+			text: item.text,
+			collapsible,
+			active,
+			// 等价于 Nuxt 侧 openActiveMenus()：命中当前路由的分组默认展开。
+			// 叶子项的列表恒展开，只有折叠列表参与 aria-controls。
+			open: collapsible ? active : true,
+			listId: collapsible ? subnavId(key) : undefined,
+			listClass: collapsible ? 'sidebar-subnav' : 'sidebar-nav-leaf',
+			links: linkItems(item).map(toLink),
+		}
+	}),
+}))
+
+/** 页脚图标导航，内联自 app/components/partial/IconNavList.vue */
+const iconNav = appConfig.footer.iconNav
+---
+
+<Mask for="sidebar" class="hide-above-mobile" />
+
+<!-- 不能用 Transition 实现弹出收起动画，因为半宽屏状态始终显示 -->
+<aside id="blog-sidebar">
+	<BlogHeader to="/" />
+
+	<nav class="sidebar-nav scrollcheck-y" aria-label="主导航">
+		<button
+			class="search-btn sidebar-nav-item gradient-card"
+			type="button"
+			data-layout-toggle="search"
+		>
+			<span class="nav-icon"><Icon name="tabler:search" /></span>
+			<span class="nav-text">搜索</span>
+			<Key code="K" cmd prevent />
+		</button>
+
+		{navGroups.map(group => (
+			<>
+				{group.title && <h3>{group.title}</h3>}
+
+				<menu>
+					{group.rows.map((entry) => (
+						<li>
+							{/*
+							 * 只有可折叠项才需要父按钮；叶子项直接把链接放在
+							 * 下面的 <ul> 里（linkItems 已把它包成单元素列表）。
+							 */}
+							{entry.collapsible && (
+								<button
+									class="sidebar-nav-item sidebar-nav-item-parent"
+									class:list={{ open: entry.open, active: entry.active }}
+									type="button"
+									aria-expanded={entry.open ? 'true' : 'false'}
+									aria-controls={entry.listId}
+									data-subnav-toggle={entry.key}
+								>
+									<span class="nav-text-wrap">
+										<span class="nav-icon"><Icon name={entry.icon} /></span>
+										<span class="nav-text">{entry.text}</span>
+									</span>
+									<span class:list={['nav-icon', 'nav-toggle-icon', { open: entry.open }]}>
+										<Icon name="tabler:chevron-down" />
+									</span>
+								</button>
+							)}
+
+							<ul
+								id={entry.listId}
+								class:list={entry.listClass}
+								hidden={!entry.open}
+							>
+								{entry.links.map((link) => (
+									<li>
+										<UtilLink
+											to={link.url}
+											class="sidebar-nav-item"
+											class:list={{ active: link.active }}
+											aria-current={link.current}
+										>
+											<span class="nav-icon"><Icon name={link.icon} /></span>
+											<span class="nav-text">{link.text}</span>
+											{link.ext && (
+												<span class="nav-icon external-tip"><Icon name="tabler:arrow-up-right" /></span>
+											)}
+										</UtilLink>
+									</li>
+								))}
+							</ul>
+						</li>
+					))}
+				</menu>
+			</>
+		))}
+	</nav>
+
+	<footer class="sidebar-footer">
+		<ThemeToggle />
+		{/*
+		 * 对应 `app/components/partial/IconNavList.vue`：
+		 * `<menu>` **没有 class**、`<UtilLink>`（渲染成 `<a>`）**直接是子元素、
+		 * 中间没有 `<li>`**。第一版这里多套了一层 `<li>` 还加了 `icon-nav` 类，
+		 * 结果整块高出 20.5px（线上 28.1 / Astro 48.6）——
+		 * 与 §80 记的 `<a>` 里多一层 `span` 是同一个形状的错误。
+		 */}
+		<menu>
+			{iconNav.map(item => (
+				<UtilLink to={item.url} aria-label={item.text} title={item.text}>
+					<span class="nav-icon"><Icon name={item.icon} /></span>
+				</UtilLink>
+			))}
+		</menu>
+	</footer>
+</aside>
+
+<script>
+	import { bindLayoutGlobals, subscribeLayout, toggleLayout } from '../../lib/layout-state'
+
+	/*
+	 * 折叠动画：等价于 Nuxt 侧的 <Transition name="collapse">。
+	 * 类名不新造——全局 `src/styles/animation.css` 里已经有整套
+	 * （`.collapse-enter-active/-from/-to` 与 leave 对称版本，
+	 * reduced-motion 那段也已把它们置为 `transition: none !important`），
+	 * 这里只负责按 Vue 的顺序打上、再摘掉。
+	 *
+	 * 收尾用定时器而**不是** transitionend：reduced-motion 下那几条类被置成
+	 * `transition: none !important`，transitionend 永远不会来，元素会永远停在
+	 * `-to`（折叠列表留下一个 max-height:0 的空盒子）。定时器与 CSS 时长对齐即可，
+	 * 也不需要第二套动效开关。
+	 */
+	const COLLAPSE_MS = 100
+
+	/**
+	 * Vue <Transition name="collapse"> 用的类名。写成完整字面量（而不是
+	 * `collapse-${phase}-from` 拼字符串），一是 animation.css 里的规则名要能
+	 * 逐字对上，二是产物 JS 里必须留有这六个名字——`scripts/check-affordances.mjs`
+	 * 正是靠它们判定「类名真的被代码打上」（只存在于 CSS 里等于没接）。
+	 */
+	const COLLAPSE_ENTER = ['collapse-enter-from', 'collapse-enter-active', 'collapse-enter-to']
+	const COLLAPSE_LEAVE = ['collapse-leave-from', 'collapse-leave-active', 'collapse-leave-to']
+
+	/** 每个折叠列表当前那一段动画；被打断时先把上一段结算到它自己的目标态 */
+	const collapseRuns = new WeakMap()
+
+	function clearCollapse(el, run) {
+		clearTimeout(run.timer)
+		el.classList.remove(...COLLAPSE_ENTER, ...COLLAPSE_LEAVE)
+		// 每一段的终点都由 hidden 兜住，动画中途被反向点击也不会留下
+		// 「类名摘了但显隐没跟上」的中间态。
+		// ⚠️ 这条能成立的前提是**没有作者级 display 规则压过 [hidden]**：
+		// 产物 CSS 里 `.sidebar-subnav` / `.sidebar-nav-leaf` 只有 margin/padding，
+		// UA 的 `[hidden] { display: none }` 生效（与 §32 prose.css 那处同类问题相反）。
+		el.hidden = !run.open
+		collapseRuns.delete(el)
+	}
+
+	/** open 为 true 表示展开 */
+	function setCollapsed(el, open) {
+		const running = collapseRuns.get(el)
+		if (running)
+			clearCollapse(el, running)
+
+		// 展开时必须先解除 hidden，否则 -from 的 max-height:0 根本没机会被采纳
+		if (open)
+			el.hidden = false
+
+		const [from, active, to] = open ? COLLAPSE_ENTER : COLLAPSE_LEAVE
+		el.classList.add(from, active)
+		// 强制回流：让 -from 先被采纳，再切 -to，过渡才有着力点
+		el.getBoundingClientRect()
+		el.classList.remove(from)
+		el.classList.add(to)
+
+		const run = { open, timer: 0 }
+		run.timer = setTimeout(() => clearCollapse(el, run), COLLAPSE_MS)
+		collapseRuns.set(el, run)
+	}
+
+	function initSidebar() {
+		for (const sidebar of document.querySelectorAll('#blog-sidebar')) {
+			if (sidebar.dataset.sidebarReady)
+				continue
+			sidebar.dataset.sidebarReady = '1'
+
+			// 折叠/展开：初始状态由构建期决定，这里只接点击
+			sidebar.addEventListener('click', (e) => {
+				const btn = e.target.closest?.('[data-subnav-toggle]')
+				if (!btn || !sidebar.contains(btn))
+					return
+				const open = btn.getAttribute('aria-expanded') === 'true'
+				btn.setAttribute('aria-expanded', open ? 'false' : 'true')
+				btn.classList.toggle('open', !open)
+
+				const list = document.getElementById(btn.getAttribute('aria-controls'))
+				if (list)
+					setCollapsed(list, !open)
+
+				btn.querySelector('.nav-toggle-icon')?.classList.toggle('open', !open)
+			})
+
+			/*
+			 * Ctrl/⌘+K：对应 Nuxt 的
+			 * `<Key code="K" cmd prevent @press="layoutStore.toggle('search')" />`。
+			 * Key.astro 把按键命中派发成冒泡的同名 `press` 事件（SearchModal 用的
+			 * 就是这一套约定），所以这里在键帽上消费即可，不另写一套键盘匹配。
+			 * `prevent` 语义仍由 Key.astro 负责（命中即 e.preventDefault()），
+			 * 浏览器自己的 Ctrl+K 绑定不会被触发。
+			 * 鼠标点键帽也走这一条，且只 toggle 一次：Key.astro 在 kbd 上
+			 * stopPropagation，button 的激活 click 因此冒泡不到 document 上
+			 * `[data-layout-toggle]` 那份委托（DOM 派发算法在检查 stop propagation
+			 * 标志之后才登记 activation target，故祖先的激活行为一并被跳过）。
+			 */
+			sidebar.querySelector('.search-btn [data-key-root]')?.addEventListener('press', () => toggleLayout('search'))
+
+			// 抽屉状态：Panel 点开后本组件要跟着显示
+			subscribeLayout((state) => {
+				sidebar.classList.toggle('show', state === 'sidebar')
+			})
+		}
+
+		// 搜索按钮（data-layout-toggle="search"）由 `bindLayoutGlobals()` 里的
+		// 全局事件委托统一处理，这里不重复绑定，避免 toggle 被触发两次；
+		// 键盘入口没有那份委托兜底，必须自己接（见上）。
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initSidebar)
+	else
+		initSidebar()
+	document.addEventListener('astro:page-load', initSidebar)
+
+	bindLayoutGlobals()
+</script>
+
+<style>
+#blog-sidebar {
+	display: flex;
+	flex-direction: column;
+	color: var(--c-text-2);
+
+	&:hover {
+		color: currentcolor;
+	}
+
+	@media (max-width: 768px) {
+		position: fixed;
+		/* 位移到屏幕外不会退出焦点顺序，收起时必须隐藏，否则 Tab 会进入不可见的导航。 */
+		visibility: hidden;
+		inset-inline-start: 0;
+		width: 320px;
+		max-width: 100%;
+		background-color: var(--ld-bg-blur);
+		backdrop-filter: blur(0.5rem);
+		color: currentcolor;
+		transform: var(--transform-start-far);
+		transition: transform 0.2s, visibility 0.2s;
+		z-index: var(--z-index-popover);
+
+		&.show {
+			visibility: visible;
+			box-shadow: var(--box-shadow-1), var(--box-shadow-3);
+			transform: none;
+		}
+	}
+}
+
+.sidebar-nav {
+	flex-grow: 1;
+	padding: 0 5%;
+	font-family: var(--font-basic);
+	font-size: 0.9em;
+
+	h3 {
+		margin: 2em 0 1em 1em;
+		font-family: var(--font-basic);
+		font-size: 1em;
+		font-weight: 700;
+		color: var(--c-text-2);
+	}
+
+	li {
+		margin: 0.5em 0;
+	}
+}
+
+.sidebar-nav-item,
+.sidebar-nav-item-parent {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	padding: 0.5em 1em;
+	border: 1px solid transparent;
+	border-radius: 0.5em;
+	font-family: var(--font-basic);
+	transition: all 0.2s;
+}
+
+.sidebar-nav-item:not(.search-btn):hover,
+.sidebar-nav-item.active,
+.sidebar-nav-item-parent.active,
+.sidebar-nav-item-parent:hover {
+	border-color: var(--c-primary);
+	background-color: var(--c-bg-soft);
+	color: var(--c-text);
+}
+
+.sidebar-nav-item-parent {
+	justify-content: space-between;
+	width: 100%;
+	font-weight: 500;
+	text-align: left;
+	cursor: pointer;
+}
+
+.sidebar-nav-item-parent .nav-text-wrap {
+	display: flex;
+	flex-grow: 1;
+	align-items: center;
+	gap: 0.5em;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+/*
+ * Icon 组件不接受 class prop（Astro 无 attribute fallthrough），
+ * 故所有图标都套了一层 <span class="nav-icon">。
+ *
+ * ## 为什么 `line-height: 1` 与下面那条 1em 都不能省（2026-10-03）
+ *
+ * 这层包装一度让每个导航项比线上高 8.64px（46.59 vs 38.34），
+ * 6 个项累积 51.6px，肉眼就是「侧栏间距不对」。两处尺寸规则**都落错了位置**：
+ *
+ * 1. `main.css` 的 `:where(.iconify){font-size:1.2em}` 是照抄 Nuxt 注入的规则。
+ *    线上 `span.iconify` **本身就是** `.sidebar-nav-item` 的直接子元素，
+ *    被更高特异性的 `.sidebar-nav-item > .iconify{font-size:1.5em}` 覆盖，
+ *    那条 `1.2em` 在那里**从未生效**。
+ *    Astro 侧包装层拿 1.5em、内层 `svg.iconify` 另拿 1.2em = 25.92px，
+ *    图标比线上大 20%。
+ * 2. 包装层的行盒按继承的 `line-height: 1.4` 撑成 30.24px，
+ *    而线上的 iconify 盒高**正好等于它的 font-size**（21.6px）。
+ *    30.24 − 21.6 = 8.64 —— 就是每项多出来的那 8.64px。
+ *
+ * 所以这里要复刻 iconify 的「1em 见方」：`line-height: 1` 让行盒不再按
+ * 1.4em 撑开，内层 `.iconify` 显式回 1em 抵消 `:where()` 的 1.2em。
+ *
+ * **教训**：这处差异页高门禁与样式对比都没报——因为
+ * `STYLE_SELECTORS` 里只有 `#blog-sidebar` 这个**外框**，
+ * 侧栏内部 16 个组件一个都没有（见 compare-ui-parity.mjs 的补注）。
+ * 量了外框不等于量了框里的东西。
+ */
+/*
+ * 尺寸规则**必须挂在导航项上下文里**，不能挂在 `.nav-icon` 本身。
+ *
+ * Nuxt 侧有三档，逐档对应（`main.css` 里那条 `:where(.iconify){font-size:1.2em}`
+ * 是照抄 Nuxt 注入的全局默认）：
+ *
+ *   1. 默认（页脚社交图标等）：`.iconify` 拿到 **1.2em**。
+ *      `IconNavList.vue` 只写了 `a .iconify{display:block}`，没有 font-size，
+ *      所以 1.2em 正常生效 —— 实测线上盒高 15.36px = 12.8 × 1.2。
+ *   2. 导航项：`.sidebar-nav-item > .iconify{font-size:1.5em}`（特异性 0-2-0）
+ *      覆盖掉 1.2em，盒高正好等于 font-size。
+ *   3. 子导航：`.sidebar-subnav .sidebar-nav-item > .iconify{1.1em}`。
+ *
+ * Astro 侧多了一层 `<span class="nav-icon">`，字号挂在了包装层上，
+ * 内层 `svg.iconify` 仍去吃那条 1.2em —— 图标因此大 20%（25.92 vs 21.6），
+ * 加上包装层行盒按 1.4em 撑开（30.24 vs 21.6），每个导航项多 8.64px。
+ *
+ * ⇒ 包装层要复刻 iconify 的「1em 见方」，且**只在这两档里**。
+ * 第一版把 `1em` 写成全局 `.nav-icon > .iconify`，把页脚也压成了 1em，
+ * 结果页脚图标盒 12.8 vs 线上 15.36 —— 修一处坏一处。
+ */
+/*
+ * 线上原文（2026-10-03 从线上 HTML 的内联 CSS 里抓的，剥掉 scope id）：
+ *
+ *     .sidebar-nav-item-parent .iconify, .sidebar-nav-item > .iconify { font-size: 1.5em }
+ *     .sidebar-subnav .sidebar-nav-item > .iconify                  { font-size: 1.1em }
+ *     :is(menu a) .iconify                                          { display: block }
+ *     .iconify + span                                               { margin-inline-start: .2em }
+ *
+ * **注意第一条里两个选择器形状不同**：`.sidebar-nav-item-parent` 那个是
+ * **后代**选择器，`.sidebar-nav-item` 那个才是**子元素**。
+ * 「资料」那个可展开的按钮把书本图标放在 `.nav-text-wrap` **里面**，
+ * 只有后代选择器才够得着。第一版照 `.sidebar-nav-item-parent > .nav-icon` 写成
+ * 子选择器，那个图标就漏掉了：盒高 20.2 vs 线上 21.6，整个按钮小 1.4px。
+ *
+ * ⇒ 选择器形状要照抄，不能「统一成子选择器」——那看起来更整齐，
+ * 但它就是错的，而且不报错。
+ */
+:global(.sidebar-nav-item-parent .nav-icon),
+:global(.sidebar-nav-item > .nav-icon) {
+	display: inline-block;
+	flex-shrink: 0;
+	font-size: 1.5em;
+	/*
+	 * 显式 1em 见方，不依赖行盒计算：只写 `line-height: 1` 还差 1.34px，
+	 * `inline-block` 的基线对齐会留出下降部空隙（实测 23.31 vs 线上 21.59）。
+	 * 线上 iconify 自己就是 `width/height: 1em`（实测 21.5938 × 21.5938）。
+	 */
+	line-height: 1;
+	width: 1em;
+	height: 1em;
+}
+
+/*
+ * 抵消 `main.css` 里照抄 Nuxt 的 `:where(.iconify){font-size:1.2em}`——
+ * 线上这三处都被上面更高特异性的规则覆盖掉了，这里要还原同样的结果。
+ *
+ * **必须 `:global()`**：那个 `<svg class="iconify">` 由 `Icon.astro`
+ * （进而 astro-icon）渲染，带的是**自己那份** scope id（实测 `data-astro-cid-ccg5yoga`），
+ * 不是 BlogSidebar 的。不加的话编译出的 `...[data-astro-cid-BS]` 前后缀
+ * 要求 svg 同时带两个 id，**永不匹配**——第一版就漏了这个，
+ * 导航项只从 46.59 降到 42.28 就停住了。
+ *
+ * `:global()` 只作用于紧邻的选择器、不向嵌套传播，所以整条复合选择器要括起来。
+ * **选择器里必须带 `.sidebar-nav-item` 前缀**：不加的话页脚社交图标也会被压成 1em，
+ * 而那里线上是正确的 1.2em（实测 15.36 vs 12.8）——修一处坏一处。
+ */
+:global(.sidebar-nav-item-parent .nav-icon > .iconify),
+:global(.sidebar-nav-item > .nav-icon > .iconify) {
+	font-size: 1em;
+
+	/*
+	 * 2026-10-03 用户报「侧边栏图标和字不是很对齐」，实测到内层 `<svg>`
+	 * **比承载它的盒低 1.72px**：
+	 *
+	 *   线上的 `.iconify` 是 `<span>`，图形用 CSS mask 铺满整个 21.59px 的盒，
+	 *   盒内没有 inline 内容，所以 `line-height`（实测 1.4em = 30.24px）
+	 *   完全不参与它的定位——`align-items:center` 把它放在文字中心上，差 0。
+	 *
+	 *   Astro 侧多一层包装：`<span class="nav-icon">` 里套一个
+	 *   `<svg width="1em" height="1em" class="iconify">`。svg 是 **inline 级**，
+	 *   它的垂直位置由**父 span 的行盒**决定，而父 span 为了把盒高压回 21.6px
+	 *   写了 `line-height: 1` —— 于是 svg 按 `vertical-align: baseline`（实测值）
+	 *   贴到基线上，实测**内缩 -1.72px**。
+	 *
+	 * ⇒ 之前量「盒高 21.5938 两侧逐位相同、间距 7.19 = 7.19」全对，
+	 *   **却一条都没量到内层 svg 的偏移**——「盒尺寸相同」不等于「图形位置相同」，
+	 *   这与 §82 坑位 25 是同一个形态，只量了框、没量框里的东西。
+	 *
+	 * **修法是让 svg 脱离 inline 布局**，而不是去动 `line-height`：
+	 * 改 `line-height` 会把盒高重新撑回 30.24px（那正是 §82 修掉的 +8.64px）。
+	 * `display: block` 后 svg 直接填满 21.6px 的盒，偏移为 0，
+	 * 且计算值与线上（flex item 被块化成 `block`）一致。
+	 *
+	 * 页脚早就有这条（`.sidebar-footer menu a .nav-icon .iconify{display:block}`），
+	 * 只有导航项漏了。`scripts/check-icon-box.mjs` 盯住这一条。
+	 */
+	display: block;
+}
+
+.sidebar-nav-item-parent .nav-text,
+.sidebar-nav-item > .nav-text {
+	flex-grow: 1;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+/*
+ * **不要**在这里加 `.iconify + span { margin-inline-start: .2em }`。
+ *
+ * 线上 CSS 里确实有那条规则（`.iconify+span{margin-inline-start:.2em}`），
+ * 照抄过来会让图标与文字的距离从 7.19px 变成 10.06px——**比不抄还差**。
+ *
+ * 因为那条规则在线上**也没有生效**：它是 BlogSidebar 的 scoped 规则，
+ * 编译成 `.iconify+span[data-v-b9cd0204]`，要求**两个元素都**带 BlogSidebar
+ * 的 scope id；而 `span.iconify` 由 `@nuxt/icon` 渲染，带的是它自己的 id。
+ * ⇒ 永不匹配。实测线上 `getComputedStyle(navText).marginInlineStart === '0px'`，
+ * 真实的图标文字间距就是 flex 的 `gap: .5em` = 7.2px。
+ *
+ * **「源码里有这条规则」不等于「这条规则在跑」。**
+ * 要判断一条 CSS 是否生效，唯一可靠的办法是读它的 computed value，
+ * 不是读它的选择器——这与坑位 1「合并 class 之后还要确认它落在哪一层」同源。
+ */
+
+.sidebar-nav-item-parent .external-tip,
+.sidebar-nav-item > .external-tip {
+	opacity: 0.5;
+	font-size: 1em;
+}
+
+.sidebar-nav-item-parent.open {
+	background-color: var(--c-bg-soft);
+	color: var(--c-text);
+}
+
+/* 折叠列表和叶子列表共用同一份链接标记，层级差别只由容器规则给出 */
+.sidebar-nav-leaf,
+.sidebar-subnav {
+	margin: 0;
+	padding: 0;
+}
+
+.sidebar-subnav {
+	margin-block: 0.2em 0;
+	margin-inline-start: 1.2rem;
+}
+
+.sidebar-subnav li {
+	margin: 0.25em 0;
+}
+
+/* 子项比顶层项更紧凑；用后代选择器压过 .sidebar-nav-item，不依赖书写顺序 */
+.sidebar-subnav .sidebar-nav-item {
+	padding-inline-start: 0.5em;
+	font-size: 0.9em;
+}
+
+.sidebar-subnav .sidebar-nav-item > .nav-icon {
+	font-size: 1.1em;
+}
+
+.nav-toggle-icon {
+	transition: transform 0.2s;
+
+	&.open {
+		transform: scaleY(-1);
+	}
+}
+
+.search-btn {
+	opacity: 0.5;
+	width: 100%;
+	margin: 1rem 0;
+	outline: 2px solid var(--c-border);
+	outline-offset: -2px;
+	/* button 的 UA 样式是 text-align: center，会被内部文字继承 */
+	text-align: start;
+	cursor: text;
+	user-select: none;
+
+	&:hover,
+	&:focus-visible {
+		opacity: 1;
+		outline-color: transparent;
+		background-color: transparent;
+	}
+}
+
+.sidebar-footer {
+	--gap: clamp(0.5rem, 3vh, 1rem);
+
+	display: grid;
+	gap: var(--gap);
+	position: relative;
+	padding: var(--gap);
+	font-size: 0.8em;
+	text-align: center;
+	color: var(--c-text-2);
+}
+
+.sidebar-footer > * {
+	position: relative;
+	z-index: 1;
+}
+
+/*
+ * 内联自 `app/components/partial/IconNavList.vue`。
+ * 那边是组件内的 `<style scoped>`，根元素 `<menu>` 没类名，编译成
+ * `menu[data-v-x]` / `menu[data-v-x] a[data-v-x]`。
+ *
+ * **三条规则必须全部写成扁平的顶层 `:global()`，不能嵌套。**
+ * 第一版把它们塞进 `:global(.sidebar-footer menu) { … }` 里，
+ * 编译出来是 `:global(.sidebar-footer menu) :global(.sidebar-footer menu a)`，
+ * 也就是「menu 里面还要再有一个 menu」——**永不匹配，而且不报错**。
+ * 第二版把 `.nav-icon` 那条单独拎出来却仍然留在嵌套块里，同样是死规则，
+ * 实测 `a` 高 30.7 一动不动。`:global()` 只作用于紧邻的选择器、
+ * 不向嵌套传播，嵌套块里的每一条都得自己重新全局化，
+ * 而重新全局化之后嵌在父选择器里就变成了后代组合——两条路都走不通。
+ */
+:global(.sidebar-footer menu) {
+	display: flex;
+	justify-content: center;
+}
+
+:global(.sidebar-footer menu a) {
+	padding: 0.5em;
+	border-radius: 2em;
+	transition: background-color 0.2s;
+}
+
+:global(.sidebar-footer menu a:hover) {
+	background-color: var(--c-bg-soft);
+}
+
+/*
+ * `display: block` 本身是必须的：线上是 `a .iconify{display:block}`，
+ * 块盒不产生行盒；Astro 若留成 inline，行盒按 1.4em 撑到 17.92px，
+ * 实测 `a` 高 30.7 vs 线上 28.1，多出的正好是 17.92 − 15.36 = 2.56。
+ *
+ * 注意**不能**加 `width/height: 1em`：这里线上是正确的 **1.2em**
+ * （`IconNavList.vue` 没写 font-size，所以 `:where(.iconify)` 的默认值生效），
+ * 盒高实测 15.36 = 12.8 × 1.2。导航项那边才需要 1em（见上面那条）。
+ */
+:global(.sidebar-footer menu a .nav-icon) {
+	display: block;
+}
+
+/*
+ * 上一条还不够：它只消掉了包装层**自身**的基线间隙，
+ * 内层 `<svg class="iconify">` 仍是 `inline-block`，在块盒里又生成一个行盒，
+ * 行盒高 = max(strut 17.92, svg 15.36) = 17.92，
+ * 于是 `a` 高 30.7 vs 线上 28.1（实测两轮都没动）。
+ *
+ * 线上 `IconNavList.vue` 写的是 `a .iconify{display:block}`——
+ * 被置成块的是**承载图标的那个元素**。线上 iconify 的图标内容本身也是块级的
+ * （web component 内部），所以盒高就是 15.36px，没有行盒。
+ * Astro 侧承载者是 `span.nav-icon`、内容是 `svg.iconify`，
+ * 要还原就得让**内层 svg** 也变块。
+ */
+:global(.sidebar-footer menu a .nav-icon .iconify) {
+	display: block;
+}
+</style>

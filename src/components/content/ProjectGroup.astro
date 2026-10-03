@@ -1,0 +1,316 @@
+---
+import Icon from '../Icon.astro'
+import { joinWith } from '../../lib/shared'
+
+/**
+ * 项目分组组件
+ * 用于展示单个或多个项目卡片，支持分组标题和网格布局
+ *
+ * 使用方式：
+ * - 单个项目：传入 singleTitle/singleDescription/singleIcon/singleLink
+ * - 多个项目：传入 items 数组
+ *
+ * 纯静态，无客户端脚本。三处适配：
+ * 1. `NuxtImg` → 裸 `<img>`（Astro 侧图片优化属 Phase 5）。
+ * 2. 图标不再用 `class="project-icon"` 传给 `<Icon>`：Icon 只声明了 `name`，
+ *    未声明的属性会被 Astro **静默丢弃**（没有 Vue 的 attribute fallthrough），
+ *    所以改用一层带 `.project-icon` 的 span 承载尺寸，视觉效果与原版一致。
+ * 3. `icon` 具名插槽：原 Vue 版多项目模式是 `<slot name="icon" :item="item">`，
+ *    逐项传 slot prop，而 MDX 无法表达带 prop 的具名 slot。
+ *    这里退化为「有 icon 插槽就替换所有项的图标」，没有则用默认解析结果。
+ *    现有内容（about.mdx、noctalia-plugin-process-reporter.mdx、example.mdx）
+ *    均未使用该插槽，故无实际影响。
+ */
+interface ProjectItem {
+	/** 项目标题 */
+	title: string
+	/** 项目描述，可选 */
+	description?: string
+	/** 项目图标，支持 Iconify 图标名或图片 URL */
+	icon?: string
+	/** 项目链接，可选 */
+	link?: string
+}
+
+interface Props {
+	/** 分组标题，可选（仅 items 模式下显示） */
+	title?: string
+	/** 项目标题（单项目模式） */
+	singleTitle?: string
+	/** 项目描述（单项目模式） */
+	singleDescription?: string
+	/** 项目图标（单项目模式） */
+	singleIcon?: string
+	/** 项目链接（单项目模式） */
+	singleLink?: string
+	/** 项目列表（多项目模式） */
+	items?: ProjectItem[]
+	/** MDX 传入的 className；Astro 没有 attribute fallthrough，需显式接收后合并 */
+	class?: string
+}
+
+const {
+	title,
+	singleTitle,
+	singleDescription,
+	singleIcon,
+	singleLink,
+	items,
+	class: className,
+} = Astro.props
+
+// 判断是否为单项目模式
+const isSingleMode = singleTitle !== undefined || !items || items.length === 0
+
+/** 解析图标类型：URL（含 http 或 /）用图片，否则作为 Iconify 图标名 */
+function resolveIcon(icon?: string) {
+	if (!icon)
+		return null
+	if (icon.includes('http') || icon.startsWith('/'))
+		return { type: 'img' as const, value: icon }
+	return { type: 'iconify' as const, value: icon }
+}
+
+/** 归一化：两种模式共用同一份卡片数据 */
+const singleItem: ProjectItem = {
+	title: singleTitle ?? '',
+	description: singleDescription,
+	icon: singleIcon,
+	link: singleLink,
+}
+
+const single = singleItem.title
+	? [{
+		...singleItem,
+		resolved: resolveIcon(singleItem.icon),
+		titleAttr: singleItem.link
+			? joinWith([singleItem.title, singleItem.description, singleItem.link])
+			: singleItem.title,
+	}]
+	: []
+
+const group = isSingleMode
+	? []
+	: (items ?? []).map(item => ({
+		...item,
+		resolved: resolveIcon(item.icon),
+		titleAttr: item.link
+			? joinWith([item.title, item.description, item.link])
+			: item.title,
+	}))
+---
+
+{/* 单项目模式 */}
+{single.map(card => (
+	card.link
+		? (
+			<a
+				class:list={['project-card', className]}
+				href={card.link}
+				target="_blank"
+				rel="noopener noreferrer"
+				title={card.titleAttr}
+			>
+				<slot name="icon" />
+				{card.resolved?.type === 'iconify' && (
+					<span class="project-icon"><Icon name={card.resolved.value} /></span>
+				)}
+				{card.resolved?.type === 'img' && (
+					<img class="project-icon-img" src={card.resolved.value} alt={card.title} />
+				)}
+				<div class="project-info">
+					<div class="project-title">
+						{card.title}
+					</div>
+					{card.description && (
+						<div class="project-description">
+							{card.description}
+						</div>
+					)}
+				</div>
+			</a>
+		)
+		: (
+			<div class:list={['project-card', className]} title={card.titleAttr}>
+				{card.resolved?.type === 'iconify' && (
+					<span class="project-icon"><Icon name={card.resolved.value} /></span>
+				)}
+				{card.resolved?.type === 'img' && (
+					<img class="project-icon-img" src={card.resolved.value} alt={card.title} />
+				)}
+				<div class="project-info">
+					<div class="project-title">
+						{card.title}
+					</div>
+					{card.description && (
+						<div class="project-description">
+							{card.description}
+						</div>
+					)}
+				</div>
+			</div>
+		)
+))}
+
+{/* 多项目模式 */}
+{group.length > 0 && (
+	<section class:list={['project-group', className]}>
+		{title && (
+			<h2 class="project-group-title">
+				{title}
+			</h2>
+		)}
+		<div class="project-grid">
+			{group.map(card => (
+				card.link
+					? (
+						<a
+							class="project-card"
+							href={card.link}
+							target="_blank"
+							rel="noopener noreferrer"
+							title={card.titleAttr}
+						>
+							<slot name="icon" />
+							{card.resolved?.type === 'iconify' && (
+								<span class="project-icon"><Icon name={card.resolved.value} /></span>
+							)}
+							{card.resolved?.type === 'img' && (
+								<img class="project-icon-img" src={card.resolved.value} alt={card.title} />
+							)}
+							<div class="project-info">
+								<div class="project-title">
+									{card.title}
+								</div>
+								{card.description && (
+									<div class="project-description">
+										{card.description}
+									</div>
+								)}
+							</div>
+						</a>
+					)
+					: (
+						<div class="project-card" title={card.titleAttr}>
+							<slot name="icon" />
+							{card.resolved?.type === 'iconify' && (
+								<span class="project-icon"><Icon name={card.resolved.value} /></span>
+							)}
+							{card.resolved?.type === 'img' && (
+								<img class="project-icon-img" src={card.resolved.value} alt={card.title} />
+							)}
+							<div class="project-info">
+								<div class="project-title">
+									{card.title}
+								</div>
+								{card.description && (
+									<div class="project-description">
+										{card.description}
+									</div>
+								)}
+							</div>
+						</div>
+					)
+			))}
+		</div>
+	</section>
+)}
+
+<style>
+.project-group {
+	margin: 1.5rem 0;
+	padding: 1rem;
+	border: 1px solid var(--c-border);
+	border-radius: 0.5rem;
+	background-color: var(--c-bg-1);
+}
+
+.project-group-title {
+	margin: 0 0 0.8rem;
+	font-size: 1rem;
+	font-weight: 600;
+	color: var(--c-text-1);
+}
+
+.project-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+	gap: 0.6rem;
+
+	@media (max-width: 768px) {
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.5rem;
+	}
+
+	@media (max-width: 528px) {
+		grid-template-columns: 1fr;
+		gap: 0.5rem;
+	}
+}
+
+.project-card {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	padding: 0.6rem 0.8rem;
+	border-radius: 0.4rem;
+	line-height: 1.3;
+	text-decoration: none;
+	color: inherit;
+	transition: all 0.2s ease;
+
+	&[href]:hover {
+		box-shadow: 0 2px 8px var(--ld-shadow);
+		background-color: var(--c-bg-soft);
+		transform: translateY(-1px);
+	}
+}
+
+.project-icon {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	font-size: 1.6rem;
+}
+
+.project-icon-img {
+	flex-shrink: 0;
+	width: 1.8rem;
+	height: 1.8rem;
+	border-radius: 0.3rem;
+	object-fit: cover;
+}
+
+.project-info {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 0.1rem;
+	min-width: 0;
+}
+
+.project-title {
+	display: -webkit-box;
+	overflow: hidden;
+	margin: 0;
+	font-size: 0.95rem;
+	font-weight: 500;
+	-webkit-line-clamp: 1;
+	line-clamp: 1;
+	line-height: 1.2;
+	-webkit-box-orient: vertical;
+}
+
+.project-description {
+	display: -webkit-box;
+	overflow: hidden;
+	opacity: 0.6;
+	margin: 0;
+	font-size: 0.75rem;
+	-webkit-line-clamp: 1;
+	line-clamp: 1;
+	line-height: 1.2;
+	-webkit-box-orient: vertical;
+}
+</style>

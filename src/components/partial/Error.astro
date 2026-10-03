@@ -1,0 +1,125 @@
+---
+/**
+ * Error 组件（Astro 版）。纯静态。
+ *
+ * API 变化 / 降级：
+ * 1. `v-html="title"` → `set:html`（Astro 侧输出未转义 HTML 的方式）。
+ * 2. `<ProsePre :code language meta="wrap">` → 静态 `<pre><code>`。
+ *    Astro 侧尚无 ProsePre 组件（见 MIGRATION-BRIEF 的组件映射表），
+ *    按 `Mermaid.astro` 已确立的先例降级为静态 pre。代码高亮属 Phase 4/5。
+ * 3. `Icon` 占位实现不接受未声明的 prop，`class="error-icon"` 会被丢弃
+ *    （见 MIGRATION-BRIEF 基础设施一节），故外面套一层 `.error-icon` 承载样式。
+ */
+import Icon from '../Icon.astro'
+
+interface Props {
+	icon?: string
+	title?: string
+	message?: string
+	code?: string
+	language?: string
+}
+
+const {
+	icon = 'line-md:cloud-alt-print-twotone-loop',
+	title,
+	message,
+	code,
+	language = 'log',
+} = Astro.props
+---
+
+<div class="error proper-height">
+	<div />
+	<span class="error-icon"><Icon name={icon} /></span>
+	<div class="error-title" set:html={title} />
+
+	<div class="operation">
+		<slot name="operation" />
+	</div>
+
+	{code && (
+		<div class="error-code">
+			{message && <div class="error-code-filename">{message}</div>}
+			<pre><code class={`language-${language}`}>{code}</code></pre>
+		</div>
+	)}
+
+	<slot />
+</div>
+
+<style>
+.error {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 2rem;
+
+	> .error-icon {
+		font-size: 5rem;
+		color: var(--c-text-3);
+
+		/*
+		 * 把内层 `<svg class="iconify">` 拉回 1em。
+		 *
+		 * 线上 Nuxt 的 `<Icon class="error-icon" :name="icon" />` 把两个类放在**同一个**
+		 * 元素上：`<span class="iconify i-line-md:document-delete-twotone error-icon">`，
+		 * 由 Iconify 运行时给它 1em×1em 的盒子。`main.css` 的
+		 * `:where(.iconify){font-size:1.2em}` 特异性是 **0**，而
+		 * `.error > .error-icon[data-v-N]` 是 (0,3,0) —— 5rem 赢，盒子正好 80×80。
+		 *
+		 * Astro 侧拆成了两层：`.error-icon` 落在本组件自己包的 `<span>` 上，
+		 * `.iconify` 落在内层 `<svg>` 上（astro-icon 的 `<Icon>` 组件自带一层包装）。
+		 * 于是 `1.2em` 作用在内层 svg 上，按外层 5rem 解析成 **6rem = 96px**。
+		 *
+		 * 实测（1600×1000）：
+		 *   线上   `.error-icon` 80×80，y=277.2；`.error-title` y=389.2
+		 *   Astro  `.error-icon` 96×112，y=261.2；`.error-title` y=405.2
+		 *
+		 * `display: block` 是为了去掉 inline-block 的基线间隙，
+		 * 使外层 span 高度正好等于 svg 高度（线上就是 1em×1em，不是行盒高）。
+		 * 顺带一提，`:where()` 零特异性这一点在这里救了场——换成普通 `.iconify`
+		 * 就会反过来压过组件样式，线上也是同一个道理。
+		 */
+		> :global(.iconify) {
+			font-size: 1em;
+			display: block;
+		}
+	}
+
+	> .error-title {
+		font-size: 1.5rem;
+		word-break: break-all;
+		color: var(--c-text-3);
+
+		/* title 走 set:html，可能含调用方传入的 <pre> */
+		> :global(pre) {
+			font-size: 1rem;
+			white-space: pre-wrap;
+		}
+	}
+
+	/*
+	 * 原本挂在 `> .z-codeblock` 上（ProsePre 的根类）。降级成静态 pre 后
+	 * 换成自己的类名，保留原有的「去掉代码块自身背景」效果。
+	 */
+	> .error-code {
+		max-width: 100%;
+
+		.error-code-filename {
+			opacity: 0.5;
+			margin-bottom: 0.4em;
+			font-size: 0.85em;
+		}
+
+		pre {
+			overflow-x: auto;
+			padding: 0.8em 1em;
+			border: 1px solid var(--c-border);
+			border-radius: 0.5em;
+			background-color: transparent;
+		}
+	}
+}
+</style>

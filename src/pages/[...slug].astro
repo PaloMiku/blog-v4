@@ -1,0 +1,166 @@
+---
+import { getCollection, render } from 'astro:content'
+import Blog from '../layouts/Blog.astro'
+import Collection from '../components/post/Collection.astro'
+import Comment from '../components/post/Comment.astro'
+import Excerpt from '../components/post/Excerpt.astro'
+import PostFooter from '../components/post/PostFooter.astro'
+import PostHeader from '../components/post/PostHeader.astro'
+import PostSurround from '../components/post/PostSurround.astro'
+import Toc from '../components/widget/Toc.astro'
+import { contentComponents } from '../lib/content-components'
+										import blogConfig from '../config/blog'
+
+// 对应 Nuxt 侧的 app/pages/[...slug].vue + content:file:afterParse 的 path 改写。
+// 条目 id 已由 content.config.ts 的 generateId 处理（permalink 优先，其次去 /posts 前缀）。
+export async function getStaticPaths() {
+	const entries = await getCollection('content')
+	return entries.map(entry => ({
+		params: { slug: entry.id },
+		props: { entry },
+	}))
+}
+
+const { entry } = Astro.props
+const { Content, headings } = await render(entry)
+
+/**
+ * 对齐线上：Nuxt 侧的「所属系列」区块**从来没有渲染过**，这里照同样口径处理。
+ *
+ * 证据（全站 63 页产物级核对，非推断）：
+ *   - `content/posts` 下只有 4 篇文章带 `collection:` frontmatter
+ *     （clannad-zh-linux / gal-up / koichoco-psp / maitetsu-video-fix）
+ *   - Nuxt 产物里 `post-collection` 出现 **0** 次；Astro 产物里出现 **4** 次
+ *   - 线上 https://blog.sotkg.com 同页同样没有这个区块
+ *
+ * 根因是 Nuxt 侧的一个静默失效（不是迁移引入的）：
+ *   `app/components/post/Collection.vue` 的 `collectionKey` 来自 `useArticle()`，
+ *   而 `useArticle()` 用的是 `useNuxtData(dataKey).data` —— 读的是 **payload 缓存**，
+ *   不是可等待的 promise。于是 Collection 自己的 `useAsyncData` 执行 handler 时
+ *   `post.value` 仍是 `undefined`，查询退化成 `Promise.resolve([])`，
+ *   空数组被写进 payload，客户端水合时不会重跑，`v-if` 永远为假。
+ *
+ * Astro 侧 `getByCollection()` 是构建期直接查，能拿到数据，于是「顺手修好」了它——
+ * 结果反而多出一个线上从来没有的 249px 区块。切流要求视觉一致，故显式关掉。
+ *
+ * 若要两边都修（推荐做法）：把 Nuxt 侧改成可等待的数据源后重新部署生产，
+ * 然后把下面这个常量改成 false 即可，Collection 组件本身不需要动。
+ */
+const PARITY_HIDE_COLLECTION = true
+
+// 对应 Nuxt 的 useWidgets()：frontmatter 的 aside 决定侧栏挂哪些组件。
+// `meta-aside-*` 由 rehype-meta-slots 提取成 metaSlots，消费侧需去掉 `meta-` 前缀。
+const asideNames = (entry.data.aside as string[] | undefined) ?? ['toc']
+const hasAside = asideNames.length > 0
+const tocHeadings = asideNames.includes('toc') ? headings : []
+
+/**
+ * 内容页的 BlogPosting 结构化数据。
+ *
+ * 基线的 unhead `schemaOrgGraph` 只有 WebSite + WebPage 两个节点
+ * （`app/app.vue` 里并没有 useSeoMeta，meta 是逐页声明的），
+ * 不含 headline / datePublished / author / image——这里补齐，属净增项。
+ * 用 `jsonLd` prop 传下去，Base.astro 不再反查内容集合。
+ */
+function toIsoDate(value?: string) {
+	if (!value)
+		return undefined
+	const [date, time = '00:00:00'] = value.split(' ')
+	// frontmatter 日期按 blog.config.ts 的 timeZone（Asia/Shanghai，1991 年后无夏令时）转 +08:00
+	return `${date}T${time}+08:00`
+}
+
+const siteUrl = blogConfig.url
+const canonicalUrl = new URL(`/${entry.id}`, siteUrl).toString()
+const imageUrl = entry.data.image ? new URL(entry.data.image, siteUrl).toString() : undefined
+
+const jsonLd: Record<string, unknown>[] = [
+	{
+		'@id': `${canonicalUrl}#blogposting`,
+		'@type': 'BlogPosting',
+		'headline': entry.data.title,
+		...(entry.data.description ? { description: entry.data.description } : {}),
+		...(imageUrl ? { image: imageUrl } : {}),
+		...(toIsoDate(entry.data.date) ? { datePublished: toIsoDate(entry.data.date) } : {}),
+		...(toIsoDate(entry.data.updated ?? entry.data.date) ? { dateModified: toIsoDate(entry.data.updated ?? entry.data.date) } : {}),
+		'author': {
+			'@type': 'Person',
+			'name': blogConfig.author.name,
+			'url': blogConfig.author.homepage,
+		},
+		'url': canonicalUrl,
+		'mainEntityOfPage': { '@id': `${canonicalUrl}#webpage` },
+		'isPartOf': { '@id': `${siteUrl}#website` },
+	},
+]
+---
+
+<Blog
+		title={entry.data.title ?? entry.id}
+		hasAside={hasAside}
+		description={entry.data.description}
+		image={entry.data.image}
+		ogType="article"
+		jsonLd={jsonLd}
+	>
+	{/*
+	 * 这里**不能再套一层 `<main>`**：布局层 `Blog.astro` 已经提供了
+	 * `<main id="main-content">`，一个文档只能有一个 main，嵌套是无效 HTML。
+	 *
+	 * 而且基线的层级是 `#main-content > [post-header, excerpt, article,
+	 * post-footer, surround-post, z-comment]` —— 全是兄弟节点。
+	 * 此前把 post-header 与 excerpt 放进了 `<article>` 内部，
+	 * 于是它们开始继承 `styles/article.css` 的正文样式
+	 * （那份文件的注释明说 `.article` 是正文样式的唯一入口），
+	 * 实测这正是「侧栏目录矮 126px、正文高 126px」两边抵消的来源之一。
+	 */}
+	{entry.data.title && (
+		<PostHeader
+			title={entry.data.title}
+			subtitle={entry.data.subtitle}
+			date={entry.data.date}
+			updated={entry.data.updated}
+			image={entry.data.image}
+			categories={entry.data.categories}
+			tags={entry.data.tags}
+			type={entry.data.type}
+			readingTime={entry.data.readingTime}
+		/>
+	)}
+
+	{/* 对应 Nuxt 侧的 `<PostExcerpt v-if="excerpt">`：frontmatter 无 description 时不输出 */}
+	{entry.data.description && <Excerpt excerpt={entry.data.description} />}
+
+	{/* `article` 只包正文本身，class 与基线一致 */}
+	<article class={`article md-${entry.data.type || 'tech'}`}>
+		<Content components={contentComponents} />
+	</article>
+
+	{!PARITY_HIDE_COLLECTION && <Collection currentId={entry.id} collectionKey={entry.data.collection} />}
+	{!entry.data.hideInfo
+		&& <PostFooter
+			title={entry.data.title}
+			path={`/${entry.id}`}
+			date={entry.data.date}
+			updated={entry.data.updated}
+			references={entry.data.references}
+		/>}
+	<PostSurround currentId={entry.id} />
+	<Comment />
+
+	<Fragment slot="aside">
+		{/* 只要 aside 里有 toc 就渲染。Nuxt 侧 Toc 是 widget 系统里的一环，
+		    始终挂载、无标题时由组件自己显示 `.no-toc` 占位；
+		    此前按 `tocHeadings.length > 0` 跳过，导致无目录的页面
+		    整个目录组件消失，而 `.no-toc` 的样式成了死 CSS。 */}
+		{asideNames.includes('toc') && <Toc headings={tocHeadings} />}
+	</Fragment>
+</Blog>
+
+<script>
+	// prose 增强层：代码块复制/换行/折叠、表格换行切换、段落引用、标题锚点。
+	// 标记由 src/plugins/prose.ts 在构建期生成，行为在这里补。
+	import { initProseEnhance } from '../lib/prose-enhance'
+
+	initProseEnhance()
+</script>

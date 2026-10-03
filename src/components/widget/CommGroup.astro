@@ -1,0 +1,95 @@
+---
+/**
+ * CommGroup 组件（Astro 版），对应 `app/components/widget/CommGroup.vue`。
+ * 纯静态内容 + 复制交互（复用已验收的 `content/Tip.astro`，其 `v-tip` 已属 Phase 4）。
+ *
+ * ## 作用域注意（陷阱 2/3）
+ * `.title` 是本组件渲染的，走 scoped 没问题。
+ * 但最后那条 `:deep(.bg-img).bg-img.bg-img` 指向的是 **BlogWidget** 渲染的背景图，
+ * 那张图带的是 BlogWidget 的 scope 属性、没有本组件的 scope，
+ * 所以祖先和后代**都要** `:global()`，否则这条规则永不匹配。
+ * 代价是它会命中所有 `.blog-widget` 里的 `.bg-img`——
+ * 目前全站只有本组件传了 `bgImg`（`rg 'bg-img' src/` 只有这一处），故可接受。
+ */
+import BlogWidget from '../blog/BlogWidget.astro'
+import Icon from '../Icon.astro'
+import Tip from '../content/Tip.astro'
+// 跨项目只读根 blog.config（与 src/lib/app-config.ts 同一模式）
+import blogConfig from '../../config/blog'
+---
+
+<BlogWidget
+	card
+	dim
+	title="闲聊/技术社区"
+	bgImg="https://blog-files.101045700.xyz/backgrounds/2b8b5c190c2176b1bc7732f957ce8af8.avif"
+	bgAside
+>
+	<div class="title text-creative">
+		次元技术宅
+	</div>
+
+	<Tip copy icon>
+		<span class="qq-icon"><Icon name="ri:qq-fill" /></span>
+		<span>{blogConfig.qqGroup}</span>
+	</Tip>
+</BlogWidget>
+
+<style>
+.title {
+	background-clip: text;
+	background-image: linear-gradient(60deg, var(--c-accent) -30%, var(--c-primary), var(--c-text-1));
+	background-position: 100% 0;
+	background-size: 200%;
+	font-size: 1.8em;
+	color: transparent;
+	transition: background-position 0.2s;
+
+	/* .blog-widget 由 BlogWidget 渲染，不带本组件 scope */
+	:global(.blog-widget:hover) & {
+		background-position: 0 0;
+	}
+}
+
+.qq-icon {
+	display: inline-block;
+	font-size: 1.1em;
+}
+
+/*
+ * 原版 `CommGroup.vue:35-38`：
+ *
+ *     .tip { font-size: 0.9em; line-height: 2; }
+ *
+ * 它是**这个组件的 scoped 规则**，却作用在 `<Tip>` 子组件的根元素上——
+ * 靠的正是 Vue 的「子组件根元素同时带父 scope id」，编译成
+ * `.tip[data-v-commgroup]`，即**只命中本组件子树里的 tip**。
+ * Astro 没有这个机制：`<Tip>` 渲染出的 `<span class="tip">` 带的是
+ * **Tip 自己的** cid，这里写 scoped 会永不匹配。
+ *
+ * 这条规则原先**整个缺失**，于是侧栏那个 QQ 联系方式的提示文字
+ * 用的是继承来的 14.4px / line-height 1.4，而线上是 12.96px / 25.92px
+ * （0.9em × 2）。首页 `.tip` 的 font-size / line-height 差异就是这么来的。
+ *
+ * ⚠️ 锚点用 `.blog-widget`（本组件渲染的 BlogWidget 根，见上面 `.title`
+ * 里同一个祖先的用法），不能只写裸 `:global(.tip)`：
+ * 裸的会连 `SearchModal.astro:64` 那个 `<div class="tip" data-search-tip>`
+ * 一起改掉——它在 Nuxt 侧拿不到 `[data-v-commgroup]`，不受这条规则影响。
+ * 今天看不出来，只因为那个元素带 `hidden` 且没被作者级 `display` 顶掉
+ * （`display: none`，整条不参与布局）。
+ * 特异度核对：Astro `.blog-widget .tip` = (0,2,0)，Vue `.tip[data-v-x]` = (0,2,0)，
+ * **逐位相同**——补回锚点没有偷偷加重。
+ */
+:global(.blog-widget) :global(.tip) {
+	font-size: 0.9em;
+	line-height: 2;
+}
+
+/*
+ * 原版是 `.bg-img`（BlogWidget 里 opacity: .2）的三倍特异性覆盖。
+ * 两端都在别的组件里，祖先 + 后代都要 :global()。
+ */
+:global(.blog-widget) :global(.bg-img) {
+	opacity: 0.5;
+}
+</style>

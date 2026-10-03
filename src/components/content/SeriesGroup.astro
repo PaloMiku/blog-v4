@@ -1,0 +1,398 @@
+---
+import Icon from '../Icon.astro'
+
+/**
+ * SeriesGroup 组件（Astro 版）：游戏/作品系列卡片。
+ *
+ * 结构与样式照搬 Nuxt 版。三处适配：
+ * 1. `NuxtImg` → 裸 `<img>`（Astro 侧图片优化属 Phase 5）。
+ * 2. `NuxtLink` → `<a>`，静态站没有客户端路由。
+ * 3. 展开按钮：原版只切换图标与 title（没有 v-show / 类名绑定），
+ *    所以布局本就不随点击变化，这里只还原图标切换这一行为。
+ *
+ * 关于 `openInNewTab`：原组件声明了该 prop，但模板里**并没有消费它**，
+ * `target="_blank"` 是写死在 `NuxtLink` 上的。这里保留 prop 声明以维持 API 不变，
+ * 但行为仍与原版一致（恒为 `_blank`）。要真正支持该 prop 需改动行为，故未擅自接线。
+ *
+ * 注：模板内的注释要用 Astro 的 JSX 注释语法（花括号包住 C 风格注释），
+ * 写成 HTML 的注释会被原样输出到产物里。
+ */
+interface Props {
+	/** 系列标题 */
+	title: string
+	/** 系列描述 */
+	description?: string
+	/** 系列封面图，支持多张 */
+	cover?: string | string[]
+	/** 系列详情路由 */
+	link?: string
+	/** 作品总数 */
+	count?: number
+	/** 是否在新标签页打开（原版未消费，见上方注释） */
+	openInNewTab?: boolean
+	/** MDX 传入的 className；Astro 没有 attribute fallthrough，需显式接收后合并 */
+	class?: string
+}
+
+const { title, description, cover, link, count, class: className } = Astro.props
+
+/* 规范化封面图为数组 */
+const covers = !cover
+	? []
+	: Array.isArray(cover) ? cover : [cover]
+---
+
+<div class:list={['series-group', className]}>
+	{/* 封面图区域 */}
+	<div class="cover-section">
+		<div class="cover-container">
+			{/* 堆叠图片 */}
+			<div class="cover-stack">
+				{covers.map((coverItem, index) => (
+					<div
+						class="stack-item"
+						style={`z-index:${covers.length - index};--i:${index}`}
+					>
+						<img class="cover-image" src={coverItem} alt={title} />
+					</div>
+				))}
+			</div>
+		</div>
+	</div>
+
+	{/* 信息区域 */}
+	<div class="info-section">
+		{/* 左侧信息内容 */}
+		<div class="info-content">
+			<h2 class="series-title">
+				{title}
+			</h2>
+			{!!description && (
+				<p class="series-description">
+					{description}
+				</p>
+			)}
+		</div>
+
+		{/* 统计和操作区域 */}
+		<div class="meta-actions">
+			{/* 统计信息 */}
+			{!!count && (
+				<div class="series-count">
+					<Icon name="tabler:device-gamepad-2" />
+					<span>共 {count} 部 Galgame</span>
+				</div>
+			)}
+
+			{/* 操作按钮 */}
+			<div class="action-area">
+				{/* 展开/收起按钮：原版只切换图标与 title，布局不随点击变化 */}
+				{covers.length > 1 && (
+					<button class="expand-btn" type="button" title="展开" data-series-toggle>
+						{/*
+						 * 两个状态都在构建期渲染好，由 CSS 按按钮上的 `.is-expanded` 挑一个显示。
+						 *
+						 * ⚠️ 不能只渲染一颗再在客户端换名字：astro-icon 是**构建期**渲染
+						 * `<svg><use href="#ai:tabler:chevron-down"></use></svg>`，字形写死在
+						 * `<use href>` 上，改 `data-icon` 属性不会有任何效果（Nuxt 的
+						 * `@nuxt/icon` 才有响应式 `:name`）。而 `<use>` 只能指向本页 sprite 里
+						 * 真实存在的 `<symbol>`：astro-icon 只为**本页渲染过**的图标发 symbol
+						 * （`includeSymbol = i === 0`，且 cache 挂在 `Astro.locals` 上按页隔离），
+						 * 指向一个本页没用过的名字就是空白图标——比现在这个 no-op 更糟。
+						 * 两颗都渲染出来，symbol 必然齐全，翻转退化成纯 CSS，零客户端 JS。
+						 */}
+						<Icon name="tabler:chevron-down" class="icon-collapsed" />
+						<Icon name="tabler:chevron-up" class="icon-expanded" />
+					</button>
+				)}
+
+				{/* 查看详情按钮 */}
+				{link && (
+					<a
+						class="detail-link"
+						href={link}
+						target="_blank"
+						rel="noopener noreferrer"
+						title="查看详情"
+					>
+						<Icon name="tabler:arrow-right" />
+						<span>查看详情</span>
+					</a>
+				)}
+			</div>
+		</div>
+	</div>
+</div>
+
+<script>
+	// 图标切换：原生脚本自行处理（Astro 的 <script> 会被去重合并，用 data 属性定位实例）
+	function initSeriesToggle(btn) {
+		if (!(btn instanceof HTMLElement) || btn.dataset.seriesReady)
+			return
+		btn.dataset.seriesReady = '1'
+
+		btn.addEventListener('click', () => {
+			// 用类名而不是 data 属性记状态：`dataset.x = ''` 也会**留下**属性，
+			// `[data-expanded]` 在收起态照样命中，图标会翻反。
+			const expanded = btn.classList.contains('is-expanded')
+			btn.classList.toggle('is-expanded', !expanded)
+			btn.title = expanded ? '展开' : '收起'
+			// 图标不用脚本换：两颗都在模板里，`.expand-btn.is-expanded` 的 CSS
+			// 决定显示哪一颗（见文件末尾的图标翻转规则）。改 data-icon 是 no-op。
+		})
+	}
+
+	function initAll() {
+		for (const btn of document.querySelectorAll('[data-series-toggle]'))
+			initSeriesToggle(btn)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.series-group {
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	overflow: hidden;
+	border: 1px solid var(--c-border);
+	border-radius: 0.5rem;
+	background-color: transparent;
+	transition: all 0.2s ease;
+}
+
+/* 封面图部分 */
+.cover-section {
+	flex-shrink: 0;
+	position: relative;
+	width: 100%;
+}
+
+.cover-container {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 16 / 6;
+	background-color: var(--c-bg-3);
+	cursor: pointer;
+}
+
+/* 堆叠图片容器 */
+.cover-stack {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	position: relative;
+	width: 100%;
+	height: 100%;
+	padding-left: 2rem;
+}
+
+.stack-item {
+	position: absolute;
+	overflow: hidden;
+	top: 50%;
+	width: auto;
+	height: 80%;
+	aspect-ratio: 16 / 9;
+	border-radius: 0.3rem;
+	box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
+	transform: translateY(-50%) translateX(calc(var(--i, 0) * 60px));
+	transition: transform 0.5s ease-out;
+
+	@media (prefers-color-scheme: dark) {
+		box-shadow: 0 2px 8px rgb(0 0 0 / 40%);
+	}
+}
+
+.cover-stack:hover .stack-item {
+	transform: translateY(-50%) translateX(calc(var(--i, 0) * 50%));
+}
+
+.cover-image {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+/* 信息部分 */
+.info-section {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	padding: 1rem;
+	border-top: none;
+
+	@media (prefers-color-scheme: dark) {
+		border-top-color: var(--c-border-dark, rgb(255 255 255 / 10%));
+	}
+}
+
+.info-content {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 0.4rem;
+	min-width: 0;
+}
+
+.series-title {
+	overflow-wrap: break-word;
+	margin: 0;
+	font-size: 1rem;
+	font-weight: 700;
+	line-height: 1.2;
+	color: var(--c-text);
+}
+
+.series-description {
+	display: -webkit-box;
+	overflow: hidden;
+	overflow-wrap: break-word;
+	margin: 0;
+	font-size: 0.8rem;
+	-webkit-line-clamp: 1;
+	line-clamp: 1;
+	line-height: 1.4;
+	color: var(--c-text-2);
+	-webkit-box-orient: vertical;
+}
+
+/* 统计和操作区域 */
+.meta-actions {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+
+/* 统计信息 */
+.series-count {
+	display: flex;
+	align-items: center;
+	gap: 0.3rem;
+	margin-top: 0;
+	font-size: 0.75rem;
+	color: var(--c-text-2);
+
+	/* Icon 目前是占位实现（Phase 4 换成真实 svg 后才会命中） */
+	:global(svg) {
+		opacity: 0.7;
+		width: 0.9em;
+		height: 0.9em;
+	}
+}
+
+/* 操作区域 */
+.action-area {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.5rem;
+}
+
+/* 展开/收起按钮 */
+.expand-btn {
+	display: none;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	width: 2.5rem;
+	height: 2.5rem;
+	padding: 0;
+	border: 1px solid var(--c-border-light, rgb(0 0 0 / 10%));
+	border-radius: 0.3rem;
+	background-color: var(--c-bg-soft);
+	color: var(--c-text-2);
+	transition: all 0.2s ease;
+	cursor: pointer;
+
+	&:hover {
+		border-color: var(--ld-primary, #4F46E5);
+		background-color: var(--c-bg-3);
+		color: var(--c-text);
+	}
+
+	:global(svg) {
+		width: 1.2rem;
+		height: 1.2rem;
+	}
+}
+
+/*
+ * 展开箭头的字形翻转：纯 CSS，零客户端 JS。
+ *
+ * `:global()` 是必须的——`<Icon>` 是子组件，它的根元素只带子组件自己的 scope id，
+ * 本组件的 scoped 选择器匹配不到（文件里既有的 `:global(svg)` 规则同理）。
+ * 不能用 `hidden` 属性代替：main.css 的 `.iconify { display:inline-block }` 属于
+ * 作者样式，优先级高于 UA 样式表里的 `[hidden] { display:none }`，`hidden` 会被吃掉。
+ */
+.expand-btn {
+	:global(.icon-expanded) {
+		display: none;
+	}
+
+	&.is-expanded {
+		:global(.icon-collapsed) {
+			display: none;
+		}
+
+		:global(.icon-expanded) {
+			display: inline-block;
+		}
+	}
+}
+
+/* 查看详情按钮 */
+.detail-link {
+	display: inline-flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	gap: 0.25rem;
+	padding: 0.5rem 1rem;
+	font-size: 0.8rem;
+	text-decoration: none;
+	color: var(--c-text-2);
+	transition: color 0.2s ease;
+
+	&:hover {
+		color: var(--c-text);
+	}
+
+	:global(svg) {
+		width: 1em;
+		height: 1em;
+	}
+}
+
+@media (max-width: 640px) {
+	.cover-container {
+		aspect-ratio: 8 / 2.5;
+	}
+
+	.info-section {
+		gap: 0.75rem;
+		padding: 0.75rem;
+	}
+
+	.series-title {
+		font-size: 0.95rem;
+	}
+
+	.action-area {
+		flex-wrap: wrap;
+	}
+
+	.detail-link {
+		flex: 1;
+		min-width: 120px;
+	}
+}
+</style>

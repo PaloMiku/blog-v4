@@ -1,0 +1,569 @@
+/**
+ * prose 增强层的样式。
+ *
+ * 对应 Nuxt 侧 `app/components/content/` 下五个从未移植的组件：
+ * `ProsePre` / `ProseP` / `ProseA` / `ProseCode` / `ProseTable`。
+ * 它们的 `<style scoped>` 在 Astro 侧没有对应物，标记补回来后必须有样式，
+ * 否则 `z-codeblock` 只是一只空壳。
+ *
+ * Vue 的 `:deep(.x)` 在这里就是普通后代选择器——prose 标记由 rehype 生成，
+ * 不带组件作用域。
+ *
+ * 引入位置：`index.css`，排在 `article.css` 之后——
+ * article.css 的 `blockquote > .z-codeblock` 需要能覆盖这里的块间距。
+ */
+
+/* ═══════════════════════ Shiki 亮色映射 ═══════════════════════
+ *
+ * 只给 **token（span）** 落地颜色，`pre` 本身不设 `color`。
+ *
+ * `main.css` 里既有的 `.shiki > .line > span` 段与 Nuxt **逐字节相同**，
+ * 但它只处理 `.dark &`（深色覆盖）。浅色侧的映射两边都没有——
+ * Nuxt 不需要，因为它的 ProsePre 在运行时调 shiki，直接输出内联 `color:`；
+ * Astro 用 `shikiConfig.defaultColor: false`，只输出
+ * `--shiki-light` / `--shiki-dark` 变量，必须由 CSS 落地，
+ * 否则代码 token 全部继承正文色（= 没有高亮）。这段是 Astro 侧独有的补丁。
+ *
+ * ⚠️ 曾经给 `.shiki` 本身也加了 `color: var(--shiki-light)`，**这是错的**：
+ * 实测线上 `pre` 的 color 是 `rgb(230,230,230)`——既不是 latte 前景
+ * `#4c4f69`，也不是 one-dark 前景 `#abb2bf`，说明 Nuxt 的 `pre` **根本没有自己的
+ * 颜色**，是继承来的正文色。而 `--shiki-light` 是无条件套上去的，
+ * 于是深色模式下会出现「深色背景 + 浅色主题前景」。
+ * 现在 base `pre` 继承、token 走 span 规则，两边结构一致。
+ *
+ * 背景色同理交给 `.z-codeblock pre { background-color: transparent }`，
+ * 那里有详细说明。
+ */
+
+/*
+.shiki {
+	color: var(--shiki-light);
+	background-color: var(--shiki-light-bg);
+}
+*/
+
+.shiki > .line > span,
+.shiki > span[style] {
+	color: var(--shiki-light);
+}
+
+/* ═══════════════════════ ProsePre：代码块 ═══════════════════════ */
+
+.z-codeblock {
+	--line-height: 1.4;
+
+	contain: paint;
+	margin: 0.5em 0;
+	border-radius: 0.5em;
+	background-color: var(--c-bg-2);
+	font-size: 0.85em;
+	line-height: 1.4;
+	tab-size: var(--tab-size, 4);
+
+	&.collapsible > pre {
+		padding-bottom: 0.5rem;
+	}
+
+	&.collapsed > pre {
+		overflow: hidden;
+		max-height: calc(var(--line-height) * var(--collapsed-rows) * 1em + 1rem);
+		mask-image: linear-gradient(to top, transparent -2em, #FFF 4em);
+		animation: none;
+	}
+}
+
+.z-codeblock figcaption {
+	display: flex;
+	justify-content: space-between;
+	gap: 1em;
+	position: sticky;
+	top: 0;
+	padding: 0 1em;
+	z-index: 2;
+
+	> .filename {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.2em;
+		padding: 0.2em 0.8em;
+		border-radius: 0 0 0.5em 0.5em;
+		background-color: var(--c-border);
+		word-break: break-all;
+	}
+
+	/* 语言不采用绝对定位：它和文件名占据互斥空间 */
+	> .language {
+		opacity: 0.4;
+		height: 0;
+		transform: translateY(0.2em);
+	}
+
+	> .operations {
+		position: absolute;
+		opacity: 0;
+		inset-inline-end: 0;
+		padding: 0 0.6em;
+		border-end-start-radius: 0.5em;
+		background-color: var(--c-bg-2);
+		transition: opacity 0.2s;
+
+		:hover > &, :focus-within > & {
+			opacity: 1;
+		}
+
+		> button {
+			opacity: 0.4;
+			padding: 0.2em 0.4em;
+			transition: opacity 0.2s;
+
+			&:hover {
+				opacity: 1;
+			}
+		}
+	}
+}
+
+.z-codeblock pre {
+	/* 填 0 会在 calc() 时出错 */
+	--start-offset: 4em;
+
+	padding: 1rem;
+	padding-inline-start: var(--start-offset);
+
+	/*
+	 * `background-color: transparent` 是 Astro 侧**必需**的补偿，不是多余的改动。
+	 *
+	 * Nuxt 的 ProsePre 在运行时调 plain-shiki，背景色由 shiki 以**内联 style**
+	 * 写在 `pre` 上；Astro 用 `defaultColor: false`，只在元素上留
+	 * `--shiki-light-bg` 变量，靠 `.shiki { background-color: var(--shiki-light-bg) }`
+	 * 落地——那会让代码块显示自己的浅色背景，而 Nuxt 显示的是外层 figure 的
+	 * `--c-bg-2`。实测两侧 background-color 一致，正是因为这条把它压回透明。
+	 *
+	 * 而 `border-radius: inherit` 是**多加的**：Nuxt 的 `pre` 规则
+	 * （ProsePre.vue:187-197）只有 `--start-offset` / `padding` / `.wrap`，
+	 * 圆角在外层 figure 上、pre 自己是直角。实测 Nuxt `pre` border-radius=0px、
+	 * Astro=6.8px（0.5em 继承自 figure）——每个代码块的四个角都不一样。
+	 * 已删除，恢复与基线一致。
+	 */
+	background-color: transparent;
+	tab-size: inherit;
+
+	&.wrap {
+		white-space: pre-wrap;
+	}
+}
+
+.z-codeblock .line {
+	&.diff {
+		background-color: var(--ld-bg-active);
+
+		&.add {
+			--line-indicator: "+ ";
+			--line-indicator-color: var(--c-success);
+			--ld-bg-active: var(--c-success-soft);
+		}
+
+		&.remove {
+			--line-indicator: "- ";
+			--line-indicator-color: var(--c-error);
+			--ld-bg-active: var(--c-error-soft);
+		}
+	}
+
+	&.highlighted {
+		--line-indicator-color: var(--c-text-1);
+
+		background-color: var(--ld-bg-active);
+
+		&.error {
+			--line-indicator-color: var(--c-error);
+			--ld-bg-active: var(--c-error-soft);
+		}
+
+		&.warning {
+			--line-indicator-color: var(--c-warning);
+			--ld-bg-active: var(--c-warning-soft);
+		}
+	}
+
+	&.focused {
+		--line-indicator: "→ ";
+		--line-indicator-color: var(--c-text-1);
+
+		display: inline-block;
+		position: relative;
+		box-shadow: 0 0 10rem 4rem var(--c-bg-2);
+		transition: box-shadow 0.2s;
+
+		@supports (color: color-mix(in srgb, transparent, transparent)) {
+			box-shadow: 0 0 0 100vmax color-mix(in srgb, transparent, var(--c-bg-2));
+		}
+
+		pre:hover > & {
+			box-shadow: none;
+		}
+	}
+
+	/* 行指示器 */
+	&::before {
+		content: var(--line-indicator, "") attr(data-line);
+		position: fixed;
+		inset-inline-start: 0;
+		width: var(--start-offset);
+		padding-inline-end: 1em;
+		background-color: var(--c-bg-2);
+		text-align: end;
+		color: var(--line-indicator-color, var(--c-text-3));
+		z-index: 1;
+	}
+
+	> .highlighted-word {
+		border-radius: 0.2em;
+		box-shadow: inset 0 0 0 1em var(--ld-bg-active);
+	}
+}
+
+.z-codeblock .toggle-btn {
+	display: block;
+	position: relative; /* 移动到 pre 上方 */
+	opacity: 0.3;
+	width: 100%;
+	padding: 0.2em;
+	border-end-start-radius: inherit;
+	border-end-end-radius: inherit;
+	background-color: var(--c-bg-3);
+	font-size: 1em;
+	transition: opacity 0.2s;
+
+	&:hover {
+		opacity: 1;
+	}
+}
+
+.z-codeblock .toggle-icon {
+	margin-inline-end: 0.2em;
+	transition: all 0.2s;
+
+	&.is-collapsed {
+		transform: rotate(180deg);
+	}
+}
+
+/* ═══════════════════════ ProseP：段落 ═══════════════════════ */
+
+.prose-paragraph {
+	position: relative;
+
+	&.has-quote-button {
+		padding-inline-end: 1.8em;
+	}
+
+	> .paragraph-quote-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		position: absolute;
+		opacity: 0;
+		inset-inline-end: 0.15em;
+		top: 0.15em;
+		padding: 0.16em;
+		border-radius: 0.35em;
+		line-height: 1;
+		color: var(--c-text-2);
+		transition: 0.2s;
+		pointer-events: auto;
+
+		/*
+		 * 必须显式压住 `hidden`。
+		 *
+		 * 上面那条 `display: inline-flex` 是**作者级**样式，而 UA 的
+		 * `[hidden] { display: none }` 优先级更低——于是 `prose.ts` 在构建期
+		 * 插进每个段落的那个 `hidden` 按钮**一直占位可见**。
+		 * 实测代价：34 个段落 × 约 60px = **正文虚高 2036px**（/2025/05/fediverse）。
+		 *
+		 * `prose-enhance.ts` 只在「评论区存在 + 桌面指针设备」时才
+		 * `removeAttribute('hidden')`，所以线上走的是「运行时插入 / 不插入」，
+		 * 静态产物里不该留下任何占位。
+		 *
+		 * 这与 §32 记录的「`hidden` 属性被作者级 `display` 压过」是同一类问题。
+		 */
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		&:hover > .paragraph-quote-btn,
+		> .paragraph-quote-btn:hover,
+		> .paragraph-quote-btn:focus-visible {
+			opacity: 0.85;
+		}
+	}
+
+	@media (hover: none), (pointer: coarse) {
+		> .paragraph-quote-btn {
+			opacity: 0;
+			transition: opacity 0.2s;
+		}
+
+		&.has-quote-button > .paragraph-quote-btn {
+			opacity: 1;
+		}
+	}
+
+	> .paragraph-quote-btn:hover,
+	> .paragraph-quote-btn:focus-visible {
+		opacity: 1;
+		color: var(--c-primary);
+	}
+}
+
+/* ═══════════════════════ ProseA：链接 ═══════════════════════ */
+
+.z-link[href] {
+	margin: -0.1em -0.2em;
+	padding: 0.1em 0.2em;
+	background: linear-gradient(var(--c-primary-soft), var(--c-primary-soft)) no-repeat center bottom / 100% 0.1em;
+	color: var(--c-primary);
+	transition: all 0.2s;
+
+	&:hover {
+		border-radius: 0.3em;
+		background-size: 100% 100%;
+	}
+
+	.domain-icon {
+		margin-inline-end: 0.1em;
+	}
+}
+
+/* v-tip 浮层：对应 ProseA.vue:10-13。文案（data-tip）由 plugins/prose.ts 在
+   构建期写入，显示/隐藏与定位由 src/lib/prose-enhance.ts 负责。
+   沿用 main.css 的 .tippy-box 外观，这里只补定位与「不吃事件」两点。 */
+.z-link-tip {
+	position: absolute;
+	max-width: 20em;
+	word-break: break-all;
+
+	/* Nuxt 的这个 tooltip 不是 interactive，浮层本体不能吃掉链接的点击 */
+	pointer-events: none;
+	z-index: var(--z-index-popover);
+}
+
+/* ═══════════════════════ ProseCode：行内代码 ═══════════════════════ */
+
+/*
+ * 原来写下来的 `p > code, li > code, td > code, th > code` 是**枚举父元素**，
+ * 等价性只在「code 是 p/li/td/th 的直接子元素」时成立。
+ *
+ * 线上真身是 `ProseCode.vue` 的 `<style scoped> code { … }`，
+ * Vue 编译成 `code[data-v-cee6d9c7]` —— 那是**组件根元素**，
+ * 对任意嵌套深度都生效。全站只有 ProseCode 给 `code` 写过样式
+ * （FeedCard 的 `.domain`、`.copy` 块都是别的组件，不带这个 scope id）。
+ *
+ * 反例（实测）：`/2025/10/lemmy-fediverse-deploy` 有一处
+ * `<code>/var/lib/postgresql/data</code>` 嵌在 `<strong>` 里
+ * （`p > strong > code`），枚举式选择器漏掉它 →
+ * 16px / 无边框 / 无内边距，而线上是 13.6px + 1px 边框 + 4.08px 内边距。
+ *
+ * Astro 没有组件 scope，这里按同一集合重新判定：文章内、且不在 pre 里、
+ * 且不是另外两个组件的 code。
+ *   - `:not(pre code)`：块级代码。Astro 的 `<pre>` 由 `.z-codeblock` 渲染，
+ *     排除它才不会把围栏代码也涂上行内代码的边框。
+ *   - `:not(.copy)`：`.copy` 块本身就是 `<code class="copy">`（Nuxt 产物实测 13 处），
+ *     它有自己的 `contain/border/display:flex`，线上不叠加行内代码样式。
+ *   - `:not(.domain)`：`/link` 好友卡里的域名，文章外也有，保险起见一并排除。
+ * 集合口径来自 `.output/public` 与 `astro-site/dist` 全站 `<code>` 标签普查：
+ * 线上 = 300 无 class + 4 带 language-*（均在 ProseCode 上）+ 37 .domain + 13 .copy。
+ */
+article code:not(pre code):not(.copy):not(.domain),
+article p > code,
+article li > code,
+article td > code,
+article th > code,
+p > code,
+li > code,
+td > code,
+th > code {
+	margin: 0.1em;
+	padding: 0.1rem 0.3em;
+	border: 1px solid var(--c-border);
+	border-radius: 4px;
+	background-color: var(--c-bg-2);
+	font-size: 0.85em;
+	white-space: break-spaces;
+
+	&.copyable {
+		padding-inline-end: 0.1em;
+	}
+
+	@supports (color: color-mix(in srgb, transparent, transparent)) {
+		border-color: color-mix(in srgb, currentcolor 10%, transparent);
+		background-color: color-mix(in srgb, currentcolor 5%, transparent);
+	}
+}
+
+code > .copy-button {
+	display: inline-flex;
+	margin-inline-start: 0.2em;
+	vertical-align: -0.2em;
+	color: var(--c-text-3);
+	transition: color 0.2s;
+
+	&:hover,
+	&:focus-visible {
+		opacity: 1;
+		color: var(--c-primary);
+	}
+
+	> .inline-code-icon {
+		display: block;
+
+		&.is-copied {
+			color: var(--c-success);
+		}
+	}
+}
+
+/* 行内代码为了接上 `.shiki` 的双主题变量映射（Nuxt mountInline 也加这个类，
+   useShiki.ts:114）而被标成 .shiki，于是上面那段通用 `.shiki` 规则会来抢背景：
+   `--shiki-light-bg` 只存在于围栏代码块的根节点上，行内代码取不到，
+   var() 失效会让 background-color 退回 transparent。特异性 0,1,1 > 0,1,0，
+   这里把行内代码自己的底色抢回来。 */
+code.shiki {
+	background-color: var(--c-bg-2);
+	color: inherit;
+}
+
+@supports (color: color-mix(in srgb, transparent, transparent)) {
+	code.shiki {
+		background-color: color-mix(in srgb, currentcolor 5%, transparent);
+	}
+}
+
+/* Nuxt 侧在复制成功前用 v-show 藏起 check 图标，复制后替换 copy 图标。
+   这里保留同样的结构：check 默认隐藏，由脚本切换两个图标的显隐。 */
+.inline-code-check {
+	display: none;
+}
+
+/* ═══════════════════════ ProseTable：表格 ═══════════════════════ */
+
+.md-table {
+	position: relative;
+	margin: 1rem 0;
+	font-variant-numeric: tabular-nums;
+	font-size: 0.9em;
+	line-height: 1.4;
+	word-break: break-all;
+
+	table.scroll {
+		contain: layout; /* 防止 KaTeX 撑开宽度 */
+		display: block;
+		white-space: nowrap;
+		word-break: normal;
+	}
+
+	> table {
+		max-height: 80vh;
+		max-height: 80dvh;
+		margin: auto;
+		border-collapse: collapse;
+
+		> thead {
+			position: sticky;
+			top: 0;
+			z-index: 1; /* 链接的域名图标会透到表头上方 */
+		}
+
+		th {
+			background-color: var(--c-bg-2);
+			font-weight: bold;
+			text-align: center;
+		}
+
+		tr {
+			transition: background-color 0.2s;
+
+			&:hover {
+				background-color: var(--c-bg-2);
+			}
+		}
+
+		th, td {
+			padding: 0.5em 0.8em;
+			border: 1px solid var(--c-border);
+		}
+	}
+}
+
+/*
+ * 换行切换按钮。Nuxt 侧是 `<Tooltip interactive :delay="500">`，按钮在浮层**内容**里，
+ * 静态 HTML 里根本没有这个节点；这里把浮层壳子补出来（plugins/prose.ts 的
+ * buildTable），`.tippy-box` / `.tippy-content` 让 main.css:150 的既有样式生效。
+ *
+ * 500ms 延迟用 transition-delay 实现，不用 JS：
+ *   - 悬停 / 键盘聚焦 → 停 0.5s 再淡入（vue-tippy 的 delay: 500）
+ *   - 移开          → 立刻淡出（tippy 默认 hide 延迟为 0）
+ * 初始态是 opacity: 0 而不是 display/visibility 隐藏，这样按钮始终可点可聚焦，
+ * scripts/interaction-check.mjs 的 `click('[data-md-table-action]')`（无 hover）
+ * 才不会被可见性检查卡住。
+ */
+.md-table-toggle-box {
+	display: block;
+	position: absolute;
+	opacity: 0;
+	inset-block-end: calc(100% + 0.2em);
+	inset-inline-end: 0;
+	padding: 0.2em;
+	/* .tippy-box 自带 float-in 入场动画；显隐交给 opacity 过渡，别让两者打架 */
+	transition: opacity 0.15s;
+	animation: none;
+	z-index: 2;
+
+	:hover > &,
+	:focus-within > & {
+		opacity: 1;
+		transition: opacity 0.2s 0.5s;
+	}
+}
+
+.md-table-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.2em;
+	padding: 0.3em 0.5em;
+	border-radius: 0.3em;
+	white-space: nowrap;
+	text-align: start;
+	color: var(--c-text-1);
+	transition: color 0.1s, background-color 0.2s;
+	cursor: pointer;
+
+	&:hover,
+	&:focus-visible {
+		background-color: var(--c-bg-soft);
+		color: var(--c-text-1);
+	}
+}
+
+/* 两个图标对应 Nuxt 的 scroll ? text-wrap : text-wrap-disabled，
+   由浮层上的 md-table-scroll 状态类切换（初值由构建期写死，切换时由
+   src/lib/prose-enhance.ts 同步）。 */
+.md-table-icon {
+	display: inline-flex;
+}
+
+.md-table-icon-scroll {
+	display: none;
+}
+
+.md-table-toggle-box:not(.md-table-scroll) {
+	.md-table-icon-wrap {
+		display: none;
+	}
+
+	.md-table-icon-scroll {
+		display: inline-flex;
+	}
+}

@@ -1,0 +1,189 @@
+---
+/**
+ * Dropdown 组件（Astro 版）。原生脚本实现，**替代 vue-tippy**。
+ *
+ * ═══ 降级说明 ═══
+ * 原组件是 vue-tippy 的 `<Tooltip interactive placement="bottom" hide-on-click=false>`。
+ * vue-tippy 是 Vue runtime 依赖，Astro 侧不可用（tooltip 能力整体属 Phase 4）。
+ * 这里用一段 ~40 行原生脚本实现等价的「触发器 + 面板」下拉，
+ * 并**沿用 `.tippy-box` / `.tippy-content` 类名**，让 `src/styles/main.css`
+ * 里已有的 `.tippy-box` 样式继续生效。
+ *
+ * ═══ API 变化（重要，影响调用方）═══
+ * 1. 原 `<template #content="{ hide }">` 给内容 slot 传了一个 `hide` 函数，
+ *    调用方写 `@click="hide(), category = undefined"`。
+ *    **Astro 的 slot 不能接收 slot props**，故改为约定式：
+ *    面板内任何带 `data-dropdown-item` 的元素被点击时，脚本自动关闭面板。
+ *    调用方只需写 `<button data-dropdown-item>`，不再调 `hide()`。
+ * 2. `trigger` 保留 vue-tippy 的取值（'click' | 'focusin' | 'hover'），
+ *    默认 'click'。OrderToggle 用的是 `trigger="focusin"` + `tabindex="0"`。
+ * 3. `tabindex` 原靠 fallthrough 落在根元素上，Astro 无 fallthrough，故显式声明。
+ * 4. 位置策略从 tippy 的浮层定位改为 `position: absolute`（面板挂在根元素内）。
+ *    原组件因为 Tooltip 在组件根部，tippy 实际也是插到父组件里的，行为接近。
+ *
+ * 用法：
+ *   <Dropdown trigger="focusin" tabindex="0">
+ *     <button>触发器</button>
+ *     <Fragment slot="content">
+ *       <button data-dropdown-item>选项 A</button>
+ *     </Fragment>
+ *   </Dropdown>
+ */
+interface Props {
+	/** 触发方式，沿用 vue-tippy 的取值 */
+	trigger?: 'click' | 'focusin' | 'hover'
+	/** 原组件靠 fallthrough 接收 */
+	tabindex?: number | string
+	class?: string
+}
+
+const { trigger = 'click', tabindex, class: className } = Astro.props
+---
+
+<div
+	class:list={['dropdown', className]}
+	tabindex={tabindex}
+	data-dropdown-root
+	data-dropdown-trigger={trigger}
+>
+	<div class="dropdown-trigger" data-dropdown-anchor>
+		<slot />
+	</div>
+
+	<div class="tippy-box dropdown-panel" data-dropdown-panel hidden>
+		<div class="tippy-content" data-dropdown-content>
+			<slot name="content" />
+		</div>
+	</div>
+</div>
+
+<script>
+	// 原生脚本会被 Astro 去重合并，故用 data 属性定位各个实例
+	function initDropdown(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.dropdownReady)
+			return
+		root.dataset.dropdownReady = '1'
+
+		const panel = root.querySelector('[data-dropdown-panel]')
+		if (!panel)
+			return
+
+		const mode = root.dataset.dropdownTrigger
+
+		function open() {
+			panel.hidden = false
+			root.setAttribute('data-open', 'true')
+		}
+
+		function close() {
+			panel.hidden = true
+			root.removeAttribute('data-open')
+		}
+
+		function toggle() {
+			panel.hidden ? open() : close()
+		}
+
+		if (mode === 'hover') {
+			root.addEventListener('mouseenter', open)
+			root.addEventListener('mouseleave', close)
+		}
+		else if (mode === 'focusin') {
+			// 用 focusin/focusout 而不是 focus/blur：focusin 会冒泡，
+			// 面板内元素获得焦点时不会误关（对应 vue-tippy 的 focusin 语义）
+			root.addEventListener('focusin', open)
+			root.addEventListener('focusout', (e) => {
+				if (!root.contains(e.relatedTarget))
+					close()
+			})
+		}
+		else {
+			root.addEventListener('click', (e) => {
+				// 点面板内部不触发外层的 toggle
+				if (e.target.closest?.('[data-dropdown-panel]'))
+					return
+				toggle()
+			})
+		}
+
+		// 面板内的选项项被点击后自动关闭（替代原来的 hide() slot prop）
+		panel.addEventListener('click', (e) => {
+			if (e.target.closest?.('[data-dropdown-item]'))
+				close()
+		})
+
+		// 点击外部 / Esc 关闭
+		document.addEventListener('click', (e) => {
+			if (!root.contains(e.target))
+				close()
+		})
+		document.addEventListener('keydown', (e) => {
+			if (e.key === 'Escape')
+				close()
+		})
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('[data-dropdown-root]'))
+			initDropdown(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.dropdown {
+	position: relative;
+	display: inline-block;
+}
+
+.dropdown-trigger {
+	display: inline-flex;
+	align-items: center;
+}
+
+.dropdown-panel {
+	position: absolute;
+	z-index: 10;
+	top: 100%;
+	left: 0;
+	min-width: 100%;
+}
+
+/*
+ * 原本这些规则挂在 `:deep(~ [data-tippy-root] > .tippy-box)` 上，
+ * 因为 tippy 会把浮层传送到组件根部的父级。现在面板就在组件内部，
+ * 直接用本地类名即可，视觉（padding / 字号 / 布局）保持一致。
+ */
+.dropdown-panel {
+	padding: 0.3em;
+	font-size: inherit;
+}
+
+.tippy-content {
+	display: grid;
+
+	button {
+		padding: 0.3em 0.5em;
+		border-radius: 0.3em;
+		text-align: start;
+		color: var(--c-text-1);
+		transition: color 0.1s, background-color 0.2s;
+		cursor: pointer;
+
+		&:hover {
+			background-color: var(--c-bg-soft);
+			color: var(--c-text-1);
+		}
+	}
+
+	button.active {
+		background-color: var(--c-primary-soft);
+		color: var(--c-primary);
+	}
+}
+</style>

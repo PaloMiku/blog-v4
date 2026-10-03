@@ -1,0 +1,78 @@
+---
+/**
+ * Timeline 组件（Astro 版）。
+ *
+ * 与 Chat 同理：原 Vue 实现反射 Vue 内部 slot vnode 结构来识别 `{caption}` 段落，
+ * 在 Astro/MDX 下必然且静默失效，改为由 codemod 直接产出分组形状的 `items`。
+ *
+ * items 契约：
+ *   { caption, body }
+ * - `caption` 定义了该字段即渲染 `<dt class="timeline-caption">`
+ * - `body` 非空时渲染 `<dd class="timeline-body card">`
+ */
+interface TimelineItem {
+	caption?: string
+	body?: string
+}
+
+interface Props {
+	items?: TimelineItem[]
+}
+
+const { items = [] } = Astro.props
+---
+
+{items.length === 0
+	? <span>时间线为空</span>
+	: (
+		<dl class="timeline">
+			{items.map((item) => (
+				<Fragment>
+					{item.caption !== undefined && <dt class="timeline-caption">{item.caption}</dt>}
+					{item.body && <dd class="timeline-body card">{item.body}</dd>}
+				</Fragment>
+			))}
+		</dl>
+	)}
+
+<style>
+/* TODO: 优化时间线样式 */
+.timeline {
+	position: relative;
+	padding-inline-start: 1.5em;
+	font-size: 0.9em;
+
+	&::before {
+		content: "";
+		position: absolute;
+		inset: 0.5em auto 0;
+		inset-inline-start: 0.5em;
+		width: 0.3em;
+		background-color: var(--c-bg-soft);
+	}
+}
+
+.timeline > .timeline-caption {
+	opacity: 0.8;
+	font-size: 0.9em;
+
+	&::before {
+		content: "";
+		position: absolute;
+		inset-inline-start: 0.3em;
+		width: 0.8em;
+		height: 0.8em;
+		margin-top: 0.5em;
+		border-radius: 1em;
+		background-color: var(--c-text-2);
+	}
+}
+
+.timeline > .timeline-body {
+	width: fit-content;
+	max-width: 100%;
+	margin-bottom: 1em;
+	padding: 0 1em;
+	white-space: pre-wrap;
+}
+</style>

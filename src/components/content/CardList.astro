@@ -1,0 +1,43 @@
+---
+---
+
+<div class="card-list">
+	<slot />
+</div>
+
+<style>
+/*
+ * 原始写法是空的 `:deep()`，Vue 编译成 `[data-v-xxx] :where(ol, ul):not([class])`
+ * 与 `[data-v-xxx] > ol, > ul`，即只要求「祖先是本组件」，列表本身由谁渲染无所谓。
+ *
+ * Astro 相反：scope class 挂在选择器的**最后一段**上，而 MDC 产出的 ol/ul/li 来自 slot
+ * （属于 MDX 父级的作用域），拿不到本组件的 scope class，所以必须逐层 :global()，
+ * 否则一条都不会命中。注意 :global() 不会向下传递到嵌套层，嵌套的 li 也要单独写。
+ */
+.card-list {
+	:global(:where(ol, ul):not([class])) {
+		margin: 0;
+		padding-inline-start: 0;
+		list-style: none;
+	}
+
+	:global(:where(ol, ul):not([class]) > li) {
+		margin: 0;
+	}
+
+	> :global(ol),
+	> :global(ul) {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+		gap: 0.5em;
+	}
+
+	> :global(ol > li),
+	> :global(ul > li) {
+		padding: 0.5em 0.8em;
+		border-radius: 0.5em;
+		box-shadow: var(--box-shadow-2);
+		background-color: var(--ld-bg-card);
+	}
+}
+</style>

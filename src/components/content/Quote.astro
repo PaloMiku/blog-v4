@@ -1,0 +1,68 @@
+---
+import Icon from '../Icon.astro'
+
+interface Props {
+	icon?: string
+}
+
+const { icon: iconProp } = Astro.props
+
+// Astro 组件是构建期一次性求值，不需要保留响应式
+const icon = iconProp || 'tabler:message-2'
+---
+
+<div class="quote title-like">
+	<div class="icon-line">
+		<slot name="icon">
+			<Icon name={icon} />
+		</slot>
+	</div>
+	<slot />
+</div>
+
+<style>
+.quote {
+	font-size: 1.2rem;
+	line-height: 1.5;
+	color: var(--c-text-2);
+	isolation: isolate;
+
+	/*
+	 * Vue 的 `:deep(p)` 编译成 `[data-v-xxx] p`，即无限制的后代 p。
+	 * slot 内容由 MDX 渲染，拿不到本组件的 scope class，只能 :global()。
+	 */
+	:global(p) {
+		margin: 0;
+	}
+}
+
+.icon-line {
+	position: relative;
+	opacity: 0.5;
+	min-height: 0.5em;
+	margin-bottom: -0.5em;
+	mask-image: linear-gradient(#FFF, transparent);
+	font-size: 4rem;
+	transition: all 0.2s;
+	z-index: -1;
+
+	@media (max-width: 528px) {
+		font-size: 3rem;
+	}
+}
+
+/*
+ * 原写法是 `.icon-line { :hover > & { … } }`，postcss-nesting 把它拍平为
+ * `:hover > .icon-line[data-v-x]`（见 Nuxt 生产产物 Quote.BXYG0XI0.css），
+ * 语义是「任意祖先被 hover 时，图标浮现」。
+ *
+ * Astro 不做嵌套拍平：留在 `.icon-line` 内部会多出一层自身作为祖先
+ * （编成 `.icon-line :hover > .icon-line`），而写成 `:hover > &`
+ * 又会被原样输出成非法的 `[cid]:hover>&` 而被浏览器丢弃。
+ * 因此必须提到顶层并用 `:global(:hover)` 让 hover 祖先不受作用域约束。
+ */
+:global(:hover) > .icon-line {
+	opacity: 1;
+	transform: translateY(-0.5rem);
+}
+</style>

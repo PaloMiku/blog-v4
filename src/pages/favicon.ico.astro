@@ -1,0 +1,15 @@
+---
+import blogConfig from '../config/blog'
+
+/**
+ * `/favicon.ico` 重定向存根。
+ *
+ * 对应 Nuxt 侧 `routeRules` 的 `'/favicon.ico': { redirect: { to: blogConfig.favicon } }`。
+ * 纯静态托管（GitHub Pages）不执行 301/308，Astro 的 `redirects` 配置也只在
+ * 带 adapter 的运行时生效，所以这里生成一个 meta-refresh 存根，与 Nuxt 产物
+ * 里的 `favicon.ico/index.html` 同构。
+ */
+const target = blogConfig.favicon
+---
+
+<!DOCTYPE html><html><head><meta http-equiv="refresh" content={`0; url=${target}`}></head></html>

@@ -1,0 +1,328 @@
+---
+/**
+ * Key 组件（Astro 版）：键盘按键提示 + 按下高亮。
+ *
+ * 为什么用「构建期渲染 + 原生脚本纠偏」而不是 Vue 岛：
+ * 原组件的 `isMac` 依赖 `navigator`，SSR 期间恒为 false，
+ * 即 Nuxt 静态站产出的 HTML 本身就是「非 mac 形态」，水合后才可能变成 mac 形态。
+ * 这里照搬同一策略：构建期按 `isMac = false` 渲染，
+ * 客户端脚本检测到 mac 且 `icon !== false` 时再改写显示文本。
+ */
+interface Props {
+	text?: string
+	/** https://developer.mozilla.org/zh-CN/docs/Web/API/KeyboardEvent/key */
+	code?: string
+	/** 仅 macOS 默认显示图标 */
+	icon?: boolean
+	ctrl?: boolean
+	shift?: boolean
+	alt?: boolean
+	meta?: boolean
+	win?: boolean
+	/** 智能适配：Windows用Ctrl，macOS用Cmd */
+	cmd?: boolean
+	prevent?: boolean
+	/** MDX 传入的 className；Astro 没有 attribute fallthrough，需显式接收后合并 */
+	class?: string
+}
+
+const {
+	text,
+	code,
+	icon,
+	ctrl,
+	shift,
+	alt,
+	meta,
+	win,
+	cmd,
+	prevent,
+	class: className,
+} = Astro.props
+
+// SSR 阶段无法访问 navigator，与 Nuxt 侧 `mounted.value && ...` 的初值一致
+const isMac = false
+
+const useSymbol = isMac ? icon !== false : icon
+const keyJoiner = useSymbol ? '' : '+'
+
+// @keep-sorted
+const displayMap: Record<string, string> = {
+	' ': 'Space',
+	'ArrowDown': '↓',
+	'ArrowLeft': '←',
+	'ArrowRight': '→',
+	'ArrowUp': '↑',
+	'Control': 'Ctrl',
+	'Delete': 'Del',
+	'Escape': 'Esc',
+	'Meta': isMac ? 'Cmd' : 'Win',
+}
+
+// @keep-sorted
+const symbolMap: Record<string, string> = {
+	' ': '␣',
+	'Alt': '⌥',
+	'Backspace': '⌫',
+	'Control': '⌃',
+	'Delete': '⌦',
+	'Enter': '↵',
+	'Escape': '⎋',
+	'Meta': isMac ? '⌘' : '⊞',
+	'Shift': '⇧',
+	'Tab': '⇥',
+	'Win': '⊞',
+}
+
+function normalizeCodeDisplay(input?: string) {
+	if (!input)
+		return ''
+	if (useSymbol && input in symbolMap)
+		return symbolMap[input]!
+	if (input in displayMap)
+		return displayMap[input]!
+	return input
+}
+
+const codeDisplay = text || [
+	{ condition: cmd, code: isMac ? 'Meta' : 'Control' },
+	{ condition: ctrl && !cmd, code: 'Control' },
+	{ condition: shift, code: 'Shift' },
+	{ condition: alt, code: 'Alt' },
+	{ condition: meta && !cmd, code: 'Meta' },
+	{ condition: win && !meta, code: 'Win' },
+	{ condition: code, code },
+]
+	.filter(config => config.condition)
+	.map(config => normalizeCodeDisplay(config.code))
+	.join(keyJoiner)
+
+/*
+ * 只有「显示文本由组件自己算出」时脚本才需要改写它：
+ * 传了 text 或给了 default slot（如 <Key code="steam+x">STEAM+X</Key>）就固定不变。
+ */
+const hasDefaultSlot = Astro.slots.has('default')
+const autoDisplay = !text && !hasDefaultSlot
+
+/*
+ * 修饰键与期望按键编码进 data 属性，供脚本重建同一套匹配逻辑。
+ * 用 | 分隔，避免 JSON 的引号在 HTML 属性里转义。
+ */
+const modifiers = [
+	ctrl && 'ctrl',
+	shift && 'shift',
+	alt && 'alt',
+	meta && 'meta',
+	win && 'win',
+	cmd && 'cmd',
+].filter(Boolean).join('|')
+---
+
+<kbd
+	class:list={[className]}
+	data-key-root
+	data-key-code={code}
+	data-key-mods={modifiers}
+	data-key-icon={icon === undefined ? 'auto' : String(icon)}
+	data-key-prevent={prevent ? '1' : undefined}
+	data-key-auto={autoDisplay ? codeDisplay : undefined}
+>
+	<slot>{codeDisplay}</slot>
+</kbd>
+
+<script>
+	/*
+	 * 与 frontmatter 里的 displayMap / symbolMap 保持一致（两处不能互相 import，
+	 * frontmatter 跑在构建期、脚本跑在浏览器里）。`data-key-auto` 里存的是
+	 * 构建期算出的非 mac 形态文本，mac 上需要重算。
+	 */
+	const isMac = /mac ?os/i.test(navigator.userAgent)
+
+	const displayMap = {
+		' ': 'Space',
+		'ArrowDown': '↓',
+		'ArrowLeft': '←',
+		'ArrowRight': '→',
+		'ArrowUp': '↑',
+		'Control': 'Ctrl',
+		'Delete': 'Del',
+		'Escape': 'Esc',
+		'Meta': isMac ? 'Cmd' : 'Win',
+	}
+	const symbolMap = {
+		' ': '␣',
+		'Alt': '⌥',
+		'Backspace': '⌫',
+		'Control': '⌃',
+		'Delete': '⌦',
+		'Enter': '↵',
+		'Escape': '⎋',
+		'Meta': isMac ? '⌘' : '⊞',
+		'Shift': '⇧',
+		'Tab': '⇥',
+		'Win': '⊞',
+	}
+
+	function normalizeCodeDisplay(input, useSymbol) {
+		if (!input)
+			return ''
+		if (useSymbol && input in symbolMap)
+			return symbolMap[input]
+		if (input in displayMap)
+			return displayMap[input]
+		return input
+	}
+
+	/** 收集一个实例的按键配置，顺序与 frontmatter 的 keyConfigs 一致 */
+	function configOf(root) {
+		const mods = (root.dataset.keyMods || '').split('|').filter(Boolean)
+		const has = name => mods.includes(name)
+		const code = root.dataset.keyCode || undefined
+		const icon = root.dataset.keyIcon
+		// isMac 时 icon 默认为 true，icon={false} 显式关闭；非 mac 时只有 icon={true} 才开
+		const useSymbol = icon === 'auto' ? isMac : icon === 'true'
+
+		return {
+			code,
+			useSymbol,
+			cmd: has('cmd'),
+			ctrl: has('ctrl'),
+			shift: has('shift'),
+			alt: has('alt'),
+			meta: has('meta'),
+			win: has('win'),
+		}
+	}
+
+	function computeDisplay(cfg) {
+		const joiner = cfg.useSymbol ? '' : '+'
+		return [
+			{ condition: cfg.cmd, code: isMac ? 'Meta' : 'Control' },
+			{ condition: cfg.ctrl && !cfg.cmd, code: 'Control' },
+			{ condition: cfg.shift, code: 'Shift' },
+			{ condition: cfg.alt, code: 'Alt' },
+			{ condition: cfg.meta && !cfg.cmd, code: 'Meta' },
+			{ condition: cfg.win && !cfg.meta, code: 'Win' },
+			{ condition: cfg.code, code: cfg.code },
+		]
+			.filter(c => c.condition)
+			.map(c => normalizeCodeDisplay(c.code, cfg.useSymbol))
+			.join(joiner)
+	}
+
+	/** 当前按下的修饰键状态 */
+	const state = { ctrl: false, shift: false, alt: false, meta: false }
+
+	/** 每个实例只解析一次配置：全库 27 处 Key，逐事件重解析没必要 */
+	const configs = new WeakMap()
+
+	function modifiersMatch(cfg) {
+		const cmdMatch = cfg.cmd ? (isMac ? state.meta : state.ctrl) : true
+		return cmdMatch
+			&& (!cfg.ctrl || (!cfg.cmd && state.ctrl))
+			&& (!cfg.shift || state.shift)
+			&& (!cfg.alt || state.alt)
+			&& (!cfg.meta || (!cfg.cmd && state.meta))
+	}
+
+	function matchKeyEvent(e, cfg) {
+		if (cfg.code && e.key?.toLowerCase() !== cfg.code.toLowerCase())
+			return false
+		return modifiersMatch(cfg)
+	}
+
+	function initKey(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.keyReady)
+			return
+		root.dataset.keyReady = '1'
+
+		const cfg = configOf(root)
+		configs.set(root, cfg)
+
+		// mac 上要改写成符号形态（构建期固定按非 mac 渲染）
+		if (root.dataset.keyAuto !== undefined && isMac) {
+			const text = computeDisplay(cfg)
+			if (text !== root.dataset.keyAuto)
+				root.textContent = text
+		}
+
+		// 原组件用 emit('press')，这里派发同名 DOM 事件保持对外契约
+		root.addEventListener('click', (e) => {
+			e.stopPropagation()
+			root.dispatchEvent(new CustomEvent('press', { bubbles: true }))
+		})
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('[data-key-root]'))
+			initKey(root)
+	}
+
+	// 全局监听只挂一份，遍历所有实例（原版每个组件各挂一个 useEventListener）
+	document.addEventListener('keydown', (e) => {
+		state.ctrl = e.ctrlKey
+		state.shift = e.shiftKey
+		state.alt = e.altKey
+		state.meta = e.metaKey
+		for (const root of document.querySelectorAll('[data-key-root]')) {
+			const cfg = configs.get(root)
+			if (!cfg || !matchKeyEvent(e, cfg))
+				continue
+			root.classList.add('active')
+			// 等价于原组件的 props.prevent && e.preventDefault()
+			if (root.dataset.keyPrevent)
+				e.preventDefault()
+			root.dispatchEvent(new CustomEvent('press', { bubbles: true }))
+		}
+	})
+
+	document.addEventListener('keyup', (e) => {
+		state.ctrl = e.ctrlKey
+		state.shift = e.shiftKey
+		state.alt = e.altKey
+		state.meta = e.metaKey
+		for (const root of document.querySelectorAll('[data-key-root]')) {
+			const cfg = configs.get(root)
+			if (!cfg)
+				continue
+			// 原版：命中本键，或修饰键已松开（不再匹配）时取消高亮
+			if (matchKeyEvent(e, cfg) || !modifiersMatch(cfg))
+				root.classList.remove('active')
+		}
+	})
+
+	document.addEventListener('blur', () => {
+		for (const root of document.querySelectorAll('[data-key-root]'))
+			root.classList.remove('active')
+	})
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+kbd {
+	display: inline-block;
+	margin: 0.1em;
+	padding: 0 0.2em 0.1em;
+	border-radius: 0.2em;
+	box-shadow: inset 0 -0.15em 0 var(--c-bg-soft);
+	background-color: var(--c-bg-soft);
+	font-family: var(--font-basic);
+	font-size: 0.9em;
+	line-height: 1.4;
+	color: var(--c-text-2);
+	transition: all 0.1s;
+	user-select: none;
+
+	&:active, &.active {
+		box-shadow: inset 0 -0.1em 0 var(--c-primary);
+		background-color: var(--c-primary-soft);
+		color: var(--c-primary);
+		transform: translateY(0.05em);
+	}
+}
+</style>

@@ -1,0 +1,45 @@
+---
+interface Props {
+	title?: string
+	author?: string
+	footer?: string
+}
+
+const { title, author, footer } = Astro.props
+---
+
+<section class="poetry">
+	<h2 class="poetry-title text-center">
+		{title}
+	</h2>
+	<div class="text-center">
+		{author}
+	</div>
+	<div class="poetry-content">
+		<slot />
+	</div>
+	<div class="text-center">
+		{footer}
+	</div>
+</section>
+
+<style>
+.poetry {
+	width: fit-content;
+	margin: 2em auto;
+	white-space: pre-wrap;
+
+	.poetry-title {
+		font-size: 1.2em;
+	}
+
+	/*
+	 * 诗正文是 slot 内容（Markdown 渲染的段落），带的是 MDX 的 scope class，
+	 * 必须 :global() 才能命中。
+	 */
+	:global(p) {
+		width: fit-content;
+		margin: 0.5em auto;
+	}
+}
+</style>

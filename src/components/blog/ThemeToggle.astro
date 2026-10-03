@@ -1,0 +1,166 @@
+---
+/**
+ * ThemeToggle 组件（Astro 版），对应 `app/components/blog/ThemeToggle.vue`。
+ *
+ * ## color-mode 契约（与 Phase 3 基础任务 / Base.astro 对接的点）
+ * Nuxt 侧用 `@nuxtjs/color-mode`，本文件是消费方，故把契约写死在这里：
+ * - 存储键 `nuxt-color-mode`（@nuxtjs/color-mode 默认 key），值为 `light` / `system` / `dark`
+ * - 同时写 `<html data-theme="...">`（MIGRATION-BRIEF §5 规定的 Astro 侧做法）
+ *   与 `<html class="dark">`（`app/assets/css/color.css` 里是 `:root, .dark`，
+ *   且已验收的 `Tab.astro` 里有 `.dark &`；两条都写以免全局 CSS 移植前后打架）
+ * - 缺省 `system`：`matchMedia('(prefers-color-scheme: dark)')` 决定实际深浅
+ *
+ * 切换时派发 `theme-change` CustomEvent，Base.astro 可以监听它做额外同步。
+ * ⚠️ 若 Base.astro 侧最终采用不同的键名或属性名，**以 Base.astro 为准**，
+ * 需回来改这里的 `STORAGE_KEY` 与 `applyTheme`。
+ *
+ * ## 其他差异
+ * - `v-tip`（vue-tippy）属 Phase 4，故不渲染 tooltip 容器，
+ *   改用原生 `title` 兜底（与 `content/Tip.astro` 的处理一致）。
+ * - `active` 态在客户端解析：偏好存在 localStorage 里，构建期读不到。
+ *   构建期一律不带 `active`，脚本初始化时补上。
+ */
+import Icon from '../Icon.astro'
+import { appConfig } from '../../lib/app-config'
+
+interface Props {
+	class?: string
+}
+
+const { class: className } = Astro.props
+
+/**
+ * ⚠️ 按钮的先后是**用户可见**的，必须与 Nuxt 基线一致：浅色 → 跟随系统 → 深色
+ * （`baseline/nuxt/**.html` 实测，即 `@nuxtjs/color-mode` 那边的顺序）。
+ * `appConfig.themes` 是 `@keep-sorted` 的字母序（dark/light/system），
+ * 渲染顺序不能依赖它，所以在这里显式定序；未登记的主题排在已登记项之后。
+ */
+const THEME_ORDER: Record<string, number> = { light: 0, system: 1, dark: 2 }
+const themes = Object.entries(appConfig.themes)
+	.sort(([a], [b]) => (THEME_ORDER[a] ?? 99) - (THEME_ORDER[b] ?? 99))
+---
+
+<div class:list={['theme-toggle', className]} data-theme-toggle>
+	{themes.map(([name, data]) => (
+		<button
+			type="button"
+			data-theme-set={name}
+			aria-label={data.tip}
+			title={data.tip}
+			aria-pressed={false}
+		>
+			<Icon name={data.icon} />
+		</button>
+	))}
+</div>
+
+<script>
+	// 与 Base.astro（color-mode 归属方）必须保持一致的契约，见 frontmatter 注释
+	const STORAGE_KEY = 'nuxt-color-mode'
+	const DEFAULT_THEME = 'system'
+
+	const darkQuery = window.matchMedia('(prefers-color-scheme: dark)')
+
+	function readPreference() {
+		try {
+			return localStorage.getItem(STORAGE_KEY) || DEFAULT_THEME
+		}
+		catch {
+			// 隐私模式下 localStorage 会抛错，退回默认
+			return DEFAULT_THEME
+		}
+	}
+
+	function resolveTheme(preference) {
+		if (preference !== 'system')
+			return preference
+		return darkQuery.matches ? 'dark' : 'light'
+	}
+
+	function applyTheme(preference) {
+		const resolved = resolveTheme(preference)
+		const root = document.documentElement
+		root.dataset.theme = resolved
+		// 全局 CSS 迁移期间两种写法并存，见 frontmatter 注释
+		root.classList.toggle('dark', resolved === 'dark')
+		document.dispatchEvent(new CustomEvent('theme-change', { detail: { preference, resolved } }))
+	}
+
+	function syncButtons(preference) {
+		for (const btn of document.querySelectorAll('[data-theme-set]')) {
+			const on = btn.dataset.themeSet === preference
+			btn.classList.toggle('active', on)
+			btn.setAttribute('aria-pressed', on ? 'true' : 'false')
+		}
+	}
+
+	function initThemeToggle() {
+		let preference = readPreference()
+		applyTheme(preference)
+		syncButtons(preference)
+	}
+
+	function initAll() {
+		initThemeToggle()
+
+		// 事件只挂一份，遍历所有实例
+		document.addEventListener('click', (e) => {
+			const btn = e.target.closest?.('[data-theme-set]')
+			if (!btn)
+				return
+			const preference = btn.dataset.themeSet
+			try {
+				localStorage.setItem(STORAGE_KEY, preference)
+			}
+			catch {
+				// 存不下就只在本次会话生效，不阻断切换
+			}
+			applyTheme(preference)
+			syncButtons(preference)
+		})
+
+		// 跟随系统时，系统主题变化要实时反映
+		darkQuery.addEventListener('change', () => {
+			const preference = readPreference()
+			if (preference === 'system')
+				applyTheme(preference)
+		})
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.theme-toggle {
+	display: flex;
+	gap: 3px;
+	width: fit-content;
+	margin: 0 auto;
+	padding: 2px;
+	border: 1px solid var(--c-border);
+	border-radius: 1rem;
+	background-color: var(--c-bg-2);
+
+	> button {
+		padding: 4px 1rem;
+		border-radius: 1rem;
+		transition: all 0.1s;
+
+		&:hover {
+			background-color: var(--c-bg-soft);
+			color: var(--c-text-1);
+		}
+
+		&.active {
+			box-shadow: var(--box-shadow-2);
+			background-color: var(--ld-bg-card);
+			color: var(--c-text-1);
+			cursor: auto;
+		}
+	}
+}
+</style>
