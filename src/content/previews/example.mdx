@@ -26,28 +26,6 @@ metaSlots:
 
 本站用 [Astro](https://astro.build) 构建，内容层是 [MDX](https://docs.astro.build/zh-cn/guides/integrations-guide/mdx/)——**MDC 的继任者**：可以直接在 `.mdx` 文件里写 JSX 组件，并支持一整套 remark / rehype 扩展。
 
-### 语法约定
-
-- **组件是构建期编译的真组件**，不是渲染出来的 HTML 字符串。它们写在 `src/components/`，有类型、有作用域样式、有真正的状态，产物是纯静态 HTML、零客户端框架。
-- **不需要 import**。组件表集中在 `src/lib/content-components.ts`，由页面侧 `<Content components={…} />` 注入。**引用一个没注册的组件名会让构建直接失败**，不会静默渲染成空白。
-- **带内容的组件要空行包裹**。`<Alert>` 和它的 `</Alert>` 各自独占一行、中间留空行，插槽内容才会被当成块级 markdown。单行的 `<Alert>文字</Alert>` 也行，但内容是裸文本，不走 markdown。
-- **行内组件用插槽，不要塞 prop**。`<Badge>重点</Badge>` 里的 `**粗体**`、`[链接](…)` 都会正常解析；写成 `<Badge text="重点" />` 则是纯字符串，格式标记会原样显示。
-- **嵌套围栏用四个反引号**。要展示「围栏代码块怎么写」本身时，外层必须比内层长，否则会提前闭合——三个套三个，示例会当场散架。所以本页大部分围栏都写成四个。
-
-### 组件示例长什么样
-
-下面每个组件都写在一个 `Component` 围栏里，**围栏正文就是你实际会写的那段 MDX**：
-
-````mdx
-```Component [Alert.astro]
-<Alert type="info" title="自定义标题">
-  正文
-</Alert>
-```
-````
-
-构建时（`src/plugins/component-fence.ts`）它展开成两个页签：**现场效果**是这段正文的真实渲染、**组件语法**是这段正文的原文。两栏同出一处，因此不可能对不上。文件名写在方括号里，它同时决定默认路径 `src/components/content/<文件名>`；组件不在那个目录下时（`BlogHeader.astro`、`math-code.ts` 这类）再补一个 `source=<相对 src 的路径>`。
-
 ````Component [LinkCard.astro]
 <LinkCard title="MDX 语法（必读）" icon="https://astro.build/favicon.svg" link="https://docs.astro.build/zh-cn/guides/integrations-guide/mdx/" className="gradient-card active" />
 
