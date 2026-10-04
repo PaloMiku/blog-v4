@@ -94,6 +94,19 @@ node scripts/probe-subtree.mjs --sel='<css>'  # 逐节点几何对比（诊断�
 `baseline/nuxt/` 无法再冻结（Nuxt 源码树已删），`freeze-baseline.mjs` 已随之退役：现在跑它
 会把 **Astro 产物**冻成「Nuxt 基线」，比不跑更坏。
 
+## 提交
+
+- **conventional 主题 + 短要点**。主题一行说清这次改了什么，**不写流水账标题**
+  （「顺手修了 A、B、C」这种一律砍掉或拆成独立提交）。正文用短要点，
+  **不复述改动过程、不解释为什么现在做**——那些在 `git log -p` 里
+- **小修复直接提交到 `main`**。不要习惯性先开分支，**只有用户明确要求走分支 / PR
+  时才建**。`main` 就是部署分支，多一层分支只是把「已上线」降级成「在某个分支上」
+- ⚠️ 运行环境若反过来要求「在默认分支上先开分支」，照它执行，但**必须在回复里给出
+  快进回 `main` 的一条命令**。提交不在 `main` 上就等于没部署，而「本地全绿、线上没变」
+  很容易被当成推送没生效
+- 提交前跑一次 `pnpm accept`（默认档）。**门禁红着不提交**；跑不动就明说哪几道没跑，
+  拿「构建过了」代替验收等于没验
+
 ## 部署
 
 GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `PaloMiku/blog-public`
@@ -250,9 +263,3 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
   没人建）；② `check-dates` 在 `TZ=UTC` 的 runner 上 40 页全差 8 小时——**那道门禁从来
   没有真正与时区无关**，PowerShell 版一直在这台 +08:00 的开发机上跑，「按本地时区读
   裸墙钟」恰好成立。见坑位 26
-
-### 提交与部署
-
-- 迁移提交 `00c4401`、门禁运行时 DOM `8f73343`
-- 部署 = push main 触发 `.github/workflows/build.yml`；CI 绿是部署成功的唯一事实源
-- 验证部署用普通 URL（EdgeOne 对带 query 的 URL 是独立 cache key）
