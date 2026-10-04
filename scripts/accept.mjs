@@ -50,6 +50,7 @@ const OFFLINE_GATES = [
 	'audit-deferred',
 	// 组件与标记
 	'check-component-fence',
+	'check-tab-panels',
 	'check-mdc-eval',
 	'check-icon-box',
 	'check-icon-swap',

@@ -47,8 +47,13 @@ node scripts/probe-subtree.mjs --sel='<css>'  # 逐节点几何对比（诊断�
   写成精确比较的地方都要先归一化，否则首页会因为 `item.url` 恰好是 `/` 而**巧合正确**
 - **组件示例页靠 `Component` 围栏**：`src/content/previews/example.mdx` 里每个组件写成一个
   ```` ```Component [Alert.astro] ```` 围栏，正文就是实际会写的 MDX，由
-  `src/plugins/component-fence.ts` 展开成「组件/用法/源码」三页签（源码从 `src/components/`
-  读盘）。门禁 `check-component-fence.mjs` 验它与磁盘文件逐字一致
+  `src/plugins/component-fence.ts` 展开成「现场效果 / 组件语法」两页签。门禁
+  `check-component-fence.mjs` 验语法栏与围栏正文逐字一致
+- **`<Tab>` 面板可以写 `#tab1` 代替 `slot="tab1"`**（`src/plugins/tab-panels.ts`）：
+  编号从 1 连续递增、数量须与 `tabs={[…]}` 一致，插件在构建期展开成具名 slot。
+  两种写法共存——没有 `#tabN` 的 `<Tab>` 原样放过。源侧判据 `check-tab-panels.mjs`
+  （毫秒级，进默认档）；构建期红绿双向 `scripts/tab-panels-red.mjs`（跑 4 次
+  `astro build`，~45 s，**单跑**，不进流水线）
 - ⚠️ **`dist` 是指向 `.output/public` 的符号链接**（Nuxt 时代留下的路径，`.gitignore` 忽略
   两者）。任何 `find dist -type f` / `du -sh dist` **都会返回 0**——`find` 与 `du` 默认不跟随
   符号链接。统计产物一律用 `find -L dist` / `du -shL dist`，或直接写 `.output/public`

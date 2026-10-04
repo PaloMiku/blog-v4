@@ -1,5 +1,5 @@
 /**
- * Component 围栏：把一个组件示例的**三页签**收进一个围栏里。
+ * Component 围栏：把一个组件示例的**两页签**收进一个围栏里。
  *
  *   ````Component [Alert.astro]
  *   <Alert type="info" title="自定义标题">
@@ -7,9 +7,13 @@
  *   </Alert>
  *   ````
  *
- * 展开成现有的 `<Tab tabs={['组件','用法','源码']}>`：正文按 MDX 解析后**真实渲染**
- * 为「组件」栏，正文**原文**作为「用法」栏，磁盘上的组件文件作为「源码」栏。
- * 三栏同出一处，因此作者**只写一次**组件，也不会像手抄快照那样与代码腐烂。
+ * 展开成 `<Tab tabs={['现场效果','组件语法']}>`：正文按 MDX 解析后**真实渲染**为
+ * 「现场效果」栏，正文**原文**作为「组件语法」栏。两栏同出一处，作者只写一次——
+ * 「现场效果」永远就是「组件语法」按真实渲染管线跑一遍的结果，两者不可能对不上。
+ *
+ * 原先的第三栏「源码」（从磁盘读组件文件逐字贴出来）已于 2026-10-04 移除。移除后
+ * `[Alert.astro]` 退化为图注，但**指向的文件仍然读一次**——图注指向一个不存在的
+ * 组件在页面上看不出来，而构建也不会红。详见 `expand()` 里的注释。
  *
  * ═══ 为什么不是「一个空围栏 + source=」 ═══
  *
@@ -46,23 +50,25 @@
  *
  * - `Component`   本插件的标记，**不要**拿它当 shiki 语言
  * - `[Alert.astro]` 图注里显示的文件名，同时决定默认路径 `components/content/<名字>`
- *   （`BlogHeader.astro`、`math-code.ts` 这类不在 `components/content/` 的再补 `source=`）
+ *   （`BlogHeader.astro`、`math-code.ts` 这类不在 `components/content/` 的再补 `source=`）。
+ *   **移除「源码」栏之后它只剩图注作用，但指向的文件仍然要读**（见 `expand()`）。
  * - `source=…`     显式路径，相对 `src/`。其余 `key=value`（`icon=` / `wrap` / `expand`）
- *   对本围栏无意义——两个派生围栏的 meta 是写死的，见下。
+ *   对本围栏无意义——派生围栏的 meta 是写死的，见下。
  *
  * ═══ 派生围栏的 meta 靠 raw-source 扫描配对 ═══
  *
- * 「用法」「源码」两个围栏只存在于**合成文本**里，源文件里没有。可
- * `plugins/prose.ts` 的 `scanFences()` 是去**读 .mdx 原文**扫 info string 的
- * （meta 从 mdast 传不到 hast——Astro 的 shiki 会重建 `<pre>` 只保留自己的属性），
- * 于是图注的文件名/图标靠「同 lang、同顺序」配对：`takeMeta()` 按语言顺序取用。
+ * 「用法」围栏只存在于**合成文本**里，源文件里没有。可 `plugins/prose.ts` 的
+ * `scanFences()` 是去**读 .mdx 原文**扫 info string 的（meta 从 mdast 传不到
+ * hast——Astro 的 shiki 会重建 `<pre>` 只保留自己的属性），于是靠「同 lang、同顺序」
+ * 配对：`takeMeta()` 按语言顺序取用。
  *
- * 本插件因此在树里产出 code 节点的顺序必须与 `componentFenceInfos()` 返回的顺序
- * **逐字一致**（先用法 `mdx`、后源码），否则文件名会张冠李戴——而那**不会报错**，
- * 只会让源码栏显示另一个文件的名字。改这个顺序前先读 `scanFences()` 里的配对注释。
+ * 移除「源码」栏之前这里有**两条**派生围栏，配对错位会「安静地」让源码栏显示另一个
+ * 文件的名字；现在只剩一条，配对错位的后果退化为「用法栏图注拿错」，危害小得多，
+ * 但顺序约束仍在：本插件产出 code 节点的顺序必须与 `componentFenceInfos()` 返回的
+ * 顺序**逐字一致**。改这个顺序前先读 `scanFences()` 里的配对注释。
  */
 import { readFileSync } from 'node:fs'
-import { extname, normalize, resolve, sep } from 'node:path'
+import { normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createProcessor } from '@mdx-js/mdx'
 import remarkMath from 'remark-math'
@@ -74,9 +80,9 @@ const SRC_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 export const COMPONENT_FENCE_LANG = 'Component'
 
 /** 页签名。顺序即页签顺序 */
-const TABS = ['组件', '用法', '源码']
+const TABS = ['现场效果', '组件语法']
 
-/** 「用法」栏围栏的 info string */
+/** 「组件语法」栏围栏的 info string */
 const USAGE_INFO = 'mdx wrap expand'
 
 /** 源码默认目录，相对 SRC_ROOT */
@@ -107,23 +113,18 @@ interface MdastNode {
  */
 const PROCESSOR = createProcessor({ remarkPlugins: [remarkMath] })
 
-/** 源码栏的语言取文件名后缀：`Alert.astro` → `astro`，`math-code.ts` → `ts` */
-export function sourceLangOf(filename: string): string {
-	const ext = extname(filename).slice(1)
-	if (!ext)
-		throw new Error(`[component-fence] [${filename}] 没有扩展名，推不出源码栏该走的语言`)
-	return ext
-}
-
 /**
- * 一个 Component 围栏派生出的两条围栏 info string。
+ * 一个 Component 围栏派生出的围栏 info string。
  *
- * `plugins/prose.ts` 的 `scanFences()` 用它把**一个** Component 围栏算成**两个**
- * CodeMeta，好让「用法」「源码」两个代码块各自配到自己的 meta。**顺序即配对顺序**，
- * 改这里必须同步改本插件产出 code 节点的顺序。
+ * `plugins/prose.ts` 的 `scanFences()` 用它把**一个** Component 围栏算成 code 节点的
+ * meta，好让「用法」代码块配到自己的 meta。**顺序即配对顺序**，改这里必须同步改
+ * 本插件产出 code 节点的顺序。
+ *
+ * 2026-10-04 起只有一栏：原先的「源码」栏（从磁盘读组件文件）已按要求移除。
+ * 于是这个函数不再需要文件名参数。
  */
-export function componentFenceInfos(filename: string): string[] {
-	return [USAGE_INFO, `${sourceLangOf(filename)} [${filename}] expand`]
+export function componentFenceInfos(): string[] {
+	return [USAGE_INFO]
 }
 
 export function remarkComponentFence() {
@@ -184,15 +185,19 @@ function expand(node: MdastNode, ctx: Ctx): MdastNode[] {
 	if (abs !== SRC_ROOT && !abs.startsWith(SRC_ROOT + sep))
 		throw new Error(`[component-fence] source=${rel} 解析到 ${abs}，已逃出 ${SRC_ROOT}`)
 
-	let source: string
+	/*
+	 * 「源码」页签已于 2026-10-04 移除，但**这个读文件的动作留着**：
+	 * `[Alert.astro]` 现在是纯图注，而图注指向一个不存在的组件就是文档错误，
+	 * 页面上看不出来、构建也不会红。读一次顺带把「空文件」也挡住。
+	 * 成本是 26 个文件、约 100 KB，可忽略。
+	 */
 	try {
-		source = readFileSync(abs, 'utf8')
+		if (!readFileSync(abs, 'utf8').trim())
+			throw new Error('[component-fence] 是空文件')
 	}
 	catch (err) {
 		throw new Error(`[component-fence] 读不到 ${abs}（[${filename}]，默认路径是 ${DEFAULT_DIR}/<文件名>，不在那儿就补 source=）：${(err as Error).message}`)
 	}
-	if (!source.trim())
-		throw new Error(`[component-fence] ${abs} 是空文件`)
 
 	const body = (node.value ?? '').replace(/\s+$/, '')
 	if (!body.trim())
@@ -201,16 +206,16 @@ function expand(node: MdastNode, ctx: Ctx): MdastNode[] {
 	assertBodyIntact(node, body, ctx.raw)
 	assertNameMatches(body, filename)
 
-	const parsed = PROCESSOR.parse(buildTemplate(body, source, filename))
+	const parsed = PROCESSOR.parse(buildTemplate(body))
 	const nodes = parsed.children ?? []
 	if (nodes.length !== 1 || nodes[0]?.type !== 'mdxJsxFlowElement')
 		throw new Error(`[component-fence] 合成模板解析出来不是单个 <Tab>，实际是 ${nodes.map(n => n.type).join(',') || '(空)'}`)
 
 	/*
-	 * 报出来是因为「源码栏拿到了哪个文件、多少行」在页面上看不出来，
-	 * 而它一旦配错（文件名张冠李戴）构建同样是绿的。
+	 * 报出来是因为「这一节写的是哪个组件」在页面上看不出来，
+	 * 而图注与正文对不上时构建同样是绿的。
 	 */
-	console.warn(`[component-fence] [${filename}] 正文 ${body.split('\n').length} 行 + 源码 ${source.replace(/\s+$/, '').split('\n').length} 行 ← ${rel}`)
+	console.warn(`[component-fence] [${filename}] 正文 ${body.split('\n').length} 行 ← ${rel}`)
 
 	return [nodes[0]]
 }
@@ -247,7 +252,7 @@ function assertBodyIntact(node: MdastNode, body: string, raw: string | null) {
 		throw new Error(`[component-fence] 围栏正文与源文件对不上，围栏长度不够：正文里含有更长的反引号串时，Component 围栏必须写得比它更长（位置 ${start}…${end}）`)
 }
 
-/** 正文里的组件名与 `[文件名]` 对不上就抛错：否则源码栏会**安静地**显示另一个文件。 */
+/** 正文里的组件名与 `[文件名]` 对不上就抛错：图注会指向另一个组件，页面上看不出来。 */
 function assertNameMatches(body: string, filename: string) {
 	const names = new Set([...body.matchAll(JSX_TAG_RE)].map(m => m[1]))
 	if (names.size === 0)
@@ -255,7 +260,7 @@ function assertNameMatches(body: string, filename: string) {
 	const stem = filename.replace(/\.[^.]+$/, '')
 	if (names.has(stem))
 		return
-	throw new Error(`[component-fence] 正文里的组件是 ${[...names].join(' / ')}，与 [${filename}] 对不上——源码栏会显示错的文件`)
+	throw new Error(`[component-fence] 正文里的组件是 ${[...names].join(' / ')}，与 [${filename}] 对不上——图注会指向错的组件`)
 }
 
 /** 正文里已有 N 连反引号时，包裹它的围栏必须 N+1，否则会提前闭合 */
@@ -273,9 +278,8 @@ function fenceFor(text: string): string {
  * 2. 属性表达式里用**单引号**：JSX 不接受 `tabs=["a","b"]`，会被 micromark 拒掉。
  * 3. 正文顶格写：缩进 ≥4 空格的行会被解析成缩进代码块。
  */
-function buildTemplate(body: string, source: string, filename: string): string {
+function buildTemplate(body: string): string {
 	const usageFence = fenceFor(body)
-	const sourceFence = fenceFor(source)
 	return [
 		`<Tab tabs={[${TABS.map(t => `'${t}'`).join(',')}]}>`,
 		'<div slot="tab1">',
@@ -285,11 +289,6 @@ function buildTemplate(body: string, source: string, filename: string): string {
 		`${usageFence}${USAGE_INFO}`,
 		body,
 		usageFence,
-		'</div>',
-		'<div slot="tab3">',
-		`${sourceFence}${sourceLangOf(filename)} [${filename}] expand`,
-		source,
-		sourceFence,
 		'</div>',
 		'</Tab>',
 		'',

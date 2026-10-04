@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 门禁：`Component` 围栏必须真的展开成三页签，且**源码栏显示的就是那个文件**。
+ * 门禁：`Component` 围栏必须真的展开成「组件 / 用法」两页签。
  *
  * ## 抓的是什么
  *
@@ -10,26 +10,27 @@
  *     <Alert …>…</Alert>
  *     ```
  *
- * 展开成 `<Tab>` 的「组件 / 用法 / 源码」三栏。其中两处**坏了不会变红**：
+ * 展开成 `<Tab>` 的「现场效果 / 组件语法」两栏。其中一处**坏了不会变红**：
+ * **围栏被提前截断**。正文里含三反引号而外层也只写三反引号时，mdast 在第一个
+ * 三反引号处闭合，正文缺一大截，剩下的以普通 markdown 身份漏进页面。
+ * 另一处是**围栏根本没展开**（改坏了插件、或围栏信息写错被跳过）。
  *
- * 1. **围栏 meta 的配对**。`plugins/prose.ts` 的 `scanFences()` 是去**读 .mdx
- *    原文**扫 info string 的（meta 从 mdast 传不到 hast——Astro 的 shiki 会重建
- *    `<pre>` 只保留自己的属性），`takeMeta()` 再按「同语言、同顺序」配对。
- *    于是插件产出 code 节点的顺序一旦与 `componentFenceInfos()` 不一致，
- *    每个源码栏仍会拿到一个文件名，**只是拿的是别人的**。
- *    页面照常渲染、构建照常成功，没有任何一行日志提到它。
- * 2. **围栏被提前截断**。正文里含三反引号而外层也只写三反引号时，mdast 在第一个
- *    三反引号处闭合，正文缺一大截，剩下的以普通 markdown 身份漏进页面。
+ * 两条都是「看起来对、其实错」，所以判据落在**产物**上：「用法」代码块的正文
+ * 必须与源文件里围栏正文**逐字相同**，且页面里「组件语法」页签的个数必须等于
+ * 本页 Component 围栏的个数。
  *
- * 两条都是「看起来对、其实错」，所以判据落在**产物**上：把每个源码栏的正文
- * 逐字读回来，和磁盘上那个文件比。配对错了就是内容对不上。
+ * 2026-10-04 之前还有第三条：把「源码」栏逐字读回来与磁盘文件比对，抓的是围栏
+ * meta 配对错位。**「源码」栏已移除**，那条判据随之删除——错位的后果退化成
+ * 「用法栏图注拿错」，已被上面的逐字判据覆盖。
  *
  * ## 源侧判据
  *
  * - `source=` 只允许出现在 `Component` 围栏上：旧写法（空围栏 + `source=`）退役后
- *   残留一个，插件不再填它，源码栏就是一个**空代码块**，而构建是绿的。
+ *   残留一个，插件不再填它，那个围栏就是一个**空代码块**，而构建是绿的。
  * - `[文件名]` 必须能推到一个存在且非空的文件（默认 `components/content/<文件名>`）。
- * - 正文里的大写组件名必须包含文件名去扩展名——否则是「源码栏配了另一个文件」。
+ *   「源码」栏移除后它只剩图注作用，但**仍然要求文件存在**：图注指向一个不存在的
+ *   组件在页面上看不出来，构建也不会红。
+ * - 正文里的大写组件名必须包含文件名去扩展名。
  * - 围栏长度必须严格大于正文里最长的反引号串。
  * - 围栏必须闭合。
  *
@@ -54,6 +55,9 @@ const DEFAULT_DIR = 'components/content'
 
 /** 围栏语言，即插件的标记 */
 const LANG = 'Component'
+
+/** 「组件语法」页签的文字。改了 src/plugins/component-fence.ts 的 TABS 要同步改这里 */
+const USAGE_TAB = '组件语法'
 
 const FILENAME_RE = /\[([^\]]+)\]/
 const SOURCE_RE = /(?:^|\s)source=(\S+)/
@@ -153,19 +157,6 @@ function normalizeText(s) {
 	return s.replace(/\r\n/g, '\n').replace(/\s+$/, '')
 }
 
-function groupBy(list, key) {
-	const map = new Map()
-	for (const item of list) {
-		const k = key(item)
-		const bucket = map.get(k)
-		if (bucket)
-			bucket.push(item)
-		else
-			map.set(k, [item])
-	}
-	return map
-}
-
 const ENTITIES = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': '\'', '&apos;': '\'', '&amp;': '&' }
 
 function decode(s) {
@@ -204,7 +195,7 @@ for (const file of walkMdx(CONTENT)) {
 	const demos = []
 	for (const fence of fences) {
 		if (fence.lang !== LANG) {
-			// 旧写法退役后残留：插件不再填它，源码栏是空的，而构建是绿的
+			// 旧写法退役后残留：插件不再填它，那个围栏就是一个**空代码块**，而构建是绿的
 			if (SOURCE_RE.test(fence.info))
 				problems.push(`${file}:${fence.line} 还有非 Component 围栏带 source=（旧写法已退役）：${fence.info}`)
 			continue
@@ -278,40 +269,39 @@ for (const [file, demos] of perFile) {
 	for (const demo of demos) {
 		const label = `${file}:${demo.line} [${demo.filename}]`
 
-		// 源码栏：图注文件名要对，内容还要**逐字**等于磁盘上那个文件。
-		// 只比文件名抓不到配对错位——错位时两边都还「有名字」。
-		// 按名字分组而不是逐个围栏找：同一个组件可以在页面里演示多次
-		// （LinkCard 就有两处），那时「恰好一个」是错的判据。
-		const byName = figures.filter(f => f.filename === demo.filename)
-		if (byName.length === 0)
-			fail([`${label} 产物里没有图注为 ${demo.filename} 的源码栏`])
-		for (const f of byName) {
-			if (normalizeText(f.text) !== demo.source) {
-				/*
-				 * 只陈述量到的事实。内容不符有两种可能，症状一样：
-				 *   (a) 注入的就是被截断/写错的源码；
-				 *   (b) 图注与内容配错位（顺序对不上）。
-				 */
-				fail([`${label} 源码栏内容与 ${demo.rel} 对不上（产物 ${normalizeText(f.text).split('\n').length} 行 / 磁盘 ${demo.source.split('\n').length} 行）——要么注入的内容本身不对，要么图注与内容配错了位`])
-			}
-		}
-
-		// 用法栏：正文原文，一个不带文件名的 mdx 代码块
+		/*
+		 * 「源码」栏已于 2026-10-04 移除，原来那条「图注文件名 + 逐字等于磁盘文件」
+		 * 的判据随之失效——它本来抓的是**围栏 meta 配对错位**，而错位的后果
+		 * 现在退化成「用法栏图注拿错」，由下面这条逐字判据一并覆盖。
+		 *
+		 * 剩下的唯一产物侧判据是「用法」代码块必须与围栏正文**逐字相同**。
+		 * 它抓的是围栏被提前截断：正文里含三反引号而外层围栏也只写三反引号时，
+		 * mdast 在第一个三反引号处闭合，正文缺一大截，剩下的以普通 markdown
+		 * 身份漏进页面——构建照常绿。
+		 */
 		const usage = figures.filter(f => f.lang === 'mdx' && !f.filename && normalizeText(f.text) === demo.body)
 		if (usage.length === 0)
-			fail([`${label} 产物里找不到与围栏正文逐字相同的「用法」代码块`])
+			fail([`${label} 产物里找不到与围栏正文逐字相同的「${USAGE_TAB}」代码块`])
 	}
 
-	// 数量对账：同名源码栏的个数必须等于引用它的围栏个数。
-	// 「少」= 有围栏没展开；「多」= 别的围栏抢走了这个名字。
-	for (const [name, group] of groupBy(demos, d => d.filename)) {
-		const got = figures.filter(f => f.filename === name).length
-		const want = group.length
-		if (got !== want)
-			fail([`${file}: 图注为 ${name} 的源码栏有 ${got} 个，引用它的 Component 围栏有 ${want} 个`])
+	/*
+	 * 数量对账：只有 Component 围栏会产出「用法」页签（手写 <Tab> 不会用这个名字），
+	 * 所以它的个数必须等于本页 Component 围栏的个数。
+	 *   少 = 有围栏没展开；多 = 别处混进了不该有的用法栏。
+	 */
+	/*
+	 * `\\d` 而不是 `\d`：模板字符串里 `\d` 不是合法转义序列，JS 会把它吞成 `d`，
+	 * 于是正则变成 `data-tab-select="d+"`，永远匹配不到——而且**门禁会报 0 个页签**
+	 * 而不是报错，看起来像「围栏全没展开」。（这个坑与 shell 里 `$1` 被吃掉是同一族。）
+	 */
+	const usageTabs = (html.match(new RegExp(`data-tab-select="\\d+"[^>]*>${USAGE_TAB}<`, 'g')) || []).length
+	const want = demos.length
+	if (usageTabs !== want) {
+		fail([`${file} 产物里有 ${usageTabs} 个「${USAGE_TAB}」页签，而本页有 ${want} 个 Component 围栏——${
+			usageTabs < want ? '有围栏没展开成页签' : '多出来的用法页签来源不明'}`])
 	}
 }
 
 const total = [...perFile.values()].reduce((n, d) => n + d.length, 0)
-console.log(`OK: ${total} 个 Component 围栏（${perFile.size} 个文件）——三页签都展开，源码栏与磁盘文件逐字一致。`)
+console.log(`OK: ${total} 个 Component 围栏（${perFile.size} 个文件）——都展开成「现场效果 / 组件语法」两页签，语法栏与围栏正文逐字一致。`)
 process.exit(0)

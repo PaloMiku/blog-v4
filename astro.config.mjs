@@ -16,6 +16,7 @@ import { remarkComponentFence } from './src/plugins/component-fence'
 import { rehypeNuxtHeadingIds } from './src/plugins/heading-ids'
 import { rehypeMathCode } from './src/plugins/math-code'
 import { rehypeProseChrome } from './src/plugins/prose'
+import { remarkTabPanels } from './src/plugins/tab-panels'
 
 // Phase 1 spike 结论（Astro 7.3.5 默认 Sätteri 管线）：
 //   GFM / 任务列表 / 表格 / 删除线 / heading ID / Shiki —— 全部正常
@@ -50,14 +51,14 @@ import { rehypeProseChrome } from './src/plugins/prose'
 //    `…` 24 个 vs 2 个。例：`安装"飞牛播放器"登录 NAS` 线上是 `&quot;…&quot;`，
 //    本地被改成 `”…”`。
 // 10. remarkComponentFence 排在最前：它把 ```` ```Component [X.astro] ```` 围栏
-//     展开成 <Tab> 的三个页签（组件 = 正文按 MDX 真实渲染、用法 = 正文原文、
-//     源码 = 从磁盘读进来的组件文件）。排在最前是为了让下游 remark 插件看到的是
-//     展开后的树；下游还有 rehypeProseChrome 负责给两个派生围栏套上
+//     展开成 <Tab> 的两个页签（现场效果 = 正文按 MDX 真实渲染、组件语法 = 正文原文）。
+//     排在最前是为了让下游 remark 插件看到的是
+//     展开后的树；下游还有 rehypeProseChrome 负责给派生围栏套上
 //     figure.z-codeblock 外壳、走与页面上任何人工围栏完全相同的那条路。
 //     详见 src/plugins/component-fence.ts 的文件头。
 function createProcessor() {
 	return unified({
-		remarkPlugins: [remarkComponentFence, remarkMath],
+		remarkPlugins: [remarkComponentFence, remarkTabPanels, remarkMath],
 		rehypePlugins: [rehypeNuxtHeadingIds, rehypeMathCode, rehypeProseChrome, [rehypeKatex, { throwOnError: false, strict: false }]],
 		smartypants: false,
 	})

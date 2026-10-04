@@ -26,7 +26,17 @@ metaSlots:
 
 本站用 [Astro](https://astro.build) 构建，内容层是 [MDX](https://docs.astro.build/zh-cn/guides/integrations-guide/mdx/)——**MDC 的继任者**：可以直接在 `.mdx` 文件里写 JSX 组件，并支持一整套 remark / rehype 扩展。
 
-下面每个组件都写在一个 `Component` 围栏里，围栏正文就是**你实际会写的那段 MDX**：
+### 语法约定
+
+- **组件是构建期编译的真组件**，不是渲染出来的 HTML 字符串。它们写在 `src/components/`，有类型、有作用域样式、有真正的状态，产物是纯静态 HTML、零客户端框架。
+- **不需要 import**。组件表集中在 `src/lib/content-components.ts`，由页面侧 `<Content components={…} />` 注入。**引用一个没注册的组件名会让构建直接失败**，不会静默渲染成空白。
+- **带内容的组件要空行包裹**。`<Alert>` 和它的 `</Alert>` 各自独占一行、中间留空行，插槽内容才会被当成块级 markdown。单行的 `<Alert>文字</Alert>` 也行，但内容是裸文本，不走 markdown。
+- **行内组件用插槽，不要塞 prop**。`<Badge>重点</Badge>` 里的 `**粗体**`、`[链接](…)` 都会正常解析；写成 `<Badge text="重点" />` 则是纯字符串，格式标记会原样显示。
+- **嵌套围栏用四个反引号**。要展示「围栏代码块怎么写」本身时，外层必须比内层长，否则会提前闭合——三个套三个，示例会当场散架。所以本页大部分围栏都写成四个。
+
+### 组件示例长什么样
+
+下面每个组件都写在一个 `Component` 围栏里，**围栏正文就是你实际会写的那段 MDX**：
 
 ````mdx
 ```Component [Alert.astro]
@@ -36,7 +46,7 @@ metaSlots:
 ```
 ````
 
-构建时（`src/plugins/component-fence.ts`）它会展开成三个页签：**组件**是这段正文的真实渲染、**用法**是这段正文的原文、**源码**是从 `src/components/` 读进来的该组件文件。所以组件只写一次，源码也不可能与手抄的快照对不上。文件名写在方括号里；组件不在 `src/components/content/` 下时（`BlogHeader.astro`、`math-code.ts` 这类）再补一个 `source=<相对 src 的路径>`。
+构建时（`src/plugins/component-fence.ts`）它展开成两个页签：**现场效果**是这段正文的真实渲染、**组件语法**是这段正文的原文。两栏同出一处，因此不可能对不上。文件名写在方括号里，它同时决定默认路径 `src/components/content/<文件名>`；组件不在那个目录下时（`BlogHeader.astro`、`math-code.ts` 这类）再补一个 `source=<相对 src 的路径>`。
 
 ````Component [LinkCard.astro]
 <LinkCard title="MDX 语法（必读）" icon="https://astro.build/favicon.svg" link="https://docs.astro.build/zh-cn/guides/integrations-guide/mdx/" className="gradient-card active" />
@@ -658,6 +668,27 @@ pyftsubset ./AlimamaFangYuanTi.ttf --text=Header文本 --flavor=woff2
 ### Tab
 
 > Tab 组件支持两种样式：默认的标签栏样式和下拉框样式。
+
+面板用 `#tabN` 标记，`N` 从 1 开始连续递增，紧跟在它下面的 markdown 就是该面板的内容：
+
+<Tab tabs={["甲", "乙"]}>
+
+#tab1
+第一个面板，可以放**任意 markdown**：列表、表格、代码块都行。
+
+- 这样
+- 那样
+
+#tab2
+第二个面板。
+
+</Tab>
+
+它等价于 `<div slot="tab1">…</div>` 加 `<div slot="tab2">…</div>`——下面几个示例用的正是这种写法，两种可以共存。
+
+- 面板数必须与 `tabs` 数组长度一致，编号必须从 1 连续，对不上时构建直接失败。
+- `#tabN` 只能写在正文里的 `<Tab>` 上，放进 `Component` 围栏会让构建失败。
+- 不能嵌套：面板里再放一个带 `#tabN` 的 `<Tab>` 会在构建时报错。
 
 ````Component [Tab.astro]
 <Tab tabs={["一个简单的", "Tab"]}>

@@ -337,7 +337,7 @@ export function scanFences(source: string): CodeMeta[] {
 				 * （围栏照常渲染，只是少了那两个标记）。
 				 */
 				out.push(...scanFences(body.join('\n')))
-				out.push(...componentFenceInfos(componentFilename).map(parseFenceInfo))
+				out.push(...componentFenceInfos().map(parseFenceInfo))
 			}
 			openChar = ''
 			openLen = 0
