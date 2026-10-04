@@ -143,7 +143,10 @@ export const myFeed: FeedEntry = {
 	feed: new URL('/atom.xml', blogConfig.url).toString(),
 	icon: blogConfig.favicon,
 	avatar: blogConfig.author.avatar,
-	archs: ['Nuxt', 'Vercel'],
+	// 描述的是**本站**的技术架构（友链页逐站标注用的），不是作者个人会什么，
+	// 所以框架 / 托管平台跟着仓库现实走：2026-10-03 起是 Astro 7，产物由
+	// GitHub Actions 推 blog-public（GitHub Pages），站点再经 EdgeOne CDN 对外服务。
+	archs: ['Astro', 'GitHub Pages'],
 	date: blogConfig.timeEstablished,
 	comment: '这是我自己',
 }
