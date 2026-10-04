@@ -58,6 +58,25 @@ const { trigger = 'click', tabindex, class: className } = Astro.props
 </div>
 
 <script>
+	/*
+	 * 开合状态只落在 DOM 上（`panel.hidden` + 根元素的 `data-open`），
+	 * 没有任何跨实例的变量，因此下面取根元素后再取面板即可，
+	 * 让「点外部关闭」「Esc 关闭」这两处全局副作用能复用同一份实现。
+	 */
+	function openPanel(root) {
+		const panel = root.querySelector('[data-dropdown-panel]')
+		if (panel)
+			panel.hidden = false
+		root.setAttribute('data-open', 'true')
+	}
+
+	function closePanel(root) {
+		const panel = root.querySelector('[data-dropdown-panel]')
+		if (panel)
+			panel.hidden = true
+		root.removeAttribute('data-open')
+	}
+
 	// 原生脚本会被 Astro 去重合并，故用 data 属性定位各个实例
 	function initDropdown(root) {
 		if (!(root instanceof HTMLElement) || root.dataset.dropdownReady)
@@ -71,13 +90,11 @@ const { trigger = 'click', tabindex, class: className } = Astro.props
 		const mode = root.dataset.dropdownTrigger
 
 		function open() {
-			panel.hidden = false
-			root.setAttribute('data-open', 'true')
+			openPanel(root)
 		}
 
 		function close() {
-			panel.hidden = true
-			root.removeAttribute('data-open')
+			closePanel(root)
 		}
 
 		function toggle() {
@@ -111,15 +128,43 @@ const { trigger = 'click', tabindex, class: className } = Astro.props
 			if (e.target.closest?.('[data-dropdown-item]'))
 				close()
 		})
+	}
 
-		// 点击外部 / Esc 关闭
+	/*
+	 * 文档级副作用按 `lib/layout-state.ts` / `lib/modal.ts` 的
+	 * `bind*Globals()` 同一模式处理：模块级幂等锁 + 事件委托，全站只挂一份。
+	 *
+	 * 为什么这里能收敛而不会串味：每个实例的开合状态本来就只记在自己根元素的
+	 * `data-open` 与自己面板的 `hidden` 上，实例之间零共享状态；集中委托只要遍历
+	 * 「已展开的根元素」，语义与原先「每个实例各判一次自己」完全一致，
+	 * 不需要引入「哪个下拉开着」的全局单例。
+	 *
+	 * 为什么必须收敛：模块顶层在整页生命周期里只跑一次，而 Astro 的打包脚本靠
+	 * `astro:page-load` 重入初始化。一旦以后接入 ClientRouter，document 会被复用，
+	 * 每实例各挂一份就会随每次导航累加，监听器只增不减（且闭包持有已卸载的根元素）。
+	 */
+	let dropdownGlobalsBound = false
+
+	function bindDropdownGlobals() {
+		if (dropdownGlobalsBound)
+			return
+		dropdownGlobalsBound = true
+
+		// 点外部：收起所有不含点击目标的已展开下拉
 		document.addEventListener('click', (e) => {
-			if (!root.contains(e.target))
-				close()
+			for (const root of document.querySelectorAll('[data-dropdown-root][data-open]')) {
+				if (!root.contains(e.target))
+					closePanel(root)
+			}
 		})
+
+		// Esc：一次性收掉所有已展开的下拉。原先每个实例都挂一份 keydown，
+		// N 个实例就是 N 份重复回调；语义上等价，收起的集合也相同。
 		document.addEventListener('keydown', (e) => {
-			if (e.key === 'Escape')
-				close()
+			if (e.key !== 'Escape')
+				return
+			for (const root of document.querySelectorAll('[data-dropdown-root][data-open]'))
+				closePanel(root)
 		})
 	}
 
@@ -127,6 +172,8 @@ const { trigger = 'click', tabindex, class: className } = Astro.props
 		for (const root of document.querySelectorAll('[data-dropdown-root]'))
 			initDropdown(root)
 	}
+
+	bindDropdownGlobals()
 
 	if (document.readyState === 'loading')
 		document.addEventListener('DOMContentLoaded', initAll)
