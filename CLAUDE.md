@@ -199,6 +199,21 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
 25. **`.ps1` 里的路径必须从 `$PSScriptRoot` 解析。** `Resolve-Path '..\x'` 跟的是**进程 CWD**
     而不是脚本位置——`check-dates` 与 `compare-urls` 因此指向过从未存在的路径。
     Node 侧对应物是从 `import.meta.url` 解析，不要用 `process.cwd()`。
+26. **「在本机一直绿」不等于判据与环境无关；换台机器、换个时区就红。**
+    `check-dates` 把 source 的裸墙上时钟（`date: 2025-05-26 17:00:00`，Asia/Shanghai）
+    和产物的 UTC 表示（`datetime="2025-05-26T09:00:00Z"`）比成同一瞬间，用的是
+    `new Date(裸墙钟)`——**按跑门禁那台机器的本地时区解析**。PowerShell 版一直在这台
+    +08:00 的开发机上跑，所以恰好成立；2026-10-04 门禁迁到 Node、CI 第一次在
+    `TZ=UTC` 的 ubuntu runner 上跑它，40 页**全部**差 8 小时。
+    **这不是移植写错了，是原判据一直靠环境兜着**，而「本机绿了三个月」正是它
+    看起来没问题的原因。折算必须钉在 `blogConfig.timeZone` 这个**显式配置**上
+    （提交 `7e3029c` 已为站点做了这件事，门禁没跟上），偏移量用 `Intl` 按该时刻算，
+    不要硬编码 `+08:00`。**验门禁要换时区重跑**：
+    `TZ=UTC node scripts/accept.mjs --skip-build`。
+27. **一道门禁红了却说不出为什么，等于逼人去本地重跑一遍。** runner 最初只把门禁输出
+    里的 `RESULT:` 一行收进汇总表，其余 stdout 全部丢弃，于是 CI 上 `check-dates` 红了
+    只剩孤零零一个 `FAIL`，排查只能把整个流水线日志拉下来再 grep 门禁名。
+    **失败路径必须把门禁自己的输出原样打出来**——细节在门禁里，不在汇总里。
 
 ## 开放项
 
@@ -211,7 +226,7 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
 | ~~分享按钮两侧不同步~~ | Nuxt 侧删了分享组件，Astro 侧从未跟进 | **已随部署消解**（2026-10-03）。两侧现已一致 |
 | ~~`compare-dom` 15 处 marker 不一致~~ | 该门禁读 Nuxt 冻结基线 | **2026-10-04 退役**：迁移已完成、基线无法再冻结，守的是一个不会再变的目标 |
 | 产物 CSS 里有 120 个类名在全站找不到落点 | 2026-10-04 实测：465 个类名里 120 个无落点，其中约 20 个是 Vue transition 残留（`*-enter-active` 等），另有 Twikoo 运行时渲染的 `tk-*`、katex/shiki 的内部类名 | **未处理**。做成门禁要 ~100 条 allowlist，不划算；但 Vue transition 那批是迁移残留，删掉能实打实减小产物。动 `src/styles/` 前先确认没有组件在运行时加这些 class |
-| Twikoo 评论区线上报「请求被跨域策略拦截 / status 0」 | `POST https://twikoo.sotkg.com/` → 404 且无 CORS 头；`POST .../.netlify/functions/twikoo` → 200 + 正确 ACAO | **已修**（`blogConfig.twikoo.envId` 改到函数路径），见坑位 22。本地已验；**线上要等 push main 走 CI** |
+| ~~Twikoo 评论区报「请求被跨域策略拦截 / status 0」~~ | `POST https://twikoo.sotkg.com/` → 404 且无 CORS 头；`POST .../.netlify/functions/twikoo` → 200 + 正确 ACAO | **已修并已上线**（2026-10-04，`af623f7`）。线上实测：评论区渲染「没有评论」而非跨域错误，坑位 22 |
 | Twikoo 评论库查不到任何评论 | 对全部 38 篇文章调 `GET_COMMENTS_COUNT`，带/不带尾斜杠都返回 `count: 0` | **pending，与上面那条无关**（修之前请求根本到不了函数）。若预期有历史评论，要查 Netlify 上那个函数的数据库 |
 | `probe-subtree` 的 profile 模式（垂直剖面 / 空隙 / 对账）该不该并进 `compare-ui-parity` | 它现在不在任何门禁名单里，作为「门禁」等于不存在 | 未处理。它的 tree 模式已被 `--sel=` 完全覆盖，profile 模式是唯一能说清「空隙」的仪器 |
 | `compare-dom-live` 退役后丢掉的覆盖 | 它独有的是 head meta 19 条 + 侧栏 widget/footer 计数 3 条，且只硬编码 8 页 | 2026-10-04 退役时未回填。`compare-ui-parity` 的 `SEM_RULES` 已含 head meta，但只有加重档会跑 |
@@ -223,7 +238,13 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
 - **2026-10-04：门禁全面从 PowerShell 迁到 Node**，`acceptance.ps1` → `scripts/accept.mjs`，
   仓库内 0 个 `.ps1`。CI 从 13 个手抄步骤变成一条 `node scripts/accept.mjs --skip-build`，
   覆盖范围从 12 道扩到默认档全量。退役 10 个脚本（5 个纯迁移期 Nuxt 对比门禁 + 5 个零引用孤儿）
-- 同日修掉 `audit-dead-scope` 的不稳定白名单键，与 Twikoo `envId` 指错路径
+- 同日上线三处修复：`audit-dead-scope` 的不稳定白名单键、Twikoo `envId` 指错路径
+  （`af623f7`）、以及 `check-dates` 的时区依赖（`3f83aaf`）
+- **CI 第一次跑就红，红了两次，两次都是我引入的**：① 构建步骤 `tee` 写不进
+  gitignore 的 `.astro-compare/`（旧 `acceptance.ps1` 用 `New-Item` 建过，换 runner 后
+  没人建）；② `check-dates` 在 `TZ=UTC` 的 runner 上 40 页全差 8 小时——**那道门禁从来
+  没有真正与时区无关**，PowerShell 版一直在这台 +08:00 的开发机上跑，「按本地时区读
+  裸墙钟」恰好成立。见坑位 26
 
 ### 提交与部署
 
