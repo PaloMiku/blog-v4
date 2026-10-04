@@ -87,10 +87,51 @@ const { items, size = 'medium', class: className } = Astro.props
 	}
 }
 
-/* 图标跟随 dd 的字号，只需一个 inline 包装层 */
+/*
+ * 图标跟随 dd 的字号，只需一个 inline 包装层。
+ *
+ * ⚠️ 这里**不能**再写 `vertical-align: sub`。
+ * 内层图标（`main.css` 的 `:where(.iconify)`，或 BlogTech 那条 `:global(img)`）
+ * 已经各带一次 `sub` 下沉；包装层再来一次就是**两次**，
+ * 两次都叠在文字基线之下，图标中心实测比文字中心低 4~5px（2026-10-04，dev 抽屉内实测）。
+ * 包装层一旦成了 flex item，`vertical-align` 根本不参与计算——
+ * 把它删掉是为了让「对齐由下面两条尺寸规则负责」这件事在代码里说清楚，
+ * 免得日后有人照着 Nuxt 侧的样子再加回来。
+ */
 .dl-icon {
 	display: inline-block;
-	vertical-align: sub;
+}
+
+/*
+ * 非 stack 的三种尺寸里，图标与文本在**同一个行盒**内流动，
+ * 对齐交给 flex：整行 `align-items: center` 居中，位置不再依赖任何一侧的行高。
+ * 与 `.stack` 是同一套解法，两处保持一致。
+ *
+ * `value` 里那个前导空格（`' R2'`）在 flex 容器里会被行首规则吃掉，
+ * 所以间距由 `gap` 给出，而不是靠那个空格。
+ * `:has()` 的浏览器基线与布局层 `#blog-root:not(:has(…))` 一致。
+ */
+.dl-group:not(.stack) > div > dd:has(> .dl-icon) {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+
+	/*
+	 * 内层图标必须 block：vertical-align 对块级盒不生效，
+	 * 否则 main.css 那条 `sub` 会在包装层**内部**再加一次下沉，
+	 * 外层居中居的是一个偏下的盒子，等于没修。
+	 * 块级化之后包装层的高度就等于图标本身，`align-items` 才是真的居中。
+	 * 内层带的是 Icon 组件的 scope，必须 :global()（陷阱 2/3）。
+	 */
+	> .dl-icon > :global(.iconify),
+	> .dl-icon > :global(img) {
+		display: block;
+	}
+}
+
+/* small 是居中排版：dd 变 flex 后 `text-align: center` 不再管内部，交给 justify-content。 */
+.dl-group.small > div > dd:has(> .dl-icon) {
+	justify-content: center;
 }
 
 .dl-group.small {
