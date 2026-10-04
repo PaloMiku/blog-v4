@@ -10,12 +10,16 @@
  *   A. <use href="#ai:…"> 全部可解析，已布局的图标字形非零
  *   B. 计算样式指纹（10 个属性，按 标签名+class+状态 归并）交互前后不变
  *   C. 选中项对勾的渲染盒子跨步骤稳定
+ *   D. dropdown 的展开态计数按步骤在 1/0 之间来回翻（/archive/ 那一组）
  *
  * 比计算样式、而不是去样式表反推 cid：后者试过两版都不可靠——遍历写成
  * if (r.cssRules) 会把每条规则当嵌套容器跳过（空的 CSSRuleList 也 truthy），
  * 修好后又会解析出 .t/.c 这类不存在的 class。量后果没有那些中间层。
  *
- * 只开一个浏览器会话、两个页面、8 次交互，实测 23s，因此能进 CI。
+ * 只开一个浏览器会话、三个页面、12 次交互，两个页面时实测 23s，因此能进 CI。
+ * 第三页是 /archive/ 的 dropdown 交互组：它不另起浏览器，复用同一个会话与探针，
+ * 边际成本只有一次导航加四段 900ms 等待。为它单开第 31 道门禁不划算——
+ * 要解决的是覆盖盲区，不是门禁数量。
  *
  * 内存不足 1500MB 时退出 0 并打 SKIPPED：无头 Chrome 约 700MB，低于此数
  * 它的结论不可信。谎报失败比不报更糟。
@@ -244,10 +248,18 @@ function PROBE() {
     checkBox = [Math.round(r.width), Math.round(r.height)]
   }
 
+  // ---- 判据 D：dropdown 展开态计数 ----
+  //
+  // 只认根元素上那一个 data-open 属性。不去读面板的 hidden：hidden 同时被
+  // 「hidden 属性」和「CSS 两条路」控制，任一侧失效都可能在视觉上看着还是收起。
+  // 也不做文本匹配：视口外的元素文本匹配会返回 count 0，那是假绿（实测踩过）。
+  const openDropdowns = document.querySelectorAll('[data-dropdown-root][data-open]').length
+
   return {
     missingSymbol,
     blankGlyph,
     checkBox,
+    openDropdowns,
     fingerprint: Object.fromEntries(fingerprint),
   }
 })()`
@@ -307,8 +319,90 @@ async function waitSettled() {
 	return prev
 }
 
+/**
+ * dropdown 探针的**接线自证**：跑那四步之前，先确认页面上真的有一个可测的实例。
+ *
+ * 为什么必须单独一层：下面四步的期望值是 1/0/0/0。页面上一旦没有可测的 dropdown，
+ * 计数恒为 0，前三步会「全部按预期收拢」、绿得毫无意义。而以下四种失效在计数为 0
+ * 时长得一模一样：组件没渲染、脚本没执行、测错了实例、面板里没有可点项。
+ * 「对着没接线的页面报绿」是这道门禁最坏的失效模式，所以每一种都单独报红，
+ * 绝不静默跳过、也不退化成 SKIP。
+ */
+function DROPDOWN_CONTRACT() {
+	return `(() => {
+  const all = Array.from(document.querySelectorAll('[data-dropdown-root]'))
+  if (!all.length)
+    return { ok: false, reason: '页面上一个 [data-dropdown-root] 都没有 —— dropdown 没渲染出来' }
+  const focusin = all.filter(r => r.getAttribute('data-dropdown-trigger') === 'focusin')
+  if (!focusin.length)
+    return { ok: false, reason: '没有 data-dropdown-trigger="focusin" 的实例（实际取值：'
+      + all.map(r => r.getAttribute('data-dropdown-trigger')).join(', ') + '）—— 测的不是 focusin 那一路' }
+  if (focusin.length > 1)
+    return { ok: false, reason: 'focusin 实例有 ' + focusin.length + ' 个，[data-open] 计数会互相串味' }
+  const root = focusin[0]
+  if (root.dataset.dropdownReady !== '1')
+    return { ok: false, reason: 'dataset.dropdownReady 不是 1 —— 组件脚本没执行，或脚本已改接线' }
+  if (!root.querySelector('[data-dropdown-anchor]'))
+    return { ok: false, reason: '缺少触发器 [data-dropdown-anchor]' }
+  const panel = root.querySelector('[data-dropdown-panel]')
+  if (!panel)
+    return { ok: false, reason: '缺少面板 [data-dropdown-panel]' }
+  if (!panel.querySelector('[data-dropdown-item]'))
+    return { ok: false, reason: '面板里没有 [data-dropdown-item] —— 「点选项后收起」无从触发' }
+  return { ok: true }
+})()`
+}
+
+/* ── dropdown 交互组 ────────────────────────────────────────────────────── */
+/*
+ * 覆盖 partial/Dropdown.astro 的三条关闭路径：点外部、Esc、点面板内选项。
+ * 这三条都挂在 document 级委托上，静态产物里完全看不出来，30 道门禁此前一条都没覆盖。
+ */
+const DD_OPEN_COUNT = `document.querySelectorAll('[data-dropdown-root][data-open]').length`
+
+/**
+ * 组装一个 dropdown 步骤：先展开，再执行动作。
+ *
+ * 展开放在每一步**自己**里面，而不是依赖上一步的遗留状态：焦点是粘的，
+ * 上一轮留下的展开态会让下一步的「点外部后收起」对着一个已经开着的东西，
+ * 测出来的绿灯不代表任何东西。同时展开后立刻断言计数为 1，
+ * 使「收起」那三步的前置条件本身也是被检查过的，而不是假设出来的。
+ */
+function ddStep(action) {
+	return `(() => {
+  const r = document.querySelector('[data-dropdown-root][data-dropdown-trigger="focusin"]')
+  if (!r) return '页面上找不到 focusin 模式的 [data-dropdown-root]'
+  const t = r.querySelector('[data-dropdown-anchor] button, [data-dropdown-anchor] a, [data-dropdown-anchor] [tabindex]')
+  if (!t) return '[data-dropdown-anchor] 内没有可聚焦元素，focusin 触发不了'
+  // OrderToggle 的分类按钮在「一篇分类都没有」时是 disabled 的，此时 focus() 静默无效。
+  // 单独点出来，别让它混进下面那句含糊的「计数不是 1」。
+  if (t.disabled) return '触发按钮处于 disabled，focus() 不会派发 focusin'
+  // focusin 的坑：元素已处于焦点上时 focus() 不会再派发 focusin，
+  // 连着两步里的第二次展开会静默失效（实测）。先 blur 再 focus，与真实 Tab 序列一致。
+  if (r.contains(document.activeElement)) document.activeElement.blur()
+  t.focus()
+  if (${DD_OPEN_COUNT} !== 1) return 'focus() 之后展开态计数是 ' + ${DD_OPEN_COUNT} + '，不是 1'
+  ${action}
+})()`
+}
+
+// 派发真实的 KeyboardEvent，而不是拿 focusout 近似：Esc 那条路径就挂在
+// document 的 keydown 上，近似等于没测。
+const DD_OPEN = ddStep('return true')
+const DD_CLOSE_OUTSIDE = ddStep(`const h1 = document.querySelector('h1')
+  if (!h1) return '页面上没有 h1，没法当「外部」点击目标'
+  h1.click()
+  return true`)
+const DD_CLOSE_ESC = ddStep(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+  return true`)
+const DD_CLOSE_ITEM = ddStep(`const item = r.querySelector('[data-dropdown-panel] [data-dropdown-item]')
+  if (!item) return '面板里没有 [data-dropdown-item]，点不到'
+  item.click()
+  return true`)
+
 /* ── 交互序列：每一步都会重排 DOM ───────────────────────────────────────── */
-/* 每项 = [说明, 页内表达式]。表达式必须真的改 DOM，返回 false 表示没点上。 */
+/* 每项 = [说明, 页内表达式, 展开态期望?]。表达式必须真的改 DOM，返回 false 表示没点上；
+   返回一句字符串则表示「没测到东西」，那句话会原样进 failures（见下方 typeof 分支）。 */
 const PAGES = [
 	{
 		path: '/?page=1',
@@ -331,6 +425,20 @@ const PAGES = [
 			['选中第 2 项', `(() => { const b = document.querySelector('.combobox-item[data-tab-select="2"]'); if (!b) return false; b.click(); return true })()`],
 			['展开 combobox（再看）', `(() => { const b = document.querySelector('[data-combobox-trigger]'); if (!b) return false; b.click(); return true })()`],
 			['选回第 1 项', `(() => { const b = document.querySelector('.combobox-item[data-tab-select="1"]'); if (!b) return false; b.click(); return true })()`],
+		],
+	},
+	{
+		// Dropdown（partial/Dropdown.astro）在生产里的唯一使用方是 OrderToggle 的分类
+		// 下拉。它是 /archive/ 上唯一带「点外部关闭 / Esc 关闭」document 级委托的组件，
+		// 而这两条路径此前**没有任何一条门禁覆盖过**。
+		path: '/archive/',
+		label: '归档页（dropdown）',
+		contract: DROPDOWN_CONTRACT(),
+		steps: [
+			['focusin 展开下拉', DD_OPEN, 1],
+			['点外部（h1）后收起', DD_CLOSE_OUTSIDE, 0],
+			['Esc 后收起', DD_CLOSE_ESC, 0],
+			['点面板内选项后收起', DD_CLOSE_ITEM, 0],
 		],
 	},
 ]
@@ -428,6 +536,21 @@ const failures = []
 for (const page of PAGES) {
 	await goto(`${LOCAL}${page.path}`)
 
+	// 接线自证先行。这组判据的期望值是 1/0/0/0，页面上一旦没有可测的 dropdown，
+	// 计数恒为 0、每一步都「符合预期」——那是最坏的假绿。这里不通过就整页跳过，
+	// 并且**报红**而不是 SKIP：测不到东西不算通过。
+	if (page.contract) {
+		const c = await evaluate(page.contract)
+		const bad = !c || c.__error
+			? (c?.__error || '探针没有返回结果')
+			: (c.ok ? '' : c.reason)
+		if (bad) {
+			failures.push(`[${page.label}] dropdown 接线自证失败：${bad}`)
+			console.log(`\n[${page.label}] 接线自证未通过，跳过该页交互（不测一个不存在的实例）`)
+			continue
+		}
+	}
+
 	// 基线必须取自**已经静止**的页面：第三方脚本水合完成后才算数，否则它注入的
 	// DOM 会被算成「交互造成的样式变化」。见 waitSettled 的注释。
 	const baseline = await waitSettled()
@@ -441,11 +564,15 @@ for (const page of PAGES) {
 	console.log(`
 [${page.label}] 首屏：指纹 ${Object.keys(baseline.fingerprint).length} 条，symbol 缺失 ${baseline.missingSymbol.length}，空白字形 ${baseline.blankGlyph.length}`)
 
-	for (const [label, expr] of page.steps) {
+	// 步骤第三项是可选的展开态期望（判据 D），前两页没有就不参与比较。
+	for (const [label, expr, expectOpen] of page.steps) {
 		const tag = `${page.label} / ${label}`
 		const clicked = await evaluate(expr)
 		if (clicked !== true) {
-			failures.push(`${tag}：页面上找不到触发元素（门禁没测到东西，不能算通过）`)
+			// 表达式可以回一句人话说明「为什么没测到东西」；只回 false 时用通用原因。
+			failures.push(typeof clicked === 'string'
+				? `${tag}：${clicked}`
+				: `${tag}：页面上找不到触发元素（门禁没测到东西，不能算通过）`)
 			continue
 		}
 		await sleep(900)
@@ -470,8 +597,11 @@ for (const page of PAGES) {
 		// 那不是「对勾坏了」。基准也取第一个非零值。
 		if (r.checkBox && r.checkBox[0] > 0 && refCheckBox && r.checkBox.join('x') !== refCheckBox.join('x'))
 			failures.push(`${tag}：选中项对勾的盒子从 ${refCheckBox.join('x')} 变成 ${r.checkBox.join('x')} —— 换选项后重建的对勾没有拿到作用域`)
+		// 判据 D：展开态计数必须落在该步的期望上。
+		if (expectOpen !== undefined && r.openDropdowns !== expectOpen)
+			failures.push(`${tag}：展开态 [data-dropdown-root][data-open] 计数应为 ${expectOpen}，实际 ${r.openDropdowns}`)
 
-		console.log(`  ${label.padEnd(22)} symbol缺失 ${r.missingSymbol.length}  空白字形 ${r.blankGlyph.length}  样式变化 ${diffFingerprints(baseline.fingerprint, r.fingerprint).length}${r.checkBox ? `  对勾 ${r.checkBox.join('x')}` : ''}`)
+		console.log(`  ${label.padEnd(22)} symbol缺失 ${r.missingSymbol.length}  空白字形 ${r.blankGlyph.length}  样式变化 ${diffFingerprints(baseline.fingerprint, r.fingerprint).length}${r.checkBox ? `  对勾 ${r.checkBox.join('x')}` : ''}${expectOpen !== undefined ? `  展开 ${r.openDropdowns}/${expectOpen}` : ''}`)
 	}
 }
 
@@ -492,5 +622,5 @@ if (failures.length) {
 	process.exit(1)
 }
 const totalSteps = PAGES.reduce((n, p) => n + p.steps.length, 0)
-console.log(`RESULT: PASS - ${PAGES.length} 页 / ${totalSteps} 次交互后 <use>、计算样式与对勾几何均完好`)
+console.log(`RESULT: PASS - ${PAGES.length} 页 / ${totalSteps} 次交互后 <use>、计算样式、对勾几何与 dropdown 开合均完好`)
 process.exit(0)
