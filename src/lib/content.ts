@@ -118,10 +118,10 @@ export function categorizeArticles(list: readonly ContentEntry[]) {
 }
 
 /**
- * 精选文章（首页轮播）。
- * 对应首页的 `orderBy(listRaw.filter(item => item.recommend !== null), ['recommend', 'date'], ['desc'])`。
+ * 精选文章（首页轮播）：先按 recommend 降序，同 recommend 时按 date 降序。
+ * 两个键同向，date 侧沿用 `sortArticles` 的 desc 约定（比较器取负）。
  *
- * 注意 Nuxt 侧那个 `!== null` 的判据在 zod `.optional()` 下等于「全部通过」
+ * 注意 Nuxt 侧 `recommend !== null` 的判据在 zod `.optional()` 下等于「全部通过」
  * （未设置时是 `undefined`），实际靠 `recommend` 有值才进入排序。
  * 这里用 `!= null` 保持同样语义：有值才精选。
  */
@@ -131,7 +131,7 @@ export async function getRecommended(): Promise<ContentEntry[]> {
 		.filter(e => e.data.recommend != null)
 		.sort((a, b) => {
 			const p = (b.data.recommend ?? 0) - (a.data.recommend ?? 0)
-			return p !== 0 ? p : byDateAsc(a, b)
+			return p !== 0 ? p : byDateAsc(a, b) * -1
 		})
 }
 
