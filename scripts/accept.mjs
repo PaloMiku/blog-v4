@@ -159,6 +159,24 @@ function lastResultLine(out) {
 	return line ? line.slice(7, 90) : ''
 }
 
+/**
+ * 门禁红了就把它的完整输出打出来。
+ *
+ * 2026-10-04 CI 第一次跑时 `check-dates` 红了，汇总里只有一行 `FAIL`——
+ * 「哪一页、源值多少、产物值多少」全在门禁自己的 stdout 里，而 runner 把它吞了。
+ * 于是只能把流水线日志整个拉下来、grep 门禁名才能看到原因。
+ * **一道门禁在流水线里红了却说不出为什么，等于逼人去重跑一遍本地。**
+ */
+function dumpFailure(name, out) {
+	const text = (out || '').trimEnd()
+	if (!text) {
+		console.log(`      （${name} 没有输出）`)
+		return
+	}
+	for (const line of text.split('\n'))
+		console.log(`      │ ${line}`)
+}
+
 function section(title) {
 	console.log(`\n── ${title} ${'─'.repeat(Math.max(0, 58 - title.length))}`)
 }
@@ -234,6 +252,8 @@ function main() {
 			const skipped = r.status === 0 && (r.missing || SKIP_MARKERS.test(r.out))
 			record(name, r.status, secs, skipped ? firstSkipLine(r.out) : lastResultLine(r.out), skipped)
 			console.log(`  ${r.status !== 0 ? 'FAIL' : skipped ? 'SKIP' : 'OK  '}  ${name.padEnd(24)} ${secs.toFixed(1)}s  ${results.at(-1).note}`)
+			if (r.status !== 0)
+				dumpFailure(name, r.out)
 			if (r.missing)
 				missing++
 			continue
@@ -243,6 +263,8 @@ function main() {
 			missing++
 		const badge = r.status !== 0 ? 'FAIL' : r.skipped ? 'SKIP' : 'OK  '
 		console.log(`  ${badge}  ${name.padEnd(24)} ${(results.at(-1).seconds).toFixed(1)}s  ${results.at(-1).note}`)
+		if (r.status !== 0)
+			dumpFailure(name, r.out)
 	}
 
 	// check-build-warnings 单独跑：它读步骤 1 写下的日志，不自己构建。

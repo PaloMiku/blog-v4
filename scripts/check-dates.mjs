@@ -63,13 +63,54 @@ function readText(file) {
 }
 
 /**
- * 复刻 [datetime]::Parse($s, InvariantCulture).ToUniversalTime()。
- * Unspecified 的墙上时钟按**本机**时区解释，再转 UTC；带偏移的输入直接尊重其偏移。
- * `new Date()` 在非 ISO 形式上同样是按本地时区解析的——这正是内容管线自己的读法。
+ * source 的裸墙上时钟按**站点时区**（`blogConfig.timeZone`，即 Asia/Shanghai）解释，
+ * 不用跑门禁那台机器的时区。
+ *
+ * 为什么必须钉死时区：source 写的是 `date: 2025-05-26 17:00:00`，产物是
+ * `datetime="2025-05-26T09:00:00Z"`——17:00 +08:00 就是 09:00Z，两者是同一瞬间。
+ * 「按本地时区读」只在跑门禁的机器恰好也是 +08:00 时成立。
+ * PowerShell 原版就是这么过的：它一直在这台 +08:00 的开发机上跑，于是**这道门禁
+ * 从来没有真正与时区无关**。2026-10-04 门禁迁到 Node、CI 第一次在 ubuntu runner
+ * 上跑它（TZ=UTC），40 页全部差 8 小时——不是移植写错了，是原判据一直靠环境兜着。
+ *
+ * 与构建的一致性来自 `blogConfig.timeZone`（提交 7e3029c 已把它锁成显式值），
+ * 不是来自「构建机碰巧在东八区」。所以这里从配置里读，不写死 +08:00。
+ */
+const SITE_TZ = (readText(join(ROOT, 'src', 'config', 'blog.ts')).match(/timeZone:\s*'([^']+)'/) || [])[1] || 'Asia/Shanghai'
+
+/** 站点时区在某一瞬间的 UTC 偏移（分钟）。不硬编码偏移量，夏令时也不会错。 */
+function siteOffsetMinutes(instantMs) {
+	const part = new Intl.DateTimeFormat('en-US', { timeZone: SITE_TZ, timeZoneName: 'longOffset' })
+		.formatToParts(new Date(instantMs))
+		.find(p => p.type === 'timeZoneName')
+		?.value ?? 'GMT+00:00'
+	const m = /GMT([+-])(\d{1,2}):(\d{2})/.exec(part)
+	if (!m)
+		return 0
+	return (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]))
+}
+
+/**
+ * 把裸墙上时钟按站点时区折算成瞬间。
+ *
+ * `new Date("2025-05-26 17:00:00")` 在非 ISO 形式上按**本机**时区解析（V8 的实现
+ * 细节），所以不能直接用它的 getTime()。做法是：先把这个墙上时钟当成 UTC 读
+ * （`Date.UTC`），得到一个「无偏移」的基准，再减去该时刻站点时区的偏移。
  */
 function parseSourceInstant(srcDate) {
-	const t = new Date(srcDate).getTime()
-	return Number.isNaN(t) ? null : t
+	const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(srcDate)
+	if (!m) {
+		// 带偏移或纯日期的输入：交给 Date 解析，并明确按 UTC 读，避免又依赖本机时区。
+		const t = Date.parse(/Z|[+-]\d{2}:?\d{2}$/i.test(srcDate) ? srcDate : `${srcDate}Z`)
+		return Number.isNaN(t) ? null : t
+	}
+	const [, y, mo, d, h, mi, s] = m
+	const naive = Date.UTC(+y, +mo - 1, +d, +h, +mi, +(s || 0))
+	if (Number.isNaN(naive))
+		return null
+	// 偏移本身取决于时刻，用基准值查一次即可（Asia/Shanghai 无夏令时，
+	// 即便有，用基准查出的偏移也足以定位正确的那个瞬间）。
+	return naive - siteOffsetMinutes(naive) * 60_000
 }
 
 /**
