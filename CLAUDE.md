@@ -22,6 +22,9 @@ pnpm accept:full             # 加重档：加打线上站的门禁，20-25min�
 pnpm interaction-check       # 交互门禁，**单独跑**，刻意不进验收流水线
 node scripts/accept.mjs --skip-build          # 复用现有 dist/，只跑门禁
 node scripts/accept.mjs --only check-dates    # 只跑某几道（调试用）
+node scripts/accept.mjs --print-policies      # 只打印门禁的跳过策略矩阵，不跑门禁
+ACCEPT_FORCE_CI=1 node scripts/accept.mjs     # 本机按 CI 判定跑（验 CI 上的判据）
+node scripts/check-expirations.mjs --selftest # 豁免台账门禁的自检（13 例，不读真实台账）
 node scripts/probe-subtree.mjs --sel='<css>'  # 逐节点几何对比（诊断工具）
 ```
 
@@ -74,9 +77,24 @@ node scripts/probe-subtree.mjs --sel='<css>'  # 逐节点几何对比（诊断�
    就因此只在本地跑。`check-ci-triggers.mjs` 现在直接 import 名单校验，不许再手抄。
 2. **加了门禁就要在同一次改动里接进 `accept.mjs` 的名单**，并跑一次红绿双向。接进去之前
    先想清楚它报红时该怎么办。一道永远红的门禁等价于没有门禁。
-3. **「跳过」不等于「通过」。** 门禁在内存不足 / 基线缺失 / 网络不可达时会自己放弃并退 0
-   （一次网络抖动不该拦住发布）。runner 把这类单独记成 `skipped`，**不计入 passed**，
-   汇总行会写明。汇报「全绿」时必须带上这个数。
+3. **「跳过」不等于「通过」——现在这句话已经写进退出码了。** 门禁在内存不足 / 基线缺失 /
+   网络不可达时会自己放弃并退 0（一次网络抖动不该拦住发布）。**每道门禁在名单里都带一个
+   `skip` 策略**，默认 `never`（跳过即缺陷），只有三道标了豁免且各写了 `why`：
+
+   | skip | 本机跳过 | CI 跳过 |
+   | --- | --- | --- |
+   | `never`（默认） | 红 | 红 |
+   | `env-dependent` | 绿 | **红** |
+   | `expected-in-ci` | 红 | 绿（仍计入 `skipped` 并逐条点名） |
+
+   违规跳过会让 `accept.mjs` 自己 `exit 1`，汇总里多一行 `违规跳过 N`。
+   豁免的条数、门禁的豁免清单都别在这里复述——`node scripts/accept.mjs --print-policies`
+   打印的就是权威版本。
+   ⚠️ **CI 相关的判据如果只能到 CI 上才能验，就等于没有 CI 相关的判据**，所以有
+   `ACCEPT_FORCE_CI=1` 让本机能按 CI 判定跑一遍。改这套判据后必须用它验过再提交。
+
+   改名单元素形态（字符串 ↔ 对象）时记得两处消费方：`--only` 的过滤和
+   `check-ci-triggers.mjs` 的取名都要走 `gateName()`，否则会静默失配——见坑位 28。
 
 ### 为什么门禁全是 Node
 
@@ -232,6 +250,22 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
     里的 `RESULT:` 一行收进汇总表，其余 stdout 全部丢弃，于是 CI 上 `check-dates` 红了
     只剩孤零零一个 `FAIL`，排查只能把整个流水线日志拉下来再 grep 门禁名。
     **失败路径必须把门禁自己的输出原样打出来**——细节在门禁里，不在汇总里。
+28. **「一道门禁都没跑，却报全绿」比「门禁自己错了」更危险——两者都是绿灯失效。**
+    门禁名单的元素从字符串改成 `{ name, skip, why }` 的同一次改动里，`--only` 的过滤
+    拿字符串跟对象比、**永远不匹配**，过滤结果为空集，runner 一路走到汇总照样打出
+    `ACCEPTED: all steps green`。当时就是靠 `--only` 的一次调试发现的，因为
+    `total` 数对不上才注意到门禁没跑。**「过滤后为空」必须直接 `exit 2`**，
+    且所有按名字匹配名单的地方都要过同一个 `gateName()`。
+    同一改动里 `check-ci-triggers.mjs` 也中招：它把元素直接当字符串拼路径，
+    得到 `[object Object]`，`existsSync` 一律 false，于是**把名单里每一道都报成
+    「不存在」**——它自己会暴露，但那一堆假问题会把真正的缺失埋掉。
+29. **「绿灯」这个词要有定义，否则它会退化成「没报红」。** 旧 runner 对 `skipped > 0`
+    一律 `exit 0`，而 CI 的步骤顺序是 build → `accept.mjs --skip-build`，
+    **恰好在内存最紧的时刻**调用唯一的浏览器门禁；它自我放弃，流水线照样绿灯，
+    且那个绿灯与「跑过并通过」在汇报里完全一样。现在判据是
+    「绿灯 = 该跑的跑了且跑过了」，由名单里的 `skip` 策略逐道对账。
+    同族教训：**CI 上的判据必须能在本机验**（`ACCEPT_FORCE_CI=1`），
+    只能到 CI 上才能验的判据，等于没有 CI 相关的判据。
 
 ## 开放项
 
@@ -239,7 +273,7 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
 | --- | --- | --- |
 | `games/galgames/clannad` 表格差异 | 源 `clannad/index.mdx` 1113 行、508 行表格、17 个 `<Folding>`；Astro 渲染 31 张表（310 处 `md-table`），**Nuxt 基线 0** | 未分类。机制待查（Nuxt Content 的 GFM 表格在 MDC 块里是否被解析） |
 | `/2025/10/clarity-resource-list` 代码块计数 | 基线（用**当前源码**重建）nuxt=1 / astro=2；该页页高 d=0，两道几何门禁都看不见 | 未分类，根因同上（围栏代码块嵌在 MDC tab 槽位里，两侧解析不同） |
-| 29 条顶层裸 `:global()` 未复核 | `check-scope-anchors` 的 `UNREVIEWED` | 钉住但未复核，见坑位 31 的原始记录。**条数是棘轮**，改动后自己数一遍（2026-10-04 删掉 FeedCard 两条 tippy 宿主规则后是 29；此前门禁头写「32」、本表写「33」，两个数都已漂过） |
+| ~~29 条顶层裸 `:global()` 未复核~~ | 已迁出 | **2026-10-05 迁到 `scripts/exemptions.json`**，每条带具体 `reason` 与 `expires`，由 `check-expirations` 强制到期与棘轮。条数**别在这里数**——`meta.baseline` 是权威值。此前门禁头写「32」、本表写「33」、计划里写「29」，三处全错且没有一个是对着数组数的 |
 | ~~`vue` / `@astrojs/vue` 是死重量~~ | `src/` 下 0 个 `.vue` 文件 | **已摘**（2026-10-03），三处同步删 |
 | ~~分享按钮两侧不同步~~ | Nuxt 侧删了分享组件，Astro 侧从未跟进 | **已随部署消解**（2026-10-03）。两侧现已一致 |
 | ~~`compare-dom` 15 处 marker 不一致~~ | 该门禁读 Nuxt 冻结基线 | **2026-10-04 退役**：迁移已完成、基线无法再冻结，守的是一个不会再变的目标 |
@@ -263,3 +297,12 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
   没人建）；② `check-dates` 在 `TZ=UTC` 的 runner 上 40 页全差 8 小时——**那道门禁从来
   没有真正与时区无关**，PowerShell 版一直在这台 +08:00 的开发机上跑，「按本地时区读
   裸墙钟」恰好成立。见坑位 26
+- **2026-10-05：门禁体系从「数量」转向「绿灯可信」。** 起因是一次实证——改完 `Dropdown`
+  的两条交互路径后，30 道门禁加 26 项交互检查**全绿，而无一条覆盖该行为**。三处改动：
+  ① `check-runtime-dom` 补上 dropdown 开合的行为覆盖（并入而不是新增第 31 道：
+  它已经起了 preview 和无头 Chrome，加一组的边际成本只有几秒），并要求探针**先自证
+  再断言**——对着没接线的页面报绿是最坏的失效模式；② 名单元素带 `skip` 策略，违规跳过
+  让 `accept.mjs` 自己 `exit 1`（见验收原则 3 与坑位 29）；③ 裸 `:global()` 的豁免从
+  纯字符串数组迁到 `scripts/exemptions.json`，加到期日与棘轮。
+  **豁免会在 2026-11-05 前后一次性全红，这是有意的**——一次偿还比每天红一条更容易被
+  当成一件正事做。续期要改台账文件，那就有 diff。
