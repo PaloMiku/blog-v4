@@ -1,30 +1,13 @@
 /**
  * 对比 Astro 的路由集合与冻结的 Nuxt 基线。
  *
- * ## 为什么这道门禁进 CI
+ * 切流会不会变成全站 404 的最后一道防线：Astro 生成一套内部自洽、但与线上
+ * 不同的 URL 集合时，每一道离线门禁都是绿的，切过去才发现。
  *
- * 它是「切流会不会变成全站 404」的最后一道防线：Astro 生成一套内部自洽、
- * 但与线上不同的 URL 集合时，每一道离线门禁都是绿的，切过去才发现。
- * 原实现是 `compare-urls.ps1`（PowerShell 5.1），在 `runs-on: ubuntu` 上
- * 结构上跑不起来 —— 门禁进不了 CI 等于不存在。
+ * ⚠️ 依赖未入库的 `baseline/`（见 CLAUDE.md「冻结基线」）。**基线不在时它自我
+ * 跳过、退出 0** —— 在 CI 里今天提供的是零覆盖，别把接线当成已有覆盖。
  *
- * ## 移植时改掉的三处
- *
- * 1. **路径分隔符**。原版写 `baseline\nuxt\urls.txt` 与
- *    `$_.FullName.Substring(...).Replace('\','/')`，那是 Windows 专用。
- *    这里用 `path.join` + `split(path.sep).join('/')`。
- * 2. **源目录**。两个路径都从 `import.meta.url` 解析，不跟进程 CWD —— 原版
- *    踩过 `Resolve-Path '..\x'` 跟 CWD 而非脚本位置的坑。
- * 3. **ASCII-only 不再是约束**。PowerShell 5.1 读无 BOM 的 .ps1 按 ANSI，
- *    注释里的非 ASCII 字节会吞掉换行、让后面的语句静默失效
- *    （2026-10-04 就在 acceptance.ps1 上真踩了一次）。node 读 UTF-8 无此问题，
- *    所以本文件的中文注释是安全的。
- *
- * ## 判据逐字沿用
- *
- * 归一化、排除名单、200.html / 404.html 的处理、以及两侧都去重排序，
- * 全部与 .ps1 一致。两侧排除名单目前都是空的——每个基线路由都有 Astro 对应物，
- * 包括 /favicon.ico（由 src/pages/favicon.ico.astro 输出的 meta-refresh 桩）。
+ * 路径全部从 `import.meta.url` 解析（不跟进程 CWD），并用 path.sep 归一。
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'

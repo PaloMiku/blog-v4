@@ -374,6 +374,9 @@ $productGates = @(
 	'check-aria-current',
 	'check-icon-box',
 	'check-component-fence',
+	# CDN dependency check. This one needs the network; it SKIPs (exit 0) when the
+	# CDN is unreachable, because a flaky network must not be able to block a deploy.
+	'check-twikoo-cdn',
 	# Ported from compare-urls.ps1 on 2026-10-04. The PS version could not run on
 	# `runs-on: ubuntu` at all, so this gate -- the last line of defence against a
 	# cutover turning into a site-wide 404 -- never reached CI. Red/green verified.

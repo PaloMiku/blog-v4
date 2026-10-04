@@ -31,6 +31,11 @@ logs
 .zcode
 .mimosa
 .qoder
+# .workbuddy/ 是另一个 Agent 的长期记忆目录（.workbuddy/memory/MEMORY.md 记着
+# 本仓库的协作边界，例如「node 门禁及其接线由其他 Agent 负责」）。它记的是
+# **某一个 Agent 视角下**的项目状态，放进版本库会与 CLAUDE.md 形成第二套真相，
+# 且随时可能被另一方覆写。与 .zcode / .mimosa / .qoder 同类，按会话产物忽略。
+.workbuddy/
 
 # Misc
 .DS_Store

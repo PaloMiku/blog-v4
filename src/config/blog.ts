@@ -99,7 +99,11 @@ const blogConfig = {
 		// Cloudflare Insights 统计服务
 		{ 'src': 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': '{"token": "b5c89be9025a4b1ba8750f8fd8850904"}', 'defer': true },
 		// Twikoo 评论系统
-		{ src: 'https://s4.zstatic.net/npm/twikoo@1.7.20/dist/twikoo.min.js', defer: true },
+		//
+		// 换版本 / 换 CDN 之后跑 `node scripts/check-twikoo-cdn.mjs`：脚本 404 或
+		// CDN 回 200 + HTML 错误页时，浏览器里与正常完全一样（评论区框在、评论不出来），
+		// 只看状态码不算检查。
+		{ src: 'https://s4.zstatic.net/ajax/libs/twikoo/2.0.12/twikoo.min.js', defer: true },
 	],
 
 	/** 文章统计配置 */

@@ -1,51 +1,24 @@
 /**
- * 运行时 DOM 门禁 —— 专门盯「静态产物是对的，坏在交互之后」这一类缺陷。
+ * 运行时 DOM 门禁 —— 盯「静态产物是对的，坏在交互之后」这一类缺陷。
  *
- * ═══ 为什么需要这道门禁 ═══
+ * 其余门禁全读构建产物快照，没有一道在真实浏览器里动过页面。作用域属性
+ * （Astro 的 data-astro-cid 是构建期的，createElement 重建的节点没有它）、
+ * astro-icon 的 symbol 被整块替换连坐删除——这类缺陷静态比对与 DOM 观察
+ * 都看不见，症状都是「评论区图标/页码样式在交互后悄悄失效」。
  *
- * 现有 39 道门禁全部只读**构建产物快照**，没有一道在真实浏览器里动过页面。
- * 2026-10-03 一天之内穿过了全套门禁的三个真实缺陷，全都落在同一个盲区：
+ * 每次重排 DOM 的交互后断言：
+ *   A. <use href="#ai:…"> 全部可解析，已布局的图标字形非零
+ *   B. 计算样式指纹（10 个属性，按 标签名+class+状态 归并）交互前后不变
+ *   C. 选中项对勾的渲染盒子跨步骤稳定
  *
- *   1. **cid 作用域丢失**（分页页码按钮、combobox 对勾）
- *      Astro 的 `data-astro-cid-<hash>` 是**构建期**属性。页面脚本用
- *      `createElement` 重建的元素没有它，于是带 cid 的选择器只对构建期渲染的
- *      那批节点生效。症状：切到第 2 页后 `width:3em` / `&.active` / `&:hover`
- *      三条同时失效，四个页码糊成 `1234`；combobox 换选项后对勾涨到 90px 撑爆行高。
- *      **静态产物里规则确实匹配得到**，所以 `audit-dead-scope` 不报。
+ * 比计算样式、而不是去样式表反推 cid：后者试过两版都不可靠——遍历写成
+ * if (r.cssRules) 会把每条规则当嵌套容器跳过（空的 CSSRuleList 也 truthy），
+ * 修好后又会解析出 .t/.c 这类不存在的 class。量后果没有那些中间层。
  *
- *   2. **astro-icon 的 symbol 被整块替换连坐删除**
- *      symbol 定义全局只有一份、挂在首次出现处。`menu.replaceChildren(...)`
- *      把它连同首屏那张卡一起丢掉，其余 `<use href="#ai:…">` 全部解析失败变空白。
- *      症状：翻页后卡片上的日期图标与字数图标消失、分类图标还在。
- *      **两份 HTML 逐字节相同**，MutationObserver 记录不到任何移除事件
- *      ——变化发生在**解析期**，静态比对与 DOM 观察都看不见。
+ * 只开一个浏览器会话、两个页面、8 次交互，实测 23s，因此能进 CI。
  *
- *   3. **构建环境泄漏到产物**（locale 随 runner 语言变）
- *      线上 63/63 篇文章日期变英文。`Intl` 的 locale 传 `undefined` 意味着
- *      「用运行时默认值」，而 SSG 的运行时是**构建机**。
- *      这条只有 `live:head`（比本地 vs 线上）能看见，而它属于重档、从未跑完。
- *
- * 三个的共同形状：**构建期是对的，坏在交互之后或构建环境**。所以判据必须
- * 建立在「真的点了、然后读活的 DOM」，而不是再静态扫一遍产物。
- *
- * ═══ 判据 ═══
- *
- * 每完成一次会重排 DOM 的交互，就断言两条不变式：
- *
- *   A. **`<use href="#ai:…">` 全部可解析**：目标 `<symbol>` 必须仍在文档里，
- *      且 `use.getBBox()` 非零（0×0 就是空白图标，DOM 层面看不出来）。
- *   B. **cid 作用域没掉**：交互前出现的每个 `class`，交互后重建的节点仍要带
- *      相应的 `data-astro-cid-*` 属性。做法是取一份「首屏每个 class 规则用到的
- *      cid 集合」，再检查交互后 DOM 里带该 class 的元素是否仍带对应 cid。
- *
- * ═══ 为什么这道门禁很便宜 ═══
- *
- * 只开**一个**浏览器会话、只测**首页**、跑固定的 4 次交互。全程不扫 63 页 × 两侧
- * （那是 `live:ui-parity` 的 20 分钟），实测秒级。它也因此天然能在 CI 里跑。
- *
- * ⚠️ 内存下限沿用 interaction-check 的 1500MB：无头 Chrome 约 700MB，
- * 低于这个数时它的结论不可信（会随机把一批断言判红）。不足时**退出 0 并打
- * SKIPPED**，绝不谎报失败——谎报比不报更糟。
+ * 内存不足 1500MB 时退出 0 并打 SKIPPED：无头 Chrome 约 700MB，低于此数
+ * 它的结论不可信。谎报失败比不报更糟。
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, rmSync } from 'node:fs'
@@ -71,12 +44,8 @@ if (freeMB < MIN_FREE_MB) {
 
 /**
  * 浏览器可执行文件。**必须覆盖 Linux 与 macOS** —— 这道门禁要进 CI，
- * 而 `runs-on: ubuntu`。第一版只列了 Windows 三个路径（照抄
- * interaction-check.mjs，那道门禁刻意不进 CI 所以一直没暴露），
- * 推到 ubuntu 上会直接打「no Chrome/Edge found」exit 1，**把部署卡死**。
- *
- * GitHub 的 ubuntu runner 预装 Google Chrome（`/usr/bin/google-chrome`），
- * 另外再兜 Chromium 与系统自带的几处位置。
+ * 只列 Windows 路径会让 ubuntu runner 直接报「no Chrome/Edge found」exit 1，
+ * 把部署卡死。
  */
 const CHROME = [
 	// Windows
@@ -192,21 +161,9 @@ function PROBE() {
 
   // ---- 判据 B：计算样式指纹在交互后有没有变 ----
   //
-  // 不去解析 CSS 找 cid，也不用 cid 做启发式。**直接量后果**：把每个带 class
-  // 的元素的若干计算样式属性按「标签名 + 排序后的 class 集合」归并成一张指纹表，
-  // 交互之后再量一次，两次不同的即为回归。
-  //
-  // 为什么换掉前两版：
-  //  v1 从样式表建 (class -> cid) 映射，遍历写成 if (r.cssRules) 就 continue，
-  //     而现代 Chrome 的普通 CSSStyleRule 也带 cssRules（空对象也 truthy），
-  //     结果 699 条规则一条没读到，判据静默恒绿。
-  //  v2 改对遍历后能读到 49 个 class，但嵌套规则的 selectorText 只是片段，
-  //     解析出 .t / .c / .e / .z- 这类不存在的 class，4 条假阳性常驻。
-  //  两条路都依赖「从 CSS 反推」，脆。量计算样式没有这些中间层。
-  //
-  // 选这几个属性：三条真实缺陷都落在它们上面 ——
-  //  分页页码丢 width:3em（width）、combobox 对勾丢 width/height:1em（width/height）、
-  //  当前页高亮丢 background-color/color（backgroundColor/color）。
+  // 直接量后果：按「标签名 + class 集合 + 状态」归并成指纹表，交互后再量一次。
+  // 属性选这几个是因为历史缺陷都落在它们上面：页码丢 width:3em、对勾丢
+  // width/height:1em、当前页高亮丢 background-color（见文件头）。
   const PROPS = ['width', 'height', 'display', 'fontSize', 'color',
     'backgroundColor', 'marginLeft', 'marginRight', 'paddingLeft', 'verticalAlign']
 
@@ -240,26 +197,16 @@ function PROBE() {
     if (typeof el.className !== 'string' || !el.className.trim()) continue
     const tag = el.tagName.toLowerCase()
     if (SKIP_TAGS.has(tag) || inList(el) || wrapsList(el) || isHidden(el)) continue
-    // hover / focus 态**整条跳过**，不并进签名。它们是瞬时反馈：combobox 的
-    // trigger 一展开就拿到 focus 底色，CDP 也无法有意义地控制指针位置，
-    // 拿它做「交互前后应当一致」的断言只会得到假阳性。过渡动画中途的元素同理。
+    // hover / focus 整条跳过：瞬时反馈，CDP 也无法有意义地控制指针位置
     try {
       if (el.matches(':hover') || el.matches(':focus') || el.matches(':focus-visible')) continue
     } catch (_) { /* 某些元素不支持这些伪类 */ }
-    // 用空格切而不是正则：模板字符串里正则的转义层级太多，
-    // 踩过一次把 class 切碎成 po/t/t-li 的情况
     const cls = el.className.split(' ').filter(Boolean).sort().join('.')
     if (!cls) continue
-    // 伪状态并入签名：翻到第 2 页后「上一页」按钮从 disabled 变成可用，
-    // 它的 color / background-color 随 :disabled 规则变——那是**正确行为**，
-    // 不并进来的话每次翻页都会误报一条。变了状态就是另一个条目，不算"变化"。
-    // 元素「状态」并入签名：状态变了就是另一个条目，不算「变化」。
-    // 伪状态 + ARIA 状态属性都要算 —— combobox trigger 展开时
-    // background-color 从卡片底色变成 soft，是 aria-expanded=true 那条规则，
-    // 是**正确行为**；不并进来的话每次展开都误报一条。
+    // 状态并入签名：翻页后「上一页」从 disabled 变可用、combobox trigger 展开后
+    // background-color 变 soft——都是正确行为，不并进来的话每次都误报一条。
     //
-    // ⚠️ 这个函数整体是一个模板字符串，**注释里绝不能出现反引号**，
-    // 会当场闭合字面量。栽过两次。
+    // ⚠️ 本函数在模板字符串里，**注释中不能出现反引号**，会当场闭合字面量。
     let state = ''
     try {
       if (el.matches(':disabled')) state += ':disabled'
@@ -407,7 +354,7 @@ async function evaluate(expression) {
 		returnByValue: true,
 		awaitPromise: true,
 		// 页面侧抛异常时把真实的 description 带回来；`text` 只有 "Uncaught"，
-		// 定位不到是哪一行。第一版就栽在这里，白跑一轮。
+		// 定位不到是哪一行。
 		includeCommandLineAPI: true,
 	}, sid)
 	if (r.exceptionDetails) {

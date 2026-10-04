@@ -130,6 +130,20 @@ const locale = blogConfig.language
 
 	/** MiniSearch 索引只构建一次；失败时清空以便下次打开重试 */
 	let indexPromise = null
+	/**
+	 * 索引是否已就绪。驱动输入框左侧图标，对应 Nuxt 侧
+	 * `<Icon :name="status === 'pending' ? 'loading' : 'search'">` 的 `status`。
+	 * 注意语义是「索引请求在途」而非「用户正在输入」——索引是一次性常驻的，
+	 * 就绪之后再不会有加载态。
+	 */
+	let indexReady = false
+	/** 索引状态变化的订阅者（每个搜索弹窗实例一个；全站只有一个） */
+	const indexSubscribers = new Set()
+
+	function announceIndex() {
+		for (const notify of indexSubscribers)
+			notify()
+	}
 
 	function loadIndex() {
 		if (!indexPromise) {
@@ -159,10 +173,19 @@ const locale = blogConfig.language
 				})
 				index.addAll(await response.json())
 				return index
-			})().catch((err) => {
-				indexPromise = null
-				throw err
-			})
+			})()
+				.then((index) => {
+					indexReady = true
+					announceIndex()
+					return index
+				})
+				.catch((err) => {
+					// 失败时复位，让图标回到加载态并允许下次打开重试
+					indexPromise = null
+					indexReady = false
+					announceIndex()
+					throw err
+				})
 		}
 		return indexPromise
 	}
@@ -201,12 +224,20 @@ const locale = blogConfig.language
 
 		let word = ''
 		let debounceTimer
-		let pending = false
 		let failed = false
 		let activeIndex = 0
 		let selectedId
 
 		bindKeyboardMode()
+
+		/** 输入框左侧图标：索引就绪前转圈，就绪后显示放大镜 */
+		function syncSearchIcon() {
+			root.querySelector('[data-search-icon="loading"]')?.toggleAttribute('hidden', indexReady)
+			root.querySelector('[data-search-icon="search"]')?.toggleAttribute('hidden', !indexReady)
+		}
+
+		indexSubscribers.add(syncSearchIcon)
+		syncSearchIcon()
 
 		function focusInput(allSelect = false) {
 			input.focus()
@@ -298,13 +329,11 @@ const locale = blogConfig.language
 			try {
 				const index = await loadIndex()
 				failed = false
-				pending = false
 				render(index.search(query))
 			}
 			catch (err) {
 				console.error(err)
 				failed = true
-				pending = false
 				render([])
 			}
 		}
@@ -312,10 +341,6 @@ const locale = blogConfig.language
 		function scheduleSearch() {
 			word = input.value
 			clearTimeout(debounceTimer)
-			pending = Boolean(word.trim())
-			// 索引还没就绪时先转圈，和 Nuxt 侧 status === 'pending' 一致
-			root.querySelector('[data-search-icon="loading"]')?.toggleAttribute('hidden', !pending || Boolean(indexPromise))
-			root.querySelector('[data-search-icon="search"]')?.toggleAttribute('hidden', pending && !indexPromise)
 			debounceTimer = setTimeout(search, DEBOUNCE_MS)
 		}
 
@@ -448,6 +473,14 @@ const locale = blogConfig.language
 		flex-shrink: 0;
 		font-size: 1.2em;
 		color: var(--c-text-2);
+
+		/* ⚠️ 必须显式写。本组件是**作者级** `display: flex`，会压过 UA 样式表里的
+		   `[hidden] { display:none }`（特异性 0,3,0 > 0,1,0），`hidden` 属性被静默吃掉。
+		   漏掉这一条时两个图标同时渲染，转圈图标永不消失
+		   —— 即「搜索框打开后左侧一直显示加载中」。同类修法见 Comment.astro / Mermaid.astro。 */
+		&[hidden] {
+			display: none;
+		}
 	}
 
 	> .search-input {
