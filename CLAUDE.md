@@ -239,7 +239,7 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
 | --- | --- | --- |
 | `games/galgames/clannad` 表格差异 | 源 `clannad/index.mdx` 1113 行、508 行表格、17 个 `<Folding>`；Astro 渲染 31 张表（310 处 `md-table`），**Nuxt 基线 0** | 未分类。机制待查（Nuxt Content 的 GFM 表格在 MDC 块里是否被解析） |
 | `/2025/10/clarity-resource-list` 代码块计数 | 基线（用**当前源码**重建）nuxt=1 / astro=2；该页页高 d=0，两道几何门禁都看不见 | 未分类，根因同上（围栏代码块嵌在 MDC tab 槽位里，两侧解析不同） |
-| 33 条顶层裸 `:global()` 未复核 | `check-scope-anchors` 的 `UNREVIEWED` | 钉住但未复核，见坑位 31 的原始记录。**条数是棘轮**，改动后自己数一遍 |
+| 29 条顶层裸 `:global()` 未复核 | `check-scope-anchors` 的 `UNREVIEWED` | 钉住但未复核，见坑位 31 的原始记录。**条数是棘轮**，改动后自己数一遍（2026-10-04 删掉 FeedCard 两条 tippy 宿主规则后是 29；此前门禁头写「32」、本表写「33」，两个数都已漂过） |
 | ~~`vue` / `@astrojs/vue` 是死重量~~ | `src/` 下 0 个 `.vue` 文件 | **已摘**（2026-10-03），三处同步删 |
 | ~~分享按钮两侧不同步~~ | Nuxt 侧删了分享组件，Astro 侧从未跟进 | **已随部署消解**（2026-10-03）。两侧现已一致 |
 | ~~`compare-dom` 15 处 marker 不一致~~ | 该门禁读 Nuxt 冻结基线 | **2026-10-04 退役**：迁移已完成、基线无法再冻结，守的是一个不会再变的目标 |

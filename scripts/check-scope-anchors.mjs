@@ -55,7 +55,7 @@ import { fileURLToPath } from 'node:url'
  *
  * ## 为什么是「钉住」而不是「删掉」
  *
- * 这 32 条都是迁移期间**有意**写的，每条旁边都有就地注释说明为什么加不了锚点：
+ * 这 29 条都是迁移期间**有意**写的，每条旁边都有就地注释说明为什么加不了锚点：
  * slot 内容由 MDX 渲染、目录树是 `set:html` 注入的字符串、子组件（Icon / embla /
  * tippy）渲染的 DOM、`::view-transition-*` 的名字天然是全局的、`:hover` 作为祖先
  * 不能被作用域约束。它们**不是**疏忽。
@@ -113,8 +113,6 @@ const UNREVIEWED = [
 	// 2026-10-03 接管时补上的：此前这条写成 scoped `.tip-icon`，永不匹配，
 	// 丢了 display:inline-block / font-size:1em / vertical-align:top。
 	'Tip\t:global(.tip-icon)',
-	'FeedCard\t:global([data-feed-card]) ~ :global([data-tippy-root]) > :global(.tippy-box)',
-	'FeedCard\t:global([data-feed-card]) ~ :global([data-tippy-root]) > :global(.tippy-box[data-placement=\'top\']) > :global(.tippy-svg-arrow)',
 	'Excerpt\t:global(.ai-gpt-icon)',
 	'BlogTech\t:global(.tech-service) :global(img)',
 	'CommGroup\t:global(.blog-widget) :global(.tip)',

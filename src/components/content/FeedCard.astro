@@ -15,12 +15,15 @@
  *    整体顶掉。故**`noreferrer` 缺失是 Nuxt 基线本来的样子**（实测基线 37 个
  *    feed-card 外链一律 `rel="noopener"`）——照搬即 parity，不要「补全」成新差异。
  *    根元素留在本组件，样式与作用域均与 Vue 版一致。
- * 2. **Tooltip（vue-tippy）未移植，属 Phase 4。**
- *    原版 `<Tooltip>` 渲染出 `<span data-v-tippy role="link">`，其中 `#content`
- *    插槽挂在同级的 `<span style="display:none">` 里——**SSR 阶段就是隐藏的**。
- *    这里照搬该初始状态（含 `data-v-tippy` 标记与内联 `display:none`），
- *    即产物的可见性与基线首屏完全一致；内容仍在 HTML 里，
- *    等 Phase 4 接上 tippy 时只要把 `data-tippy-content` 认领走即可。
+ * 2. **Tooltip（vue-tippy）改为原生脚本复刻。**
+ *    原版 `<Tooltip :delay="200" interactive hide-on-click="toggle">` 的
+ *    `#content` 插槽在 Nuxt 产物里挂在同级的 `<span style="display:none">` 中——
+ *    **SSR 阶段就是隐藏的**，本组件照搬过那个初始态，接管时因此整块缺失。
+ *    现在 `<span class="feed-tip tippy-box" hidden>` 由下面的脚本接管：
+ *    悬停/聚焦 200ms 后浮出、可交互（指针移进面板不收起）、离开即收。
+ *    未实装的是 `hide-on-click="toggle"`（点击卡片钉住浮层）——卡片本身是外链，
+ *    点击即导航，那半个特性在原版实际也几乎用不上。
+ *    定位与「`.feed-list` 的 `overflow: clip` 会裁掉浮层」的取舍见样式段注释。
  * 3. **`isInspect` 调试分支（`import.meta.dev` + `?inspect`）未移植**：仅开发态可见。
  * 4. **`NuxtImg` → 裸 `<img>`**（astro:assets 属 Phase 5）：无 srcset / 尺寸优化。
  * 5. **`<Icon>` 的 `title` 属性丢失**：`Icon.astro` 未声明 `title` prop，
@@ -97,7 +100,7 @@ const target = to && !to.startsWith('#') && isExtLink(to) ? '_blank' : undefined
 		<span class="sitenick">{sitenick}</span>
 	</Target>
 
-	<span class="feed-tip" data-tippy-content style="display: none;">
+	<span class="feed-tip tippy-box" data-tippy-content hidden>
 		<div class="site-content">
 			<img class="site-icon" src={icon} alt={cardTitle} loading="lazy" />
 
@@ -134,6 +137,101 @@ const target = to && !to.startsWith('#') && isExtLink(to) ? '_blank' : undefined
 		</div>
 	</span>
 </span>
+
+<script>
+	/*
+	 * 悬浮信息（Nuxt 的 `<Tooltip :delay="200" interactive>`）。
+	 *
+	 * vue-tippy 是 Vue runtime 依赖，Astro 侧不可用（组件文件头「Phase 4」那一条
+	 * 就是这件事）。这里用 ~50 行原生脚本复刻，套路与 `partial/Dropdown.astro`、
+	 * `post/Comment.astro`、`lib/prose-enhance.ts` 一致。
+	 *
+	 * 三个要点：
+	 * 1. **面板挂到 body**（见样式里那段注释：`.feed-list` 的 `overflow: clip`）。
+	 *    隐藏时**搬回卡里**，这样 Astro 的 view-transition 换掉 body 子节点时
+	 *    不会把面板一起丢掉，也不用像 `.z-link-tip` 那样每次补挂。
+	 * 2. **interactive**：面板移到 body 后就不再是卡的后代，指针从卡移到面板会先
+	 *    触发卡的 pointerleave。故离开一律走 `hideSoon()` 的短暂宽限，
+	 *    面板自身的 pointerenter 取消它——否则中间那 6px 间隙就永远跨不过去。
+	 * 3. **焦点也要能出**：tippy 的默认 trigger 是 `hover focus`，
+	 *    键盘用户 tab 到卡片上应当看到同样的信息。
+	 */
+	const SHOW_DELAY = 200
+	const HIDE_GRACE = 150
+	const GAP = 6
+	const MARGIN = 8
+
+	function initFeedTips() {
+		for (const wrapper of document.querySelectorAll('[data-feed-card]')) {
+			if (!(wrapper instanceof HTMLElement) || wrapper.dataset.tipReady)
+				continue
+			wrapper.dataset.tipReady = '1'
+
+			const card = wrapper.querySelector('.feed-card')
+			const panel = wrapper.querySelector('.feed-tip')
+			if (!(card instanceof HTMLElement) || !(panel instanceof HTMLElement))
+				continue
+
+			let timer
+
+			function place() {
+				const cardRect = card.getBoundingClientRect()
+				const w = panel.offsetWidth
+				const h = panel.offsetHeight
+
+				// 视口上沿放不下就翻到卡片下方（tippy 的 flip 等价物）
+				let top = cardRect.top - h - GAP
+				if (top < MARGIN)
+					top = cardRect.bottom + GAP
+
+				let left = cardRect.left + cardRect.width / 2 - w / 2
+				left = Math.min(Math.max(MARGIN, left), window.innerWidth - w - MARGIN)
+
+				panel.style.top = `${Math.round(top)}px`
+				panel.style.left = `${Math.round(left)}px`
+			}
+
+			function show() {
+				clearTimeout(timer)
+				if (!panel.hidden)
+					return
+				timer = setTimeout(() => {
+					document.body.appendChild(panel)
+					panel.hidden = false
+					place()
+				}, SHOW_DELAY)
+			}
+
+			function hide() {
+				clearTimeout(timer)
+				if (panel.hidden)
+					return
+				panel.hidden = true
+				panel.style.top = ''
+				panel.style.left = ''
+				wrapper.appendChild(panel)
+			}
+
+			function hideSoon() {
+				clearTimeout(timer)
+				timer = setTimeout(hide, HIDE_GRACE)
+			}
+
+			card.addEventListener('pointerenter', show)
+			card.addEventListener('pointerleave', hideSoon)
+			card.addEventListener('focusin', show)
+			card.addEventListener('focusout', hide)
+			panel.addEventListener('pointerenter', () => clearTimeout(timer))
+			panel.addEventListener('pointerleave', hideSoon)
+		}
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initFeedTips)
+	else
+		initFeedTips()
+	document.addEventListener('astro:page-load', initFeedTips)
+</script>
 
 <style>
 	.feed-card {
@@ -201,22 +299,31 @@ const target = to && !to.startsWith('#') && isExtLink(to) ? '_blank' : undefined
 	}
 
 	/*
-	 * 这两条在原版是**嵌套**的：`:deep() ~ [data-tippy-root] > .tippy-box` 里再套
-	 * `&[data-placement="top"] > .tippy-svg-arrow`，编译后是
-	 * `[data-v-022c6617] ~ [data-tippy-root] > .tippy-box[data-placement=top] > .tippy-svg-arrow`
-	 * ——即箭头那条**同样带 `[data-v-022c6617] ~` 前缀**。
-	 * 拆成两条时前缀必须各自补齐，否则第二条会命中全站任意 tippy 箭头。
-	 * 这里用 `[data-feed-card]` 代替 cid 做锚点：包装 span 上有这个属性，
-	 * 语义（同一组件的相邻兄弟）与 cid 锚点等价（与上一条同款写法）。
+	 * 悬浮信息：Nuxt 是 `<Tooltip :delay="200" interactive>`，这里用原生脚本复刻。
+	 *
+	 * ⚠️ **为什么必须挂到 body**：`.feed-list` 有 `overflow: clip`
+	 * （FeedGroup.astro:197，Nuxt 原版同款），面板留在卡里会被裁掉；
+	 * 挂到 body 后用 `position: fixed` + 视口坐标定位，
+	 * 与 `lib/prose-enhance.ts` 的 `.z-link-tip`、`post/Comment.astro` 同一套路。
+	 * 代价与它们相同：不引第三方浮层库就没有翻转与边界计算，
+	 * 故下面自己补了「顶到视口上沿就翻到下方」与「左右夹进视口」两步。
+	 *
+	 * 面板自己就是 `.tippy-box`（沿用 main.css:150 的既有外观，同 Dropdown /
+	 * Comment / prose 的做法），`padding: 0` 是因为内边距由 `.site-content`
+	 * 与 `.desc-content` 各自提供——原版也是这么把 tippy 默认的
+	 * `padding: 0.3em 0.6em` 归零的。
+	 *
+	 * 原版那两条 `:global([data-feed-card]) ~ [data-tippy-root] > .tippy-box…)`
+	 * 随这次实装一并删掉：tippy 的宿主元素不再存在，规则永远匹配不到。
+	 * `check-scope-anchors` 的 UNREVIEWED 名单同步删这两条。
 	 */
-	:global([data-feed-card]) ~ :global([data-tippy-root]) > :global(.tippy-box) {
-		overflow: hidden;
-		overflow: clip; /* 需保留气泡箭头 */
+	.feed-tip {
+		position: fixed;
+		z-index: var(--z-index-popover);
+		max-width: min(24em, calc(100vw - 1rem));
 		padding: 0;
-	}
-
-	:global([data-feed-card]) ~ :global([data-tippy-root]) > :global(.tippy-box[data-placement='top']) > :global(.tippy-svg-arrow) {
-		fill: var(--c-bg-1);
+		overflow: clip;
+		text-align: start;
 	}
 
 	.site-content {
