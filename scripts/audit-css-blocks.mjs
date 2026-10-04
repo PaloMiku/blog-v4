@@ -56,16 +56,31 @@ function walk(dir, out = []) {
 	return out
 }
 
-/** 剥掉 frontmatter（首行 `---` 到下一个行首 `---`），避免把注释里的 `<style>` 当成真块 */
+/**
+ * 剥掉 frontmatter（首行 `---` 到下一个行首 `---`），避免把注释里的 `<style>` 当成真块。
+ *
+ * 一并返回**删掉的行数**：不返回的话，`<style>` 块里的行号全是块内相对行号，
+ * 报错会指到 `Chat.astro:7` 这种地方（真实位置在 60 行之后）——
+ * 指错行的门禁，用两次就没人看了。
+ */
 function stripFrontmatter(text) {
 	const lines = text.split('\n')
 	if (lines[0].replace(/^\uFEFF/, '').trim() !== '---')
-		return text
+		return { text, removed: 0 }
 	for (let i = 1; i < lines.length; i++) {
 		if (lines[i].trim() === '---')
-			return lines.slice(i + 1).join('\n')
+			return { text: lines.slice(i + 1).join('\n'), removed: i + 1 }
 	}
-	return text
+	return { text, removed: 0 }
+}
+
+function countLines(s) {
+	let n = 0
+	for (const ch of s) {
+		if (ch === '\n')
+			n++
+	}
+	return n
 }
 
 /**
@@ -78,12 +93,18 @@ function stripFrontmatter(text) {
  * 判据在真数据上第一次运行就误报，说明它当时还没被真正验证过。
  */
 function styleBlocks(text) {
-	const body = stripFrontmatter(text)
+	const { text: body, removed } = stripFrontmatter(text)
 	const opens = [...body.matchAll(/^<style[^>]*>/gm)]
 	return opens.map((m) => {
 		const from = m.index + m[0].length
 		const close = body.indexOf('</style>', from)
-		return { tag: m[0], body: close === -1 ? body.slice(from) : body.slice(from, close) }
+		return {
+			tag: m[0],
+			body: close === -1 ? body.slice(from) : body.slice(from, close),
+			// 块体**紧接在 `<style>` 同一行的尾部开始**，所以块内第 n 行
+			// 对应文件第 lineBase + n 行。少算一行，报错就会指到上一行。
+			lineBase: removed + countLines(body.slice(0, from)),
+		}
 	})
 }
 
@@ -132,10 +153,14 @@ function maskNonCode(css) {
 /**
  * 返回问题描述列表；空数组 = 干净。
  *
+ * `lineBase` 是这个 `<style>` 块在文件里的起始行偏移（frontmatter 与
+ * `<style>` 开标签都要算），不传就当 0——自检用例喂的是裸 CSS 片段。
+ * 报出的行号必须是**文件真实行号**：指错行的门禁，用两次就没人看了。
+ *
  * 注意 `null` 与 `[]` 的区别：调用方必须区分「扫过了且没问题」和
  * 「压根没扫到」。`compare-page-heights` 那次教训就是拿不到值就默认通过。
  */
-function checkCss(rawCss) {
+function checkCss(rawCss, lineBase = 0) {
 	const problems = []
 	const css = maskNonCode(rawCss)
 	let depth = 0
@@ -163,7 +188,7 @@ function checkCss(rawCss) {
 			const seg = css.slice(segStart, i).trim()
 			// 自定义属性声明（`--x: 1;`）在顶层是**合法**的，不是裸声明
 			if (seg !== '' && !seg.startsWith('--')) {
-				const line = css.slice(0, i).split('\n').length
+				const line = lineBase + css.slice(0, i).split('\n').length
 				problems.push(`第 ${line} 行：顶层出现裸声明「${seg.replace(/\s+/g, ' ').slice(0, 60)}」——选择器行丢失`)
 				return problems
 			}
@@ -185,11 +210,35 @@ const SELF_TESTS = [
 	{ name: '闭合规则后的顶层分号仍算裸声明', css: '.a {\n\tcolor: red;\n}\nposition: revert !important;\n', expect: ['裸声明'] },
 	{ name: '字符串里的分号不算顶层声明', css: '.a::before {\n\tcontent: "};";\n}\n', expect: [] },
 	{ name: '自定义属性声明是合法顶层', css: '--x: 1;\n.a {\n\tcolor: red;\n}\n', expect: [] },
+	{
+		// 自检用例里的 css 是**裸片段**，报出的行号没有意义；只有真正走
+		// styleBlocks（带 frontmatter 与 `<style>` 开标签偏移）才谈得上真实行号。
+		name: '报出的行号必须是**文件真实行号**（frontmatter + `<style>` 偏移都要算）',
+		run: () => {
+			// 造一个和 Chat.astro 同构的文件：3 行 frontmatter、模板 2 行、`<style>` 在第 7 行
+			const text = [
+				'---',
+				'const a = 1',
+				'---',
+				'',
+				'<div>x</div>',
+				'',
+				'<style>',
+				'\tcolor: red;',
+				'\t}',
+				'</style>',
+				'',
+			].join('\n')
+			const b = styleBlocks(text)[0]
+			return checkCss(b.body, b.lineBase)
+		},
+		expect: ['第 8 行'],
+	},
 ]
 
 let selfOk = true
 for (const t of SELF_TESTS) {
-	const got = checkCss(t.css)
+	const got = t.run ? t.run() : checkCss(t.css)
 	// 期望干净的用例必须真的干净；期望报错的用例必须报出**全部**关键字
 	const ok = t.expect.length === 0
 		? got.length === 0
@@ -214,7 +263,7 @@ for (const f of files) {
 	const raw = readFileSync(f, 'utf8')
 	for (const b of styleBlocks(raw)) {
 		blocks++
-		for (const p of checkCss(b.body))
+		for (const p of checkCss(b.body, b.lineBase))
 			findings.push({ file: relative(ROOT, f).replace(/\\/g, '/'), problem: p })
 	}
 }
