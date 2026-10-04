@@ -85,13 +85,21 @@ jobs:
       # 构建日志 tee 到 accept.mjs 约定的那条路径，这样零告警构建检查
       # （check-build-warnings）在 CI 里也自动获得覆盖——它自己不再构建，只读日志。
       #
-      # ⚠️ `shell: bash` 不是可选的。GitHub 在 Linux 上的**默认** shell 是
-      # `bash -e {0}`，**不带 pipefail** ⇒ `pnpm build | tee` 里构建失败会被
-      # tee 的退出码 0 吞掉，流水线照样往下走、直接发布一个坏产物。
-      # 显式写 `shell: bash` 才是 `bash --noprofile --norc -eo pipefail {0}`。
+      # 两处都不是可选的，都是被真实失败教出来的：
+      #
+      # 1. `mkdir -p`：`.astro-compare/` 是 gitignore 的目录，干净 checkout 里
+      #    **不存在**。旧 `acceptance.ps1` 用 New-Item 建它，换成 runner 后没人建了。
+      # 2. `shell: bash`：GitHub 在 Linux 上的**默认** shell 是 `bash -e {0}`，
+      #    **不带 pipefail** ⇒ `pnpm build | tee` 里构建失败会被 tee 的退出码 0
+      #    吞掉，流水线照样往下走、直接发布一个坏产物。显式写 `shell: bash`
+      #    才是 `bash --noprofile --norc -eo pipefail {0}`。
+      #    代价是 tee 自己失败也会让整步红（2026-10-04 第一次跑就是这样红的）——
+      #    那是应该的：日志没落下来，零告警构建检查就没东西可读。
       - name: Build static files
         shell: bash
-        run: pnpm build 2>&1 | tee .astro-compare/acceptance-build.log
+        run: |
+          mkdir -p .astro-compare
+          pnpm build 2>&1 | tee .astro-compare/acceptance-build.log
 
       # 验收：一条命令跑完默认档的全部门禁。
       #
