@@ -58,6 +58,9 @@ const OFFLINE_GATES = [
 	'check-list-controls',
 	// 结构语义
 	'check-scope-anchors',
+	// 豁免台账治理（棘轮 / 到期）。放默认档：它只读台账与配置，不依赖 dist，
+	// 也不依赖构建是不是新的——一条豁免到期跟产物新旧无关。
+	'check-expirations',
 	'check-heading-ids',
 	'check-text-literal',
 	'check-aria-current',

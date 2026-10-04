@@ -1,0 +1,202 @@
+{
+	"meta": {
+		"purpose": "顶层裸 :global() 的豁免台账。原为 check-scope-anchors.mjs 里的 const UNREVIEWED 纯字符串数组，迁到这里是为了给它加上 owner 级的治理强制力。",
+		"baseline": 31,
+		"ratchet": "条目总数不得超过 meta.baseline。超出即红——新增一条豁免必须同时改这个数，那就有 diff，会被 review 到。少于此数不算红（那是偿还）。",
+		"maxOverdue": 0,
+		"overdueRule": "默认 0：任何一条 expires 早于「站点时区的今天」即红。放宽成允许 N 条逾期是被允许的出路，但把 maxOverdue 从 0 调大本身就是一行 diff，必须写清为什么现在能容忍 N 条——那行 diff 就是 review 的落点。三个出口：给规则补锚点（删条目）/ 复核后写清具体理由（重写条目）/ 直接删。批量续期要改这个文件，有 diff。绝不降级成只警告不失败——那等于回到原状。",
+		"expiryBatch": "31 条同一天（2026-11-04）到期，所以 2026-11-05 起门禁会一次性全红。这是有意的：一次偿还比每天红一条更容易被当成一件正事做；而错开到期日只会把 31 次红摊成 31 天、每次都「先改一条再说」。",
+		"timezone": "Asia/Shanghai",
+		"timezoneRule": "与 src/config/blog.ts 的 blogConfig.timeZone 必须一致；不一致即红。日期一律按纯日期（YYYY-MM-DD）比较，不依赖跑门禁那台机器的本地时区（坑位 26：check-dates 在 TZ=UTC 的 CI runner 上红过 40 页）。",
+		"opened": "2026-10-04",
+		"history": "2026-10-04 从 check-scope-anchors.mjs 迁出。迁移前条数在文档里漂过多次：门禁头写「32」、CLAUDE.md 开放项写「33」、那边又说「2026-10-04 删掉两条 tippy 宿主规则后是 29」——而数组里实际是 31 条。三处全错，且没有一个是对着数组数的。baseline 因此取实测值 31 而不是计划里写的 29：把基线设在 29 会让门禁一上线就红，而「上线即红」在这里分不清是真欠债还是抄错了数，实测数才是唯一能站住的那个。成因见 history 后半段：只靠注释标记的债务，19 种 test smell 里 9 种既不快也不慢。"
+	},
+	"exemptions": [
+		{
+			"key": "Blog\t:global(#blog-root)",
+			"reason": "布局壳自己的锚点。#blog-root 是本组件模板里的最外层容器，规则本身就是定义这个 id 的样式；加任何 scope 前缀都会要求元素带 data-astro-cid，而这条规则是它自己唯一的来源，逻辑上无锚可加。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Blog\t:global(#blog-sidebar), :global(#blog-aside)",
+			"reason": "两个 id 由 Base/Target 布局层渲染，不在 Blog.astro 模板里，元素不带本组件 cid。同一条规则同时约束两个只在布局层出现的锚点，泄漏面等于布局层本身。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Blog\t:global(#blog-sidebar)",
+			"reason": "#blog-sidebar 是 #blog-sidebar / #blog-aside 那条规则的单点补充，只额外给左侧栏定 grid-area。它和 #blog-aside 一样由 Base/Target 布局层渲染，元素不带 Blog.astro 的 cid，所以单独一条也只能整体 :global()。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Blog\t:global(#main-content)",
+			"reason": "#main-content 由 Base.astro 渲染，带的是 Base 的 cid。Blog.astro 只能整条 :global() 才能约束它。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Blog\t:global(#blog-root > .blog-footer)",
+			"reason": "源码实测记录：写成 :global(#blog-root) > .blog-footer 时 Astro 只把 #blog-root 全局化，.blog-footer 仍会被加上 data-astro-cid 前缀，而页脚是 Base 渲染的、不带 cid，于是整条永不匹配（每个有页脚的页面多出 349~582px 高度）。整条选择器必须一起包进一个 :global()。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "BlogHeader\t:global(.blog-header)",
+			"reason": "根元素由 <Target> 动态标签解析，运行时才决定渲染成 <a> 还是 <div>。Vue 侧 <component :is> 会在运行时给渲染出的根补上父 scope id，线上那个 <a> 带两个 data-v；Astro 是编译期决定标签，不存在补 id 这回事，scoped 写法因此永不匹配（findings §50，提交 a4603b0 之前）。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "BlogSidebar\t:global(.sidebar-nav-item-parent .nav-icon), :global(.sidebar-nav-item > .nav-icon)",
+			"reason": "形状必须照抄线上：后一条是子选择器，前一条是后代选择器（可展开按钮把图标放在 .nav-text-wrap 里面）。第一版把前一条也写成子选择器，图标漏掉，盒高 20.2 vs 线上 21.6，整个按钮小 1.4px——这类差异既不出错也报不出来，所以选择器形状本身不能动。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "BlogSidebar\t:global(.sidebar-nav-item-parent .nav-icon > .iconify), :global(.sidebar-nav-item > .nav-icon > .iconify)",
+			"reason": "<svg class=\"iconify\"> 由 Icon.astro（进而 astro-icon）渲染，带的是它自己那份 cid（实测 data-astro-cid-ccg5yoga）。加 scope 前缀就要求 svg 同时带两个 id，永不匹配——第一版漏了这条，导航项只从 46.59 降到 42.28 就停住。抵消 main.css 里 :where(.iconify){font-size:1.2em}。选择器里必须带 .sidebar-nav-item 前缀，否则页脚社交图标也会被压成 1em。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "BlogSidebar\t:global(.sidebar-footer menu)",
+			"reason": "内联自 app/components/partial/IconNavList.vue，那边是 <style scoped> 里的 menu[data-v-x]，根 <menu> 无类名。必须写成扁平的顶层 :global()：第一版把它塞进嵌套块，编译成「menu 里面还要再有一个 menu」，永不匹配且不报错。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "BlogSidebar\t:global(.sidebar-footer menu a)",
+			"reason": "同一处 IconNavList.vue 的 menu[data-v-x] a[data-v-x]，a 同样由那边渲染。padding/border-radius/transition 整组都要，否则与线上差 2.56px 盒高。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "BlogSidebar\t:global(.sidebar-footer menu a:hover)",
+			"reason": "内联自 IconNavList.vue 的 menu[data-v-x] a[data-v-x]:hover，a 与 menu 一样由那边的 scoped 模板渲染。必须平铺成独立的顶层 :global()——Astro 的 :global() 不向嵌套传播，留在 :global(.sidebar-footer menu a) 里会被再次全局化，编译成「a 里面还要再有一个 a」。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "BlogSidebar\t:global(.sidebar-footer menu a .nav-icon)",
+			"reason": "display: block 本身是必须的：线上 a .iconify{display:block}，块盒不产生行盒；Astro 侧若留成 inline，行盒按 1.4em 撑到 17.92px，实测 a 高 30.7 vs 线上 28.1，差值正好是 17.92 − 15.36。不能补 width/height:1em——这里线上是 1.2em（IconNavList.vue 没写 font-size）。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "BlogSidebar\t:global(.sidebar-footer menu a .nav-icon .iconify)",
+			"reason": "要让承载图标的内层 svg 也变块，才还原得出线上 15.36px 的盒高（只让 span.nav-icon 变块时两轮实测都停在 30.7）。iconify 图标内容本身是 web component 内部的块级物，所以必须压到内层 svg 上。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "BlogPanel\t:global(::view-transition-group(article-panel))",
+			"reason": "view-transition 伪元素的名字由文档全局解析，它本身不是文档里任何元素，没有可挂 data-astro-cid 的地方，加前缀只会得到一条永不匹配的规则。border-radius/backdrop-filter/动画时长整组靠它。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "BlogPanel\t:global(::view-transition-new(article-panel))",
+			"reason": "::view-transition-new() 是 article-panel 快照对的新快照那一侧，用来关掉默认淡入（animation: none）。它和 group 那一侧是同一个 view-transition 名字下的两个伪元素，都不由任何 DOM 元素承载，没有 data-astro-cid 可挂，加前缀只会得到一条永不匹配的规则。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "BlogPanel\t:global(::view-transition-old(article-panel))",
+			"reason": "::view-transition-old() 是 article-panel 快照对的旧快照那一侧。旧快照同样不由 DOM 元素承载，view-transition 伪元素的名字由文档全局解析，没有可挂 scope 的位置；关掉它是为了让切换时旧画面不残留。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Pagination\t:global(::view-transition-group(article-pagination)), :global(::view-transition-new(article-pagination))",
+			"reason": "分页条要关掉过渡动画。Astro 里同层嵌套的 :global 不会传播给内部选择器（CLAUDE.md 坑位 2），所以原本两条嵌套的规则必须各自写全，并且都写平。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Pagination\t:global(::view-transition-old(article-pagination))",
+			"reason": "分页条快照的旧快照一侧，同样要 animation: none。写成扁平的顶层规则是因为 Astro 里同层嵌套的 :global 不会传播给内部选择器（CLAUDE.md 坑位 2），两条一起写进 group/new 那条会失效。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Toc\t:global(.toc ol)",
+			"reason": "目录树是 set:html 注入的字符串，不经 Astro 模板渲染，因此不带本组件的 cid。.toc 外壳本身是本组件渲染的、照常 scoped，只有面向这棵注入树的后代选择器要 global。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Toc\t:global(.toc li)",
+			"reason": "目录树的每个 li 同样出自 set:html 注入的 HTML 字符串，浏览器解析后不带任何 data-astro-cid，本组件的 scoped .toc li 匹配不到任何一个。行高/标记样式整组挂在这条上。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Quote\t:global(:hover) > .icon-line",
+			"reason": "Vue 原写法 .icon-line { :hover > & { … } }，postcss-nesting 拍平后是 :hover > .icon-line[data-v-x]，语义是「任意祖先被 hover 时图标浮现」。Astro 不做嵌套拍平（留在内部会多出一层自身，写成 :hover > & 会被输出成非法的 [cid]:hover>& 而被浏览器丢弃），所以必须提到顶层并让 hover 祖先不受作用域约束。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Tab\t:global(.search-input)",
+			"reason": "照抄自 Nuxt 侧 Tab.vue，用的是 :deep() 语义（穿透组件边界样式化 SearchModal 内部的 input）。Astro 的 scoped 没有穿透能力，那个 input 带的是 SearchModal 的 cid，scoped 写法永不匹配。该 class 全站仅此一个元素，改 global 无扩散风险（findings §50）。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "OrderToggle\t:global(.icon) + .order-text",
+			"reason": "相邻兄弟组合里的 .icon 来自 Dropdown/Icon 子组件的根元素，带子组件的 cid 而不带本组件的；本组件的 .order-text 是静态标签、可以 scoped，但 :global() 只作用于紧邻的选择器、不向组合符另一侧传播，所以只能整体豁免。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Slide\t:global(.carousel-action)",
+			"reason": "这两个翻页按钮由 <Button> 渲染，元素带的是 Button 的 cid。Vue 侧能匹配是靠「子组件根元素同时带父 scope id」，Astro 没有这个机制（同 Pagination 的 .pagination-button，那条是改走 <Button> 之后立刻被 audit-dead-scope 报出来的死规则，不是理论推演）。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Tip\t:global(.tip .icon-done)",
+			"reason": "复制成功时切换的图标由 <Icon> 子组件渲染，根元素只带子组件自己的 cid，本组件的 scoped 选不到。不用 hidden 属性是因为 .iconify{display:inline-block} 是作者样式，压得过 UA 的 [hidden]{display:none}，hidden 会被吃掉。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "PostHeader\t:global(.post-cover)",
+			"reason": ".post-cover 渲染在 Pic.astro（子组件）里。基线产物是 <figure class=\"image post-cover\" data-v-33b9aef5 data-v-bb6a4939>，靠 Vue 的「子组件根元素同时带父 scope id」；Astro 的 figure 只带 Pic 自己的 cid，scoped 写法永不匹配，后果是 aspect-ratio: 16/9 与 > img{height:100%} 整组失效，文章头图 547px 变 3355px。凡是要作用于子组件根元素的规则都得整体 global。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Tip\t:global(.tip-icon)",
+			"reason": "class 通过 <Icon class=\"tip-icon icon-copy\" /> 传下去，落在 astro-icon 子组件自己的根上，主体确实拿不到本组件的锚点。2026-10-03 补上：此前写成 scoped .tip-icon，永不匹配，丢了 display:inline-block / font-size:1em / vertical-align:top。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "Excerpt\t:global(.ai-gpt-icon)",
+			"reason": "模板里经 <Icon class=\"ai-gpt-icon\" /> 传给子组件，元素由 astro-icon 渲染、带着它自己的 cid；写 scoped 会编译成带 Excerpt 自己的 cid 的选择器，永不匹配。该 class 全站只此一处使用，改 global 不会波及别处（findings §50）。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "BlogTech\t:global(.tech-service) :global(img)",
+			"reason": "DlGroup 是独立组件、带自己那份 scope；.tech-service 本身又是经 <DlGroup class=\"…\" /> 传给子组件的，渲染出的元素带 DlGroup 的 cid，所以祖先和后代都得 global，只放开 img 不够。只剩 img 需要在这里约束：service 组那枚 ciIcons 是外链 favicon（EdgeOne），走 <img> 分支，不按字号算尺寸，没有约束会按固有 32px 撑高整行。两个 class 名全站各只出现一次。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "CommGroup\t:global(.blog-widget) :global(.tip)",
+			"reason": "对应 CommGroup.vue:35-38 的 .tip{font-size:.9em;line-height:2}，靠 Vue 的「子组件根元素同时带父 scope id」编译成 .tip[data-v-commgroup]。锚点取 .blog-widget（本组件渲染的 BlogWidget 根）而不是裸 .tip：裸的会连 SearchModal.astro:64 那个 data-search-tip 一起改掉，今天看不出来只因它带 hidden 且没被作者级 display 顶掉。特异度核对：Astro 的 (0,2,0) 与 Vue 的 (0,2,0) 逐位相同，补回锚点没有偷偷加重。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		},
+		{
+			"key": "CommGroup\t:global(.blog-widget) :global(.bg-img)",
+			"reason": "原版是 .bg-img（BlogWidget 里 opacity:.2）的三倍特异性覆盖。祖先 .blog-widget 与后代 .bg-img 两端都在别的组件里，祖先 + 后代都要 :global()。",
+			"added": "2026-10-04",
+			"expires": "2026-11-04"
+		}
+	]
+}

@@ -25,11 +25,14 @@
  * 已经不存在**。留着它只会让门禁悄悄退化成「只打印不变式、新增裸 `:global()` 全绿」，
  * 那比没有门禁更糟。
  *
- * 定稿是两条，都只用 Astro 侧：
+ * 定稿是两条，都只用 Astro 侧（2026-10-04 补了第 1 条的反向，见下）：
  *
  * 1. **棘轮**：src 里每一条顶层裸 `:global()` 都必须出现在 KNOWN 里。新增一条即红。
  *    这正是 §76 那条缺陷的守门方式：`.feed-group :global(.feed-card.feed-card)` 被改回
  *    裸 `:global(.feed-card.feed-card)` 时，主体重新出现在清单里而 KNOWN 里没有它 → 红。
+ *    2026-10-04 起这一条是**双向**的：`scripts/exemptions.json` 里每条豁免也必须在 src
+ *    里对得上，否则红。只做正向的话，规则被修好之后豁免可以永远留在台账里，而每留一条
+ *    就要把 `meta.baseline` 抬一条，抬到某天真实欠债是多少就再也说不清了。
  * 2. **可达性**：KNOWN 每条都要附一条**在 dist 上按 DOM 标记复算**的不变式
  *    「该主体只出现在渲染了本组件根标记的页面上」，门禁每次重算。
  *    哪天有人在组件外放了个 `#twikoo`，它自己会变红。这里刻意用 `id="twikoo"` 这种
@@ -50,15 +53,24 @@ import { join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
+const HERE = fileURLToPath(new URL('.', import.meta.url))
+const SITE_ROOT = join(HERE, '..')
+const DIST = join(SITE_ROOT, 'dist')
+
 /**
  * 接管当天（2026-10-03）src 里已有的一批顶层裸 `:global()`，**逐条按完整选择器钉住**。
  *
+ * 清单本体在 `scripts/exemptions.json`（key 字段 = 这里的 `'组件名\t选择器'`）。
+ * 2026-10-04 迁出：数组形态只有字符串，放不下到期日与上限，也就放不下偿还压力。
+ * 棘轮与到期由 `scripts/check-expirations.mjs` 判，本门禁只负责「src 里的每一条裸
+ * `:global()` 都能在台账里找到名字，反之亦然」这个**双向**对应关系。
+ *
  * ## 为什么是「钉住」而不是「删掉」
  *
- * 这 29 条都是迁移期间**有意**写的，每条旁边都有就地注释说明为什么加不了锚点：
+ * 这 31 条都是迁移期间**有意**写的，每条旁边都有就地注释说明为什么加不了锚点：
  * slot 内容由 MDX 渲染、目录树是 `set:html` 注入的字符串、子组件（Icon / embla /
- * tippy）渲染的 DOM、`::view-transition-*` 的名字天然是全局的、`:hover` 作为祖先
- * 不能被作用域约束。它们**不是**疏忽。
+ * tippy / Button）渲染的 DOM、`::view-transition-*` 的名字天然是全局的、`:hover` 作为
+ * 祖先不能被作用域约束。它们**不是**疏忽。
  *
  * 但「作者写了注释」不等于「泄漏面被验证过」。给它们逐条补一个 dist 上的可达性
  * 不变式（像 KNOWN 那 3 条一样）是一项独立的复核工作，不该塞进一次接管里。
@@ -75,53 +87,18 @@ import { fileURLToPath } from 'node:url'
  *    `.toc`，看上去有锚点。按主体判断会同时误报和漏报——所以这里按完整选择器比对。
  *
  * 复核任意一条之后：把它连同一个 `dom` / `root` 不变式移进上面的 `KNOWN`，
- * 并从这里删掉。清单因此会变短，**但必须是显式删**。
+ * 并从 `exemptions.json` 删掉。清单因此会变短，**但必须是显式删**。
  */
-const UNREVIEWED = [
-	// Blog.astro —— 布局壳的锚点本身
-	'Blog\t:global(#blog-root)',
-	'Blog\t:global(#blog-sidebar), :global(#blog-aside)',
-	'Blog\t:global(#blog-sidebar)',
-	'Blog\t:global(#main-content)',
-	'Blog\t:global(#blog-root > .blog-footer)',
-	'BlogHeader\t:global(.blog-header)',
-	'BlogSidebar\t:global(.sidebar-nav-item-parent .nav-icon), :global(.sidebar-nav-item > .nav-icon)',
-	'BlogSidebar\t:global(.sidebar-nav-item-parent .nav-icon > .iconify), :global(.sidebar-nav-item > .nav-icon > .iconify)',
-	'BlogSidebar\t:global(.sidebar-footer menu)',
-	'BlogSidebar\t:global(.sidebar-footer menu a)',
-	'BlogSidebar\t:global(.sidebar-footer menu a:hover)',
-	'BlogSidebar\t:global(.sidebar-footer menu a .nav-icon)',
-	'BlogSidebar\t:global(.sidebar-footer menu a .nav-icon .iconify)',
-	// view-transition 伪元素：名字由文档全局解析，没有可挂 scope 的地方
-	'BlogPanel\t:global(::view-transition-group(article-panel))',
-	'BlogPanel\t:global(::view-transition-new(article-panel))',
-	'BlogPanel\t:global(::view-transition-old(article-panel))',
-	'Pagination\t:global(::view-transition-group(article-pagination)), :global(::view-transition-new(article-pagination))',
-	'Pagination\t:global(::view-transition-old(article-pagination))',
-	// slot / set:html 注入的内容拿不到本组件的 scope
-	'Toc\t:global(.toc ol)',
-	'Toc\t:global(.toc li)',
-	'Quote\t:global(:hover) > .icon-line',
-	'Tab\t:global(.search-input)',
-	// 子组件 / 第三方库渲染的 DOM
-	'OrderToggle\t:global(.icon) + .order-text',
-	'Slide\t:global(.carousel-action)',
-	'Tip\t:global(.tip .icon-done)',
-	'PostHeader\t:global(.post-cover)',
-	// Tip 的复制/完成图标：class 通过 <Icon class="tip-icon icon-copy" /> 传下去，
-	// 落在 astro-icon 子组件自己的根上，主体确实拿不到本组件的锚点。
-	// 2026-10-03 接管时补上的：此前这条写成 scoped `.tip-icon`，永不匹配，
-	// 丢了 display:inline-block / font-size:1em / vertical-align:top。
-	'Tip\t:global(.tip-icon)',
-	'Excerpt\t:global(.ai-gpt-icon)',
-	'BlogTech\t:global(.tech-service) :global(img)',
-	'CommGroup\t:global(.blog-widget) :global(.tip)',
-	'CommGroup\t:global(.blog-widget) :global(.bg-img)',
-]
+const EXEMPTIONS_FILE = join(HERE, 'exemptions.json')
 
-const HERE = fileURLToPath(new URL('.', import.meta.url))
-const SITE_ROOT = join(HERE, '..')
-const DIST = join(SITE_ROOT, 'dist')
+/**
+ * 台账读不出来就直接崩在这里，不给默认值。
+ *
+ * 给个空数组「兜一下」的话，这道门禁会立刻把所有顶层裸 `:global()` 报红——
+ * 那看起来像「有 31 条新缺陷」，实际是台账文件不见了。报错信息必须指向真正的原因。
+ */
+const exemptionsDoc = JSON.parse(readFileSync(EXEMPTIONS_FILE, 'utf8'))
+const UNREVIEWED = exemptionsDoc.exemptions.map(e => e.key)
 
 /**
  * 已知例外。每条都要能被下面的不变式复算，否则删掉它。
@@ -265,6 +242,16 @@ const baseName = (p, ext) => p.split(/[\\/]/).pop().replace(new RegExp(`\\${ext}
 /** '组件名\t选择器' 的归一化键；UNREVIEWED 的每一项也要过同一把尺子 */
 const pinKey = (component, sel) => norm(`${component}\t${sel}`)
 const pinnedKeys = new Set(UNREVIEWED.map(norm))
+/**
+ * 判据 1 每命中一条就在这里划掉它，划到最后还剩下的就是「台账里有、src 里没有」。
+ *
+ * 为什么要这一下：豁免台账迁到 JSON 之后多了一个**只会让债活得更久**的机制——
+ * 把到期日往后挪一个月的成本从「改一行注释」降到了「改一个字符串」，几乎为零。
+ * 反向判据把「这条豁免描述的规则已经不存在了」也变成红：规则被修好之后，
+ * 豁免必须同一次提交里删掉，否则台账会慢慢积攒一堆指向空气的条目，
+ * 而届时的棘轮基线已经被抬到 40 条，真实基线是多少就再也说不清了。
+ */
+const hitPins = new Set()
 
 const astroGlobal = new Map()
 for (const file of walk(join(SITE_ROOT, 'src'), '.astro')) {
@@ -291,7 +278,8 @@ const pagesWith = token => pages.filter(p => p.html.includes(token)).map(p => p.
 const problems = []
 
 // 判据 1（钉住）：每一条顶层裸 `:global()` 都必须在 KNOWN（带可达性不变式）
-// 或 UNREVIEWED（钉住但未复核）里。
+// 或 scripts/exemptions.json（钉住但未复核）里；反向也成立，台账里不许有指向
+// 已不存在的规则的条目。
 //
 // 没有 Nuxt 侧可比之后，这道门禁唯一还能拦住的缺陷形态是「有人新写了一条无锚点的
 // 全局规则」——它会立刻红，并要求写清为什么不能加锚点。
@@ -299,18 +287,34 @@ for (const [component, rows] of [...astroGlobal].sort()) {
 	for (const r of rows) {
 		if (KNOWN.some(k => k.component === component && norm(k.subject) === norm(r.subject)))
 			continue
-		if (pinnedKeys.has(pinKey(component, r.y)))
+		const k = pinKey(component, r.y)
+		if (pinnedKeys.has(k)) {
+			hitPins.add(k)
 			continue
+		}
 		problems.push({
 			component,
-			detail: `${component}.astro 有一条顶层裸 ${r.y}，既不在 KNOWN 也不在 UNREVIEWED。`
+			detail: `${component}.astro 有一条顶层裸 ${r.y}，既不在 KNOWN 也不在 scripts/exemptions.json。`
 				+ '顶层 :global() 没有 scope 锚点，规则会在组件外也生效。'
 				+ '先问一句「这条是不是真的加不了锚点」：主体由子组件渲染 / slot 注入 / '
-				+ '第三方库 DOM 才需要 :global()。确实需要，就按文件头的格式补进 UNREVIEWED'
-				+ '（钉住待复核）或带 dom/root 不变式补进 KNOWN（已复核）；'
+				+ '第三方库 DOM 才需要 :global()。确实需要，就按 EXEMPTIONS_FILE 里的格式'
+				+ '（key / reason / added / expires）加一条——注意新增条目会撞上 meta.baseline 棘轮，'
+				+ '必须同时把基线往上改一行，那行 diff 就是 review 的落点；'
 				+ '不需要，就给它加回锚点。',
 		})
 	}
+}
+
+// 判据 1b（反向）：台账里每一条都必须在 src 里真的存在。
+// 规则被修好 / 改名之后留在台账里的条目，就是一笔凭空出现的债。
+const stalePins = UNREVIEWED.filter(k => !hitPins.has(norm(k)))
+for (const k of stalePins) {
+	problems.push({
+		component: k.split('\t')[0],
+		detail: `scripts/exemptions.json 里的豁免「${k.replace(/\t/g, ' → ')}」在 src 里找不到对应的顶层裸 :global() 了。`
+			+ '规则要么被修好、要么被改了选择器，两种情况都要求**同一次提交里删掉这条豁免**。'
+			+ '留着它会让棘轮基线虚高——基线一旦被抬到 40 条，真实欠债多少就再也说不清了。',
+	})
 }
 
 console.log('=== KNOWN 的可达性不变式（按 DOM 标记复算，不是按选择器字面量）===')
@@ -399,4 +403,5 @@ if (problems.length) {
 	for (const p of problems) console.log(`\n  [${p.component}] ${p.detail}`)
 	process.exit(1)
 }
-console.log(`\nOK: ${KNOWN.length} 条 KNOWN 不变式在 dist 上复算成立，src 里没有新的顶层裸 :global()。`)
+console.log(`\nOK: ${KNOWN.length} 条 KNOWN 不变式在 dist 上复算成立，`
+	+ `src 里没有新的顶层裸 :global()，${hitPins.size} 条豁免在 src 里都还对得上。`)
