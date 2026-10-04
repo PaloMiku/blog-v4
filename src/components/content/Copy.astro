@@ -193,12 +193,23 @@ const language = lang ?? getPromptLanguage(prompt)
 		padding: 0 1em;
 		outline: none;
 		white-space: nowrap;
-		scrollbar-color: auto;
-		scrollbar-width: auto;
+
+		/*
+		 * 滚动条藏掉，**横向滚动与右侧渐隐提示都保留**。
+		 *
+		 * 原来那条 `::-webkit-scrollbar { height: 4px; background-color: transparent }`
+		 * 只把**轨道**设成透明，**滑块仍是 UA 默认的灰色**，而且照样占 4px：
+		 * 单行内容一溢出，底部就多出一条灰条、文字被顶高一截，
+		 * 看着像内容被移位。`scrollbar-width: none` 两条实现都收掉，
+		 * 顺带把那 4px 让回给内容，右侧渐隐（`scrollcheck-x` 的 mask）继续作提示。
+		 *
+		 * ⚠️ `.copy` 自己的 `overflow: auto` 不设 none：它是「prompt 溢出时滚动」
+		 * 的兜底，那条路径上滚动条就是唯一的可见提示，别藏。
+		 */
+		scrollbar-width: none;
 
 		&::-webkit-scrollbar {
-			height: 4px;
-			background-color: transparent;
+			display: none;
 		}
 	}
 
@@ -209,6 +220,32 @@ const language = lang ?? getPromptLanguage(prompt)
 		padding: 0.5em;
 		color: var(--c-text-2);
 		transition: color, 0.2s;
+
+		/*
+		 * ⚠️ 这里**不能**继承 `.copy` 的 `line-height: 2.5`。
+		 *
+		 * 按钮的 `height: 2.5em` 要扣掉 `padding: 0.5em`×2，内容盒只剩 19.2px，
+		 * 而继承来的行盒是 32px —— 图标那行内容从按钮里**溢出 12.8px**。
+		 * `.copy` 是 `overflow: auto`，祖先的滚动溢出区会把这段溢出算进去，
+		 * 于是**每一行都被撑出一条竖向滚动条**（Windows 经典样式，▲▼ 可见），
+		 * 顺带把整行宽度吃掉 15px，代码内容因此被挤窄、切掉，看着像「被移位」。
+		 * 症状与头像那行长 URL 无关：短值那几行同样在滚（2026-10-04，/link 抽屉内实测）。
+		 *
+		 * 改成 grid 居中：不再有行盒，图标位置也不依赖任何一侧的字体度量
+		 * —— main.css 的 `.iconify { vertical-align: sub }` 对 grid item 不再生效。
+		 */
+		display: grid;
+		place-content: center;
+
+		/*
+		 * `hidden` 必须在这里显式兜住：上面那条 `display: grid` 是作者样式，
+		 * 压得过 UA 样式表里的 `[hidden] { display: none }`，
+		 * 于是撤销按钮会在「内容未被改过」时也露出来。
+		 * 同一个坑，图标那层已经踩过一次（见下方 `.icon-done` 的注释）。
+		 */
+		&[hidden] {
+			display: none;
+		}
 
 		&:hover {
 			color: var(--c-primary);
