@@ -130,10 +130,18 @@ for (const d of deployers) {
 		problems.push('部署流水线没有通过 `node scripts/accept.mjs` 跑门禁。手抄的 `- name: Gate: x` 清单已经漂过一次：'
 			+ '本地新增的门禁没同步到 CI，抓到真缺陷最多的 check-affordances 就因此只在本地跑。')
 	}
-	const { OFFLINE_GATES, FULL_EXTRA, BUILD_WARNING_GATE } = await import('./accept.mjs')
+	const { OFFLINE_GATES, FULL_EXTRA, BUILD_WARNING_GATE, gateName, gatePolicy } = await import('./accept.mjs')
+	// 名单元素是字符串或 { name, skip, why } 两种形态，必须过 gateName 取名——
+	// 直接当字符串拼路径会得到 '[object Object]'，existsSync 一律 false，
+	// 于是这道门禁会把名单里**每一道**都报成「不存在」。它自己会暴露，
+	// 但那 30 条假问题会把真正的缺失埋掉，所以取名要走同一把尺子。
 	for (const g of [...OFFLINE_GATES, ...FULL_EXTRA.map(x => x.script.replace(/\.mjs$/, ''))]) {
-		if (!existsSync(join(ROOT, 'scripts', `${g}.mjs`)))
-			problems.push(`accept.mjs 名单里的 ${g}.mjs 不存在——它在名单里但一次都不会跑`)
+		const name = gateName(g)
+		if (!existsSync(join(ROOT, 'scripts', `${name}.mjs`)))
+			problems.push(`accept.mjs 名单里的 ${name}.mjs 不存在——它在名单里但一次都不会跑`)
+		// 顺带把 skip 策略校一遍：非法值、缺 why，gatePolicy 会抛，
+		// 抛在这里就是「名单本身写错了」而不是门禁报红，位置更准。
+		gatePolicy(g)
 	}
 	if (!existsSync(join(ROOT, 'scripts', `${BUILD_WARNING_GATE}.mjs`)))
 		problems.push(`accept.mjs 要跑的 ${BUILD_WARNING_GATE}.mjs 不存在`)

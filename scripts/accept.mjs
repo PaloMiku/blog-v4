@@ -20,6 +20,8 @@ import path from 'node:path'
  *   node scripts/accept.mjs --profile full      # 加重档（含打线上站，约 20-25 min）
  *   node scripts/accept.mjs --skip-build        # 复用现有 dist/，只跑门禁
  *   node scripts/accept.mjs --only check-dates  # 只跑某几道（调试用，逗号分隔）
+ *   node scripts/accept.mjs --print-policies    # 只打印门禁的跳过策略矩阵，不跑门禁
+ *   ACCEPT_FORCE_CI=1 node scripts/accept.mjs   # 本机按 CI 判定跑（验 CI 行为，见下）
  *
  * 退出码：0 全绿；1 有门禁红；2 用法错 / 环境跑不起来。
  */
@@ -32,11 +34,58 @@ const LOG_DIR = path.join(ROOT, '.astro-compare')
 const BUILD_LOG = path.join(LOG_DIR, 'acceptance-build.log')
 
 /**
+ * 「跳过」的三档策略。**默认是 `never`——没标注就是最严的那一档**，
+ * 这样新增门禁时忘记考虑跳过条件，代价是「一旦跳过就红」，而不是「静默放过」。
+ *
+ * | skip            | 本机跳过 | CI 跳过 | 用在什么门禁上 |
+ * |-----------------|----------|----------|----------------|
+ * | `never`         | 红       | 红       | 绝大多数门禁：它们没有正当的跳过理由，跳过即缺陷 |
+ * | `env-dependent` | 绿       | **红**   | 内存不足 / 网络不可达。CI runner 是 16GB 规格，跳过说明环境退化 |
+ * | `expected-in-ci`| 红       | 绿       | 结构性跳过（输入不在 checkout 里），仍计入 skipped 并在汇总里点名 |
+ *
+ * 为什么要分 CI 与本机：这道 runner 的旧版对 `skipped > 0` 一律 `exit 0`，
+ * 而 CI 的步骤顺序是 `pnpm build` → `accept.mjs --skip-build`——**恰好在内存
+ * 最紧的时刻**调用唯一的浏览器门禁。它在 CI 上自我放弃，流水线照样绿灯，
+ * 且这个绿灯和「门禁跑过并通过」在汇报里长得一模一样。
+ *
+ * `expected-in-ci` 要克制着用：它等价于「永久豁免」，
+ * 所以每一条都必须写 `why`，且 CI 上仍然计入 `skipped`、
+ * 在汇总里逐条点名，不是静默放行。
+ */
+const SKIP_POLICIES = new Set(['never', 'env-dependent', 'expected-in-ci'])
+
+/** 门禁项要么是名字字符串，要么是 { name, skip, why }。默认 `never`。 */
+function gateName(g) {
+	return typeof g === 'string' ? g : g.name
+}
+
+function gatePolicy(g) {
+	const p = typeof g === 'string' ? 'never' : (g.skip || 'never')
+	if (!SKIP_POLICIES.has(p))
+		throw new Error(`${gateName(g)} 的 skip 策略 "${p}" 不合法（合法值：${[...SKIP_POLICIES].join(' / ')}）`)
+	if (p !== 'never' && typeof g === 'object' && !g.why)
+		throw new Error(`${gateName(g)} 标了 skip: '${p}' 但没写 why——豁免没有理由就等于永久静默放行`)
+	return p
+}
+
+/**
+ * 是否按 CI 判定。`ACCEPT_FORCE_CI=1` 让本机也能验 CI 行为——
+ * CI 相关的判据如果只能到 CI 上才能验，就等于没有 CI 相关的判据。
+ */
+const IS_CI = process.env.ACCEPT_FORCE_CI === '1'
+	|| process.env.GITHUB_ACTIONS === 'true'
+	|| process.env.CI === 'true'
+
+
+/**
  * 默认档门禁。全部只读 dist/ 与 src/，零外网、零浏览器（check-runtime-dom 例外：
  * 它起本地 preview + 无头 Chrome，但只连 localhost）。
  *
  * 新增门禁时：把脚本放进 scripts/、在这里加一行、同一条命令跑一次红绿双向。
  * 「写了没接线」等于没写。
+ *
+ * 元素是字符串时 skip 策略取默认的 `never`。**只有三道门禁例外**——
+ * 每一道都要能一句话说清「它为什么有正当的跳过理由」，否则不许标。
  */
 const OFFLINE_GATES = [
 	// 结构与内容：产物里该有的东西在不在
@@ -71,10 +120,22 @@ const OFFLINE_GATES = [
 	'check-affordances',
 	// 依赖边界与外部合同
 	'check-self-contained',
-	'check-twikoo-cdn',
-	'compare-urls',
+	{
+		name: 'check-twikoo-cdn',
+		skip: 'env-dependent',
+		why: '要连真实 CDN 比对 Twikoo 版本。本机断网可以跳，CI 上跳过即红——CDN 上的版本不对是真实风险，不该被一次网络抖动放过。',
+	},
+	{
+		name: 'compare-urls',
+		skip: 'expected-in-ci',
+		why: '比的是 baseline/nuxt/urls.txt，而根 .gitignore 里有 baseline/，CI 的 checkout 里没有它。结构性跳过，CI 上必然发生。',
+	},
 	// 运行时
-	'check-runtime-dom',
+	{
+		name: 'check-runtime-dom',
+		skip: 'env-dependent',
+		why: '无头 Chrome 约 700MB，内存不足时自我保护。本机被别的进程占满可以跳；CI runner 是 16GB 规格，在那里跳过说明环境退化，不是环境使然。',
+	},
 	// 自检：门禁清单本身
 	'check-ci-triggers',
 ]
@@ -93,7 +154,7 @@ const FULL_EXTRA = [
 const BUILD_WARNING_GATE = 'check-build-warnings'
 
 function parseArgs(argv) {
-	const opt = { profile: 'offline', skipBuild: false, only: null }
+	const opt = { profile: 'offline', skipBuild: false, only: null, printPolicies: false }
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i]
 		if (a === '--profile')
@@ -102,6 +163,8 @@ function parseArgs(argv) {
 			opt.skipBuild = true
 		else if (a === '--only')
 			opt.only = argv[++i].split(',').map(s => s.trim()).filter(Boolean)
+		else if (a === '--print-policies')
+			opt.printPolicies = true
 		else if (a === '-h' || a === '--help')
 			opt.help = true
 		else return { error: `未知参数 ${a}` }
@@ -153,6 +216,27 @@ function runGate(name) {
 	return { ...r, skipped }
 }
 
+/**
+ * 判定一次跳过在当前环境里「该不该红」。
+ *
+ * 返回 `null` 表示合规，`{ reason }` 表示这次跳过破坏了「绿灯 = 该跑的跑了」。
+ * 注意判据的方向：**宁可误报也不漏报**——把一条真跳过的门禁当成跑过并通过，
+ * 才是危险的那个方向（那正是这套判据要治的病）。
+ */
+function skipViolation(name, policy) {
+	const allowed = IS_CI
+		? policy === 'expected-in-ci'
+		: policy === 'env-dependent'
+	if (allowed)
+		return null
+	const where = IS_CI ? 'CI 上' : '本机'
+	return {
+		reason: `${name} 跳过了，但它的 skip 策略是 '${policy}'，${where}不允许跳过。`
+			+ (policy === 'never' ? '它没有正当的跳过理由——跳过即缺陷。' : '')
+			+ (IS_CI ? '' : ' 若这是本机环境问题，先看它该不该标 env-dependent。'),
+	}
+}
+
 function firstSkipLine(out) {
 	const l = (out || '').split('\n').map(s => s.trim()).find(l => SKIP_MARKERS.test(l))
 	return l ? l.slice(0, 90) : 'SKIP'
@@ -183,6 +267,32 @@ function dumpFailure(name, out) {
 
 function section(title) {
 	console.log(`\n── ${title} ${'─'.repeat(Math.max(0, 58 - title.length))}`)
+}
+
+/**
+ * 打印名单的跳过策略矩阵。不跑门禁、只算策略——用来在改名单时
+ * 一眼看到「哪些门禁在本机允许跳过、哪些在 CI 上不允许」，
+ * 免得改完才发现 CI 会红。
+ */
+function printPolicies() {
+	const all = [...OFFLINE_GATES, ...FULL_EXTRA.map(x => ({ name: x.name, skip: 'never' }))]
+	const rows = all.map((g) => {
+		const p = gatePolicy(g)
+		return {
+			门禁: gateName(g),
+			策略: p,
+			本机跳过: p === 'env-dependent' ? '绿' : p === 'expected-in-ci' ? '红' : '红',
+			CI跳过: p === 'expected-in-ci' ? '绿' : '红',
+			理由: typeof g === 'object' && g.why ? g.why : '',
+		}
+	})
+	console.log(`门禁 ${rows.length} 道；判定环境：${IS_CI ? 'CI' : '本机'}${process.env.ACCEPT_FORCE_CI === '1' && !process.env.GITHUB_ACTIONS ? '（ACCEPT_FORCE_CI=1 强制）' : ''}`)
+	for (const r of rows) {
+		console.log(`\n  ${r.门禁}  [${r.策略}]  本机跳过→${r.本机跳过}  CI跳过→${r.CI跳过}`)
+		if (r.理由) console.log(`      ${r.理由}`)
+	}
+	const exempt = rows.filter(r => r.策略 !== 'never')
+	console.log(`\n合计：${rows.length} 道门禁，其中 ${exempt.length} 道有跳过豁免（${exempt.map(r => r.门禁).join('、')}），其余 ${rows.length - exempt.length} 道跳过即红。`)
 }
 
 // ── 步骤 1：构建 ──────────────────────────────────────────────────────────
@@ -236,25 +346,50 @@ function main() {
 		process.exit(0)
 	}
 
-	console.log(`验收 runner  档位=${opt.profile}`)
+	if (opt.printPolicies) {
+		printPolicies()
+		process.exit(0)
+	}
+
+	console.log(`验收 runner  档位=${opt.profile}${IS_CI ? '  [按 CI 判定跳过策略]' : ''}`)
 	stepBuild(opt.skipBuild)
 
 	let gates = [...OFFLINE_GATES]
 	if (opt.profile === 'full')
 		gates.push(...FULL_EXTRA.map(g => g.name))
 	if (opt.only)
-		gates = gates.filter(g => opt.only.includes(g))
+		gates = gates.filter(g => opt.only.includes(gateName(g)))
+
+	// 过滤后一道都不剩时**必须报错**，不能让它走到汇总变成「全绿」。
+	// 实测踩过：名单元素从字符串改成 { name, skip, why } 之后，
+	// `--only` 里的字符串跟对象比不上，--only 整个失效、被过滤成空，
+	// runner 照样打出「ACCEPTED: all steps green」——**一道门禁都没跑，却报全绿**。
+	// 这正是这套判据要治的病，只不过这次发生在 runner 自己身上。
+	if (opt.only && !gates.length) {
+		const known = [...OFFLINE_GATES, ...FULL_EXTRA.map(x => x.name)].map(gateName)
+		console.error(`FAIL: --only ${opt.only.join(',')} 没有匹配到任何门禁。已排除。`)
+		console.error(`      档位 ${opt.profile} 里可用的门禁：${known.join(', ')}`)
+		process.exit(2)
+	}
 
 	section(`门禁（${gates.length} 道）`)
 	let missing = 0
-	for (const name of gates) {
-		if (FULL_EXTRA.some(g => g.name === name)) {
-			const meta = FULL_EXTRA.find(g => g.name === name)
+	const violations = []
+	for (const g of gates) {
+		const name = gateName(g)
+		const policy = gatePolicy(g)
+		if (FULL_EXTRA.some(x => x.name === name)) {
+			const meta = FULL_EXTRA.find(x => x.name === name)
 			const t0 = process.hrtime.bigint()
 			const r = runNode(meta.script)
 			const secs = Number(process.hrtime.bigint() - t0) / 1e9
 			const skipped = r.status === 0 && (r.missing || SKIP_MARKERS.test(r.out))
 			record(name, r.status, secs, skipped ? firstSkipLine(r.out) : lastResultLine(r.out), skipped)
+			if (skipped) {
+				// 加重档的门禁默认 never：它们要么打真实网络要么跑很久，没有正当跳过理由
+				const v = skipViolation(name, 'never')
+				if (v) violations.push(v)
+			}
 			console.log(`  ${r.status !== 0 ? 'FAIL' : skipped ? 'SKIP' : 'OK  '}  ${name.padEnd(24)} ${secs.toFixed(1)}s  ${results.at(-1).note}`)
 			if (r.status !== 0)
 				dumpFailure(name, r.out)
@@ -266,6 +401,10 @@ function main() {
 		if (r.missing)
 			missing++
 		const badge = r.status !== 0 ? 'FAIL' : r.skipped ? 'SKIP' : 'OK  '
+		if (r.skipped) {
+			const v = skipViolation(name, policy)
+			if (v) violations.push(v)
+		}
 		console.log(`  ${badge}  ${name.padEnd(24)} ${(results.at(-1).seconds).toFixed(1)}s  ${results.at(-1).note}`)
 		if (r.status !== 0)
 			dumpFailure(name, r.out)
@@ -301,10 +440,20 @@ function main() {
 	const ran = results.filter(r => !r.skipped)
 	const total = results.length
 	const passed = ran.filter(r => r.exit === 0).length
-	console.log(`\ntotal: ${total}   passed: ${passed}   failed: ${failed.length}   skipped: ${skipped.length}`)
+	// 违规跳过：门禁没跑，且按它的 skip 策略，这次不该跑得起。绿灯必须红。
+	const allowedSkipped = skipped.length - violations.length
+	console.log(`\ntotal: ${total}   passed: ${passed}   failed: ${failed.length}   skipped: ${skipped.length}   (合规跳过 ${allowedSkipped} / 违规跳过 ${violations.length})`)
 	if (skipped.length) {
 		console.log(`\n注意：${skipped.length} 道门禁**没有真正运行**（脚本自己放弃了：内存不够 / 基线缺失 / 网络不可达）。`)
 		console.log('      它们不计入通过。上面的备注写了各自的原因——「全绿」不包括它们。')
+	}
+	if (violations.length) {
+		section('违规跳过（绿灯因此作废）')
+		for (const v of violations) console.log(`  - ${v.reason}`)
+		console.log(`\n判据是「绿灯 = 该跑的跑了且跑过了」。这 ${violations.length} 道既没跑、`
+			+ '策略又不允许在此处跳，所以这次不能算通过。')
+		console.log('真要豁免就把该门禁的 skip 策略显式标成 env-dependent / expected-in-ci 并写清 why——')
+		console.log('那是带理由的、有 diff 的一行改动，不是让 runner 悄悄放过。')
 	}
 	if (missing) {
 		console.log(`\n注意：有 ${missing} 道门禁的脚本不存在。它们在名单里但不会跑——`)
@@ -315,10 +464,14 @@ function main() {
 		for (const f of failed) console.log(`  - ${f.step}  (exit ${f.exit})`)
 		process.exit(1)
 	}
+	if (violations.length) {
+		console.log(`\nFAILED: ${violations.length} 道门禁违规跳过，「全绿」不成立。`)
+		process.exit(1)
+	}
 	console.log(skipped.length ? 'ACCEPTED: no failures, but see the skipped steps above' : 'ACCEPTED: all steps green')
 	process.exit(0)
 }
 
 // 名单在底部导出，是为了让 check-ci-triggers.mjs 能 import 它校验
 // 「名单里的脚本都真实存在」——CI 不再手抄名单。
-export { BUILD_WARNING_GATE, FULL_EXTRA, OFFLINE_GATES }
+export { BUILD_WARNING_GATE, FULL_EXTRA, IS_CI, OFFLINE_GATES, gateName, gatePolicy }
