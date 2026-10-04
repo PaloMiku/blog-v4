@@ -6,26 +6,17 @@
 #
 # push main 即发布。若想先看构建结果再发，把 on.push 去掉、只留 workflow_dispatch。
 #
-# 这里**不**跑 acceptance.ps1：它是 PowerShell 入口、需要未入库的 Nuxt 冻结基线
-# （`baseline/nuxt/`，见 scripts/freeze-baseline.mjs）、并且要拿 headless Chrome 打线上站，
-# 三者在干净 CI checkout 里都不成立。下面这 12 道是能在 CI 跑的子集，
-# 每一道都对应一个曾经悄悄上线过的失效模式：
+# 验收由 `node scripts/accept.mjs --skip-build` 一条命令跑完，与本地默认档
+# **同一份门禁名单**（就在 scripts/accept.mjs 里）。2026-10-04 之前这里是 13 个
+# 手抄的步骤，那份手抄清单已经漂过：本地新增的门禁没同步过来，抓到真缺陷最多的
+# check-affordances 就只在本地跑；而 PowerShell 门禁在 ubuntu runner 上结构上跑
+# 不起来，那 10 道只能永远缺席。全部迁到 node 之后这两种漂移都从结构上消失了。
 #
-#   check-self-contained  import 逃出仓库 / 引入已删除的 Nuxt 运行时依赖
-#   check-mdc-eval        MDC 组件被当字符串吐进 HTML（<linkcard> 出现在产物里）
-#   check-heading-ids     标题 id 与 Nuxt 的 github-slugger+三步后处理不一致（锚点不可达）
-#   check-text-literal    构建改写正文字面（smartypants 改字形，页高与计算样式都看不见）
-#   check-scope-anchors   顶层 :global() 丢了 scope 锚点 → 样式在不该生效的地方生效
-#   check-aria-current    aria-current 缺失或过标（屏幕阅读器播报内容，视觉与几何都无感）
-#   check-icon-box        .nav-icon 里的 svg 退回 inline，贴基线漂 1.7px
-#   check-component-fence Component 围栏的源码栏配错位（每个栏都还「有名字」，构建全绿）
-#   audit-css-blocks      <style> 块被批量改写损坏（构建照绿，规则被静默丢弃）
-#   check-runtime-dom     交互之后才发作的缺陷（作用域丢失 / symbol 断链 / 样式漂移）
-#   compare-urls          路由集合与冻结基线一致（切流全站 404 的最后一道防线）
-#   check-ci-triggers     本文件自身的 YAML 可解析 + 触发器形状正确
+# 门禁名单不在这个文件里，所以这里也就不再复述成员——复述就是第二份真相，
+# 而第二份真相已经错过好几次（见 CLAUDE.md 坑位 37）。
 #
-# interaction-check.mjs 不在这里跑：它在流水线里不可靠而单跑可靠，
-# 理由与实测数据见 docs/astro-phase1-findings.md。单跑：node scripts/interaction-check.mjs
+# 依赖未入库的 Nuxt 冻结基线（`baseline/nuxt/`）的门禁在 CI 上会自己跳过并在
+# 汇总里单列成 `skipped`，不计入通过。
 
 name: Build and Deploy
 
@@ -91,66 +82,32 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Build static files
-        run: pnpm build
-
-      # Step names contain a colon, so they must be quoted. An unquoted
-      # `- name: Gate: x` is a YAML parse error, not a cosmetic issue: the
-      # workflow then never runs at all. `check-ci-triggers.mjs` re-parses
-      # this file for exactly that reason, and it caught this exact mistake
-      # the first time it was run.
-      - name: 'Gate: self-contained'
-        run: node scripts/check-self-contained.mjs
-
-      - name: 'Gate: MDC components were evaluated'
-        run: node scripts/check-mdc-eval.mjs
-
-      - name: 'Gate: heading ids'
-        run: node scripts/check-heading-ids.mjs
-
-      - name: 'Gate: body text literals not rewritten'
-        run: node scripts/check-text-literal.mjs
-
-      - name: 'Gate: scope anchors kept'
-        run: node scripts/check-scope-anchors.mjs
-
-      - name: 'Gate: aria-current'
-        run: node scripts/check-aria-current.mjs
-
-      - name: 'Gate: icon box'
-        run: node scripts/check-icon-box.mjs
-
-      # 源码栏的图注靠「同语言、同顺序」与扫描到的 info string 配对
-      # （meta 从 mdast 传不到 hast）。配错位时每个源码栏**仍然有名字**，
-      # 只是拿的是别人的文件——构建与所有几何门禁都不会报。这道门禁把
-      # 每个源码栏的正文读回来与磁盘文件逐字比对。
-      - name: 'Gate: component fence source panes'
-        run: node scripts/check-component-fence.mjs
-
-      # 运行时 DOM：起一个本地 preview，用真浏览器翻页/排序/开合 combobox，
-      # 然后断言 <use> 仍能解析到 <symbol>、计算样式没变、选中项对勾几何稳定。
+      # 构建日志 tee 到 accept.mjs 约定的那条路径，这样零告警构建检查
+      # （check-build-warnings）在 CI 里也自动获得覆盖——它自己不再构建，只读日志。
       #
-      # 为什么它必须在 CI：2026-10-04 之前，39 道门禁**全部**只读静态产物，
-      # 于是当天穿过去的三个真实缺陷全是同一个形状——构建期是对的，
-      # 坏在交互之后或构建环境：
-      #   1. 页码按钮/对勾丢了 data-astro-cid（Astro 的作用域属性是构建期的，
-      #      createElement 出来的节点没有它）⇒ 切页后 1234 糊成一团；
-      #   2. astro-icon 的 symbol 被 replaceChildren 连坐删除 ⇒ 翻页后图标变空白；
-      #   3. 线上 63/63 页日期变英文（Intl locale 随 runner 语言变）。
-      # 静态比对一条都抓不到。这道门禁三条全抓（已逐条验过红）。
-      - name: 'Gate: runtime DOM after interaction'
-        run: node scripts/check-runtime-dom.mjs
+      # ⚠️ `shell: bash` 不是可选的。GitHub 在 Linux 上的**默认** shell 是
+      # `bash -e {0}`，**不带 pipefail** ⇒ `pnpm build | tee` 里构建失败会被
+      # tee 的退出码 0 吞掉，流水线照样往下走、直接发布一个坏产物。
+      # 显式写 `shell: bash` 才是 `bash --noprofile --norc -eo pipefail {0}`。
+      - name: Build static files
+        shell: bash
+        run: pnpm build 2>&1 | tee .astro-compare/acceptance-build.log
 
-      # 路由集合 vs 冻结基线：切流会不会变成全站 404 的最后一道防线。
-      # 原为 compare-urls.ps1（PowerShell 5.1），在 ubuntu runner 上结构上跑不起来。
-      - name: 'Gate: route set matches baseline'
-        run: node scripts/compare-urls.mjs
-
-      - name: 'Gate: style blocks intact'
-        run: node scripts/audit-css-blocks.mjs
-
-      - name: 'Gate: CI triggers'
-        run: node scripts/check-ci-triggers.mjs
+      # 验收：一条命令跑完默认档的全部门禁。
+      #
+      # 2026-10-04 之前这里是 13 个手抄的 `- name: Gate: x` 步骤。抄清单的代价
+      # 已经付过两次：一是清单会漂（本地加了门禁，CI 没加，于是抓到真缺陷最多的
+      # check-affordances 只在本地跑）；二是 PowerShell 门禁在 ubuntu runner 上
+      # 结构上跑不起来，那 10 道只能永远缺席。门禁全部迁到 node 之后，两种漂移
+      # 都从结构上消失了——CI 与本地跑的是同一份名单，就在 scripts/accept.mjs 里。
+      #
+      # --skip-build：产物就是上面那一步 build 的，不重建。
+      #
+      # interaction-check.mjs 仍然不在这里：它在流水线里不可靠而单跑可靠，
+      # 理由与实测数据见 docs/astro-phase1-findings.md。单跑：
+      #   node scripts/interaction-check.mjs
+      - name: Acceptance gates
+        run: node scripts/accept.mjs --skip-build
 
       - name: Deploy to GitHub Public
         uses: JamesIves/github-pages-deploy-action@v4

@@ -118,7 +118,17 @@ const blogConfig = {
 
 	/** 自己部署的 Twikoo 服务 */
 	twikoo: {
-		envId: 'https://twikoo.sotkg.com/',
+		// 必须写到云函数本体，不能只写站点根：Netlify 上 `/` 是一张
+		// `location.href='/.netlify/functions/twikoo'` 的静态跳转页，只对浏览器导航有效。
+		// 客户端是对 envId 直接 POST JSON，POST `/` 落到静态文件返回 404 且不带
+		// CORS 头，浏览器读不到响应 → xhr.status 0 → Twikoo 报「请求被跨域策略拦截」。
+		// 这类错报会伪装成 CORS 问题：换 CORS 配置、改代码都没用，先核对 envId 指向的
+		// 路径真的接受 POST：
+		//   curl -i -X POST <envId> -H 'Origin: https://blog.sotkg.com' \
+		//     -H 'Content-Type: application/json' \
+		//     --data '{"event":"GET_CONFIG","envId":"<envId>"}'
+		envId: 'https://twikoo.sotkg.com/.netlify/functions/twikoo',
+		// preconnect 用 origin 即可，不必写到函数路径。
 		preload: 'https://twikoo.sotkg.com/',
 	},
 }

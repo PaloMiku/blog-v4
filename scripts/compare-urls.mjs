@@ -49,8 +49,14 @@ try {
 	baseline = readFileSync(BASE, 'utf8')
 }
 catch {
-	console.error(`FAIL: 基线缺失 ${relative(ROOT, BASE)}`)
-	console.error('  它是未入库的冻结产物（见 freeze-baseline.mjs）。干净 CI 里这道门禁不成立，跳过。')
+	// 基线是未入库的冻结产物（Nuxt 源码树已删，无法再重新冻结；生成器
+	// freeze-baseline.mjs 也已退役——现在跑它会把 Astro 产物冻成「Nuxt 基线」，
+	// 那比不跑更坏）。干净 CI 里这道门禁不成立。
+	//
+	// 这一行必须以 SKIP 开头：accept.mjs 靠它把「没跑」和「跑过且通过」分开计数。
+	// 写 FAIL 会让这道门禁在 CI 上被当成通过——而它其实什么都没测。
+	console.error(`SKIP: 基线缺失 ${relative(ROOT, BASE)}`)
+	console.error('  它是未入库的冻结产物，且已无法再冻结。干净 CI 里这道门禁不成立。')
 	process.exit(0)
 }
 

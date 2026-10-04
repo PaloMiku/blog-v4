@@ -5,10 +5,10 @@
  * API 变化 / 降级：
  * 1. `v-html="title"` → `set:html`（Astro 侧输出未转义 HTML 的方式）。
  * 2. `<ProsePre :code language meta="wrap">` → 静态 `<pre><code>`。
- *    Astro 侧尚无 ProsePre 组件（见 MIGRATION-BRIEF 的组件映射表），
+ *    Astro 侧尚无 ProsePre 组件（映射早已完成，现状由 check-mdc-eval.mjs 守住），
  *    按 `Mermaid.astro` 已确立的先例降级为静态 pre。代码高亮属 Phase 4/5。
  * 3. `Icon` 占位实现不接受未声明的 prop，`class="error-icon"` 会被丢弃
- *    （见 MIGRATION-BRIEF 基础设施一节），故外面套一层 `.error-icon` 承载样式。
+ *    （astro-icon 基础设施的现状见 CLAUDE.md 坑位 5），故外面套一层 `.error-icon` 承载样式。
  */
 import Icon from '../Icon.astro'
 

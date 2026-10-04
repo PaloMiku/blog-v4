@@ -230,7 +230,7 @@ const allowAscending = appConfig.pagination.allowAscending ? !disableAscending :
 	/*
 	 * 原本是 `:deep(button), :deep(a)`。按钮与链接都由本组件及 Dropdown 子组件渲染，
 	 * 但 Dropdown 是独立 scope，其根元素拿不到本组件的 scope 属性，
-	 * 故对来自子组件的部分用 :global()（见 MIGRATION-BRIEF 陷阱 1/2）。
+	 * 故对来自子组件的部分用 :global()（见 CLAUDE.md 坑位 2）。
 	 */
 	button,
 	:global(a) {

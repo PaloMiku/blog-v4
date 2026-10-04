@@ -306,7 +306,7 @@ const pageArr = getPaginationIndicator(value, totalPages, expandPages)
 
 /*
  * 原本是两条 `:global(::view-transition-*)` 规则，用于关掉分页条的过渡动画。
- * Astro 里同层嵌套的 :global 不会传播给内部选择器（见 MIGRATION-BRIEF 陷阱 3），
+ * Astro 里同层嵌套的 :global 不会传播给内部选择器（见 CLAUDE.md 坑位 2），
  * 故每条都单独写全。
  */
 :global(::view-transition-group(article-pagination)),

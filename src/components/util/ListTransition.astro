@@ -26,7 +26,7 @@
  *    「排序方式变了」这件事由第 2 条的 DOM 变更自然体现，无需显式传。
  * 4. 根元素带 `data-list-transition-root`，页面可用它定位（脚本内部也用它）。
  *
- * ## 作用域陷阱（MIGRATION-BRIEF §3）
+ * ## 作用域陷阱（见 CLAUDE.md 坑位 2）
  * - 陷阱 1：Astro 无 attribute fallthrough，故显式声明 `class` / `style` / `id` 并用
  *   `class:list` 合并。
  * - 陷阱 3：`:global()` 不传播。面向 slot 内容的层级选择器要**逐层**写 `:global()`。

@@ -19,6 +19,12 @@
  *   5. 它调用的每一道 `node scripts/*.mjs` 门禁**在仓库里真实存在**
  *      （CI 里 `run:` 指向不存在的脚本会在那一步才炸，而那一步已经在部署前——
  *      顺序上是安全的，但报错信息离原因很远）。
+ *   6. 部署流水线**必须**通过 `scripts/accept.mjs` 跑门禁，而不是手抄一份名单。
+ *      手抄那份已经漂过：本地新增的门禁没同步到 CI，而抓到真缺陷最多的
+ *      `check-affordances` 就因此只在本地跑。判据从「CI 列了哪些门禁」改成
+ *      「CI 有没有调用那个唯一事实源」，漂移就无处可藏。
+ *   7. `accept.mjs` 名单里的每一道脚本都真实存在——「写了没接线」在本地就红，
+ *      而不是等到某次验收静默 `SKIP`。
  *
  * ## 第 0 条判据是它自己
  *
@@ -112,6 +118,27 @@ for (const d of deployers) {
 		problems.push(`${d.file}: 部署目标变成 ${d.deploy['repository-name']}@${d.deploy.branch}`)
 }
 
+// 判据 6 + 7：门禁名单的唯一事实源是 scripts/accept.mjs。
+// CI 必须调它（而不是自己再列一遍），而它列的每一道脚本都必须真实存在——
+// 「写了没接线」在本地就红，而不是等到某次验收静默 SKIP。
+{
+	const wfSteps = Object.values(deployers.length
+		? parse(readFileSync(join(WF_DIR, deployers[0].file), 'utf8')).jobs ?? {}
+		: {}).flatMap(j => j.steps ?? [])
+	const runs = wfSteps.map(s => s.run).filter(r => typeof r === 'string')
+	if (!runs.some(r => /node\s+scripts\/accept\.mjs/.test(r))) {
+		problems.push('部署流水线没有通过 `node scripts/accept.mjs` 跑门禁。手抄的 `- name: Gate: x` 清单已经漂过一次：'
+			+ '本地新增的门禁没同步到 CI，抓到真缺陷最多的 check-affordances 就因此只在本地跑。')
+	}
+	const { OFFLINE_GATES, FULL_EXTRA, BUILD_WARNING_GATE } = await import('./accept.mjs')
+	for (const g of [...OFFLINE_GATES, ...FULL_EXTRA.map(x => x.script.replace(/\.mjs$/, ''))]) {
+		if (!existsSync(join(ROOT, 'scripts', `${g}.mjs`)))
+			problems.push(`accept.mjs 名单里的 ${g}.mjs 不存在——它在名单里但一次都不会跑`)
+	}
+	if (!existsSync(join(ROOT, 'scripts', `${BUILD_WARNING_GATE}.mjs`)))
+		problems.push(`accept.mjs 要跑的 ${BUILD_WARNING_GATE}.mjs 不存在`)
+}
+
 if (problems.length) {
 	console.error(`\n✗ 流水线形状有 ${problems.length} 处问题：\n`)
 	for (const p of problems)
@@ -120,4 +147,5 @@ if (problems.length) {
 }
 
 console.log('\nOK: 只有一条部署流水线，push main 触发，部署站点根的 dist，')
-console.log(`    目标 PaloMiku/blog-public@main，引用的 ${report[0].gateRuns.length} 道门禁脚本都存在。`)
+console.log('    目标 PaloMiku/blog-public@main，门禁走 scripts/accept.mjs 这一个事实源，')
+console.log('    名单里的脚本都存在。')

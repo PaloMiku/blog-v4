@@ -22,8 +22,9 @@
  * 2. 用 `/([^{}]+)\{([^{}]*)\}/g` 切规则 → 不跟踪嵌套深度，会从一条规则的
  *    **声明中间**起匹配，抓出 `opacity:.5;…;.active[cid] &` 这种以属性开头的
  *    假选择器，把活规则误报成死规则。
- * 3. 早于本文件的第一版：把 class 不存在的死 CSS 也算进来（那是
- *    `check-dead-css` 的职责）。
+ * 3. 早于本文件的第一版：把 class 不存在的死 CSS 也算进来（那是「产物 CSS 里有
+ *    规则但全站没有落点」那一族的职责，`check-dead-css` 2026-10-04 退役后暂无人接手，
+ *    见 CLAUDE.md 开放项）。
  *
  * `--self-test` 覆盖这三种情形 + 真正的死规则；
  * **一个从没抓到真问题的检查器，它的"无发现"没有任何意义。**
@@ -112,8 +113,19 @@ function findDead(cssFiles, live, cidsOf, cidTotals = new Map()) {
 				continue // 有一个锚点在，规则就是活的
 			const cls = pairs[0].split('|')[0]
 			if (!cidsOf.get(cls))
-				continue // class 压根不存在 → 死 CSS，归 check-dead-css
-			const key = `${name} | ${sel}`
+				continue // class 压根不存在 → 属于「死 CSS」那一族，不是本文件的判据范围
+			// 键是**语义身份**：选择器文本本身就带着 cid（cid 是组件内容的哈希，
+			// 组件的 <style> 一改 cid 就变，于是「改过就重新判一次 (a)/(b)」这个
+			// 初衷仍然成立）。
+			//
+			// 早先把 css 文件名也算进键里，那是错的：文件名带**内容哈希**，而
+			// `Blog.*.css` 是共享 bundle——同组任何一个组件改样式都会换哈希，
+			// 于是「这个组件被改过」被放大成「这个 bundle 里所有规则都变过」。
+			// 代价是每跑一次构建就要手工重钉一次名单：2026-10-03 已经因此重钉过
+			// 一次（文件名从 D_MlPnCq 变成 CCRJAYdU），今天又来一次
+			// （CCRJAYdU → B2ldWKv-），而选择器与 cid 逐字未变。
+			// 文件名只留作给人看的定位信息，不进键。
+			const key = sel
 			const prev = dead.get(key)
 			if (prev) {
 				prev.n++
@@ -122,6 +134,7 @@ function findDead(cssFiles, live, cidsOf, cidTotals = new Map()) {
 				dead.set(key, {
 					n: 1,
 					want,
+					bundle: name,
 					classes: pairs.map(p => p.split('|')[0]),
 					cidAlive: cidTotals.get(want) || 0,
 					otherCids: [...new Set([...(cidsOf.get(cls) || [])])].sort(),
@@ -247,37 +260,36 @@ console.log('  判别办法：比对冻结基线同页（baseline/nuxt/），基
  * 一道永远红的门禁等价于没有门禁：没人会去看它是新问题还是老熟人。
  * 现在按 key 白名单判定：三条都在 → 退 0；**多出任何一条** → 退 1 并点名是哪条。
  *
- * 键的构成是 `<css 文件> | <选择器>`，css 文件名带内容哈希，所以**改动那个组件的
- * `<style>` 会让它的键整个换掉**（新键不在白名单里 → 立刻红）。这不是误报：
- * 那条规则刚被改过，值得重新判一次 (a)/(b)。
+ * 键就是**选择器文本本身**，它自带 `data-astro-cid-<hash>`；cid 是组件内容的哈希，
+ * 所以「改过那个组件的 `<style>` 就重新判一次 (a)/(b)」这个初衷仍然成立。
+ * 早先的键是 `<css 文件名> | <选择器>`，而 css 文件名带内容哈希、`Blog.*.css` 又是
+ * 共享 bundle，于是同组任意一个组件改样式都会让**全部**键失效——2026-10-03 与今天
+ * 各因此手工重钉过一次，而选择器与 cid 逐字未变。文件名只留作定位信息。
  */
 const KNOWN = new Set([
 	// (b) 类：主体在本内容集里从不渲染。`.content` 只出现在 Blog 的 cid 上，
 	//     PostFooter 自己的 cid 上一个元素都没有 ⇒ :global() 反而会把选择器放宽。
-	'_astro/_..CaZyN8qN.css | .content[data-astro-cid-2z6spp2e]',
-	'_astro/_..CaZyN8qN.css | &>.title[data-astro-cid-hchfoe34]',
+	'.content[data-astro-cid-2z6spp2e]',
+	'&>.title[data-astro-cid-hchfoe34]',
 	// (b) 类：SearchModal 的 `.search-item.active`，弹层未打开时该组合不存在。
-	// 2026-10-03 重新钉住：lint 重排了 src/styles/prose.css 里的声明顺序，这个
-	//     bundle 的内容哈希随之改变，文件名从 D_MlPnCq 变成 CCRJAYdU。选择器与
-	//     cid 逐字相同，产物正文只差规则内的属性顺序（已逐条核对：无重复声明、
-	//     无简写/长写配对）⇒ 仍是同一条 (b) 规则，不是新面孔。
-	'_astro/Blog.CCRJAYdU.css | .active[data-astro-cid-66nxmncj] &',
+	//     两次重新钉住（2026-10-03、2026-10-04）都只是因为 css bundle 的内容哈希变了。
+	'.active[data-astro-cid-66nxmncj] &',
 ])
 
 const fresh = [...dead.keys()].filter(k => !KNOWN.has(k))
 const stale = [...KNOWN].filter(k => !dead.has(k))
 
 if (fresh.length) {
-	console.error(`\n✗ 多出 ${fresh.length} 条未查明的死规则（已查明 3 条）：`)
+	console.error(`\n✗ 多出 ${fresh.length} 条未查明的死规则（已查明 ${KNOWN.size} 条）：`)
 	for (const k of fresh)
-		console.error(`  - ${k}`)
+		console.error(`  - ${k}  [${dead.get(k).bundle}]`)
 	console.error('\n先按上面的 (a)/(b) 判别，再决定是加 :global() 还是接受它。')
 	console.error('确认属于 (b) 之后，把它连同判据写进本文件的 KNOWN 集合。')
 	process.exit(1)
 }
 
 if (stale.length) {
-	console.log(`\n  注：KNOWN 里的 ${stale.length} 条这次没出现（可能随内容变化消失了）:`)
+	console.log(`\n  注：KNOWN 里的 ${stale.length} 条这次没出现（该规则已被删掉，可以从名单里划掉）:`)
 	for (const k of stale)
 		console.log(`    ${k}`)
 }

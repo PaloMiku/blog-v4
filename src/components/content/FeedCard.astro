@@ -8,7 +8,7 @@
  *    原版靠 Vue 的 attribute fallthrough 把 `class="feed-card gradient-card"`
  *    落到 UtilLink 的根元素上（因此 `.feed-card` 拿到本组件的 scope，样式生效）。
  *    Astro 没有 fallthrough，若把根元素交给子组件渲染，本组件 `<style>` 里的
- *    `.feed-card { … }` 会**永不匹配**（MIGRATION-BRIEF 陷阱 1/2）。
+ *    `.feed-card { … }` 会**永不匹配**（见 CLAUDE.md 坑位 1 / 2）。
  *    故这里内联 UtilLink 的两分支：`to` 为空 → `<span>`，否则外链加 `target="_blank"`
  *    **并**带 `rel="noopener"`。后半句同样出自原版：FeedCard.vue:45 显式传了
  *    `rel="noopener"`，它会把 NuxtLink 对 `_blank` 的自动值 `noopener noreferrer`

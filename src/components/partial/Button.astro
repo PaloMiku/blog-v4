@@ -6,7 +6,7 @@
  * 1. 根元素按 Nuxt 版 `<component :is="to ? UtilLink : 'button'">` 的三分支展开
  *    （`to` 为 undefined → `<button>`；`#` 开头 → 纯 `<a>`；否则带 target 的 `<a>`），
  *    照搬 `UtilLink` 的判断逻辑。
- * 2. Vue 的 attribute fallthrough 在 Astro 里不存在（见 MIGRATION-BRIEF 陷阱 1），
+ * 2. Vue 的 attribute fallthrough 在 Astro 里不存在（见 CLAUDE.md 坑位 1），
  *    而实际调用方会传 `class` / `disabled` / `aria-label`（Pagination、error.vue、
  *    Mermaid、ProseTable），所以必须显式声明并写回。
  */

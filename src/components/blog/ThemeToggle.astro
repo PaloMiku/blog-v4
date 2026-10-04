@@ -5,7 +5,7 @@
  * ## color-mode 契约（与 Phase 3 基础任务 / Base.astro 对接的点）
  * Nuxt 侧用 `@nuxtjs/color-mode`，本文件是消费方，故把契约写死在这里：
  * - 存储键 `nuxt-color-mode`（@nuxtjs/color-mode 默认 key），值为 `light` / `system` / `dark`
- * - 同时写 `<html data-theme="...">`（MIGRATION-BRIEF §5 规定的 Astro 侧做法）
+ * - 同时写 `<html data-theme="...">`（Astro 侧做法）
  *   与 `<html class="dark">`（`app/assets/css/color.css` 里是 `:root, .dark`，
  *   且已验收的 `Tab.astro` 里有 `.dark &`；两条都写以免全局 CSS 移植前后打架）
  * - 缺省 `system`：`matchMedia('(prefers-color-scheme: dark)')` 决定实际深浅

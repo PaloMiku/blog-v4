@@ -19,9 +19,8 @@
     "typecheck": "astro sync && tsc -p tsconfig.check.json",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
-    "accept": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance.ps1",
-    "accept:full": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/acceptance.ps1 -Profile full",
-    "freeze-baseline": "node scripts/freeze-baseline.mjs",
+    "accept": "node scripts/accept.mjs",
+    "accept:full": "node scripts/accept.mjs --profile full",
     "interaction-check": "node scripts/interaction-check.mjs",
     "new": "node scripts/new-blog.ts"
   },
