@@ -34,11 +34,19 @@ const LOCAL = `http://localhost:${PORT}`
 const DEBUG_PORT = 9415
 
 /* ── 内存闸门（同 interaction-check）────────────────────────────────────── */
-const MIN_FREE_MB = 1500
+// 1500MB 是实测出来的：低于它，起 preview + 无头 Chrome 这一串会被 OOM killer
+// 或 Windows 的提交上限打断，表现为 Chrome 悄悄起不来、探针全部报空——
+// 那不是「门禁红了」，是「门禁没跑成」，两者必须分开。
+//
+// 需要在内存更紧的机器上强制跑一遍时（例如本地验证门禁改动，而本机被别的
+// 进程占满）：GATE_MIN_FREE_MB=0 node scripts/check-runtime-dom.mjs。
+// 这是**降低自我保护**，不是提高判据；CI 上不要设（runner 有 7GB，用不着）。
+const MIN_FREE_MB = Number(process.env.GATE_MIN_FREE_MB ?? 1500)
 const freeMB = Math.round(freemem() / 1024 / 1024)
 if (freeMB < MIN_FREE_MB) {
 	console.log(`SKIPPED: insufficient free memory (${freeMB}MB of ${Math.round(totalmem() / 1024 / 1024)}MB, need >= ${MIN_FREE_MB}MB)`)
 	console.log('  This gate did NOT run. Free some memory and re-run -- do not "fix" the site in response.')
+	console.log('  强制跑：GATE_MIN_FREE_MB=0 node scripts/check-runtime-dom.mjs（仅限本机验证）')
 	process.exit(0)
 }
 
@@ -266,6 +274,39 @@ function diffFingerprints(before, after) {
 	return changed
 }
 
+/**
+ * 等页面「静止」：连续两次探针结果完全相同才算settled。
+ *
+ * ## 为什么必须有这一步
+ *
+ * 基线原本是 `Page.navigate` + load 事件 + `sleep(1200)` 之后立刻取的。1200ms 足够
+ * 静态产物渲染完，**不够第三方脚本水合完**：Twikoo 要先从 CDN 取 `twikoo.min.js`，
+ * 再跨域 POST 到 Netlify 云函数，拿到数据才把评论区渲染进 DOM。这两步加起来
+ * 远超 1200ms，于是**基线拍在水合之前、交互探针拍在水合之后**，同一个 key 的
+ * 元素凭空多出来，判据报「16 处运行时 DOM 缺陷」。
+ *
+ * 2026-10-04 之前这道门禁一直是绿的，因为 Twikoo 的 `envId` 坏掉、评论区永远
+ * 加载不出来，DOM 从不变化——**一个坏掉的第三方依赖把一道门禁的时序缺陷盖住了**。
+ * 修好 envId 之后它立刻变红。这不是回归，是门禁终于看见了真实的水合过程。
+ *
+ * 修法是通用的：不特判 Twikoo，而是要求基线取自一个已经稳定的页面。字体、
+ * 统计脚本、任何异步注入的组件都吃这一条。连续两次相同才算静止，最多等 20s。
+ */
+async function waitSettled() {
+	let prev = null
+	for (let i = 0; i < 20; i++) {
+		const cur = await evaluate(PROBE())
+		if (cur && !cur.__error) {
+			const stable = prev && JSON.stringify(cur.fingerprint) === JSON.stringify(prev.fingerprint)
+			if (stable)
+				return cur
+			prev = cur
+		}
+		await sleep(1000)
+	}
+	return prev
+}
+
 /* ── 交互序列：每一步都会重排 DOM ───────────────────────────────────────── */
 /* 每项 = [说明, 页内表达式]。表达式必须真的改 DOM，返回 false 表示没点上。 */
 const PAGES = [
@@ -387,7 +428,9 @@ const failures = []
 for (const page of PAGES) {
 	await goto(`${LOCAL}${page.path}`)
 
-	const baseline = await evaluate(PROBE())
+	// 基线必须取自**已经静止**的页面：第三方脚本水合完成后才算数，否则它注入的
+	// DOM 会被算成「交互造成的样式变化」。见 waitSettled 的注释。
+	const baseline = await waitSettled()
 	if (baseline?.__error) {
 		console.error(`FAIL: [${page.label}] 探针在首屏就报错:`, baseline.__error)
 		killTree(chrome)
