@@ -17,8 +17,10 @@
  * ## 其他差异
  * - `timeElapse` / `formatNumber` 来自 `shared/utils/*`，Astro 侧经 `src/lib/shared.ts` 转出。
  * - `UtilDate`（`app/components/util/Date.vue`）内联在此：原版用 `NuxtTime relative`
- *   输出「几天前」并带 `title` 绝对时间；这里用 `<time datetime>` 输出绝对日期，
- *   再由脚本改写成相对文本（见下方 `<script>`）。
+ *   输出「几天前」并带 `title` 绝对时间；这里 `<time datetime>` 里放构建期算好的
+ *   相对文案作初值，客户端脚本在每次加载时按 `datetime` 重算一次
+ *   （见下方 `<script>`），保证部署后每次打开页面文案都是对的
+ *   ——不做打开期间的持续轮询（用户 2026-10-06 明确不要）。
  * - `v-tip` 属 Phase 4（与 `content/Tip.astro` 一致），title 保留。
  */
 import BlogWidget from '../blog/BlogWidget.astro'
@@ -62,11 +64,15 @@ const blogStats: DlItem[] = [
 	},
 	{
 		label: '上次更新',
-		// 构建期算好，不走客户端改写：`DlGroup` 只吃字符串，塞不进组件，
-		// 原实现是「先渲染绝对日期、再用脚本把 dd 文本改掉」——首屏会先闪一下
-		// 错误文案，且文案依赖 JS 执行。与线上 Nuxt 侧的
-		// `h(UtilDate, { relative: true, tipPrefix: '构建于' })` 对齐到这里。
+		/*
+		 * 构建期算好初值，客户端脚本在每次加载时重算（见下方 `<script>`）：
+		 * 纯构建期文案在部署后随时间流逝会失真（构建后第 10 天仍显示「1小时前」），
+		 * 而原 Nuxt 侧 `h(UtilDate, { relative: true, tipPrefix: '构建于' })` 走的
+		 * NuxtTime 是客户端组件、水合后会重算。这里不走「先渲染绝对日期再改写」的
+		 * 老路——初值本身就是相对文案（只差构建到访问的间隔），不存在首屏闪动。
+		 */
 		value: formatRelative(buildTime),
+		datetime: buildTime,
 		tip: `构建于 ${buildTime}`,
 	},
 	{
@@ -80,6 +86,51 @@ const blogStats: DlItem[] = [
 <BlogWidget card title="博客统计" class={className}>
 	<DlGroup size="small" items={blogStats} class="blog-stats" />
 </BlogWidget>
+
+<script>
+	/*
+	 * 「上次更新」的相对文案保证每次加载都是对的：SSR 初值是构建期算好的
+	 * （无 JS 也正确、无闪动），脚本在加载时按 `<time datetime>` 重算一次。
+	 * 只修「构建到访问的间隔」这一段失真，打开期间不轮询
+	 * （相对表述以分钟为最小单位，停留几分钟内不会变档；用户明确不要实时刷新）。
+	 *
+	 * 单位阶梯与 `src/lib/relative-time.ts` 的 `RELATIVE_UNITS` 语义相同——
+	 * 与 EmojiClock 同款的前后端各一份（Astro 的打包脚本要隔离构建期依赖，
+	 * 不想把 `blogConfig` 整个拖进客户端 bundle），改任一侧必须同步另一侧。
+	 * locale 不写死也不打包 config：`Base.astro` 已把 `blogConfig.language`
+	 * 落在 `<html lang>` 上，从这里读。
+	 */
+	const RELATIVE_UNITS = [
+		{ unit: 'second', seconds: 1, threshold: 60 },
+		{ unit: 'minute', seconds: 60, threshold: 60 },
+		{ unit: 'hour', seconds: 3600, threshold: 24 },
+		{ unit: 'day', seconds: 86400, threshold: 30 },
+		{ unit: 'month', seconds: 2592e3, threshold: 12 },
+		{ unit: 'year', seconds: 31536e3, threshold: Infinity },
+	] as const
+
+	function refresh(el: HTMLTimeElement) {
+		const ms = new Date(el.dateTime).getTime()
+		if (Number.isNaN(ms))
+			return
+		const diffInSeconds = (ms - Date.now()) / 1e3
+		const { unit, seconds } = RELATIVE_UNITS.find(({ seconds: s, threshold }) => Math.abs(diffInSeconds / s) < threshold)
+			?? RELATIVE_UNITS[RELATIVE_UNITS.length - 1]!
+		el.textContent = new Intl.RelativeTimeFormat(document.documentElement.lang || 'zh-CN', { numeric: 'auto' })
+			.format(Math.round(diffInSeconds / seconds), unit)
+	}
+
+	function initAll() {
+		for (const el of document.querySelectorAll<HTMLTimeElement>('.blog-stats dd time[datetime]'))
+			refresh(el)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
 
 <style>
 /*

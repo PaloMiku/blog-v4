@@ -42,6 +42,14 @@ export interface DlItem {
 	iconImg?: string
 	/** 悬停 title */
 	tip?: string
+	/**
+	 * 值是相对时间表述（「3天前」）时的绝对时间锚点（ISO 串）。
+	 * 传入后 value 被包进 `<time datetime>`：语义正确、可被机器读，
+	 * 也让调用方的客户端脚本能按 `datetime` 重算文案——构建期冻结的
+	 * 相对表述部署后就不准了（BlogStats「上次更新」，2026-10-06）。
+	 * value 保持必填：它既是首屏初值也是无 JS 时的兜底。
+	 */
+	datetime?: string
 }
 
 interface Props {
@@ -70,7 +78,7 @@ const { items, size = 'medium', class: className } = Astro.props
 				<dt>{item.label}</dt>
 				<dd title={item.tip}>
 					{size !== 'stack' && icon && <span class="dl-icon">{icon}</span>}
-					{item.value}
+					{item.datetime ? <time datetime={item.datetime}>{item.value}</time> : item.value}
 				</dd>
 			</div>
 		)
