@@ -293,6 +293,18 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
     采到的 6 行**全部落在丢失区内**，所以一旦哪天 `remark-mdc` 被摘掉，它会红。
     （我一度怀疑是它采样太稀——`sampleEvery = floor(行数/8)`，1113 行只采 6 行。
     逐条复刻采样后这个假设被数据推翻。**先复刻再下结论。**）
+33. **「产物里某个数字大得离谱」先查清它是什么，再判是不是缺陷。**
+    首页 268 KB、`article-card` 86 个，看着像 bug，实测：
+    `<menu data-post-menu>` 里 **10 张**（= `appConfig.pagination.perPage`，可见的第一页），
+    `<template data-post-dataset>` 里 **76 张 = 38 篇文章 × 2 种排序**
+    （每篇各带 `data-post-state="date"` 与 `"updated"` 一份），供 `OrderToggle`
+    在客户端换排序时重渲染。38 与 `src/content/posts` 下的 mdx 数**逐个相等**。
+    **教训落在 HTML 体积上而不是正确性上**：首页那 260 KB 里大头是这套客户端排序数据集，
+    要压体积就得改成交互时再取，而不是「删掉多余的卡片」。
+    同族：定位元素别用字面量字符串。Astro 会往标签上加 `data-astro-cid-*`，
+    `<main id="main-content">` 在产物里根本不是这么写的——按字面量切段会静默
+    拿到 `indexOf === -1`，于是「main 之前 86 张 / main 之内 0 张」这种
+    完全颠倒的结论看起来还很笃定。**用标签正则，不用字符串。**
 
 ## 开放项
 
