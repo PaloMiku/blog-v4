@@ -59,6 +59,43 @@ function collectCountableText(node: MdastNode, sink: string[]): void {
 }
 
 /**
+ * 这份 mdast 有没有公式？判据是 **remark-math 自己产出的节点类型**
+ * （`math` = `$$…$$` / `\[…\]` / `\begin{…}`，`inlineMath` = `$…$`），
+ * 不是对源文本做正则。
+ *
+ * ⚠️ 为什么不能用正则（实测踩过）：直接扫原文的 `$` 会命中代码围栏里的
+ * shell 变量与正则字符类。63 个 mdx 里朴素正则报 7 个「有公式」，
+ * 逐个查下去 6 个全是假阳性——`${CONTAINER_NAME}`、`.%@$!&~\_-` 这类；
+ * 真正渲染出 KaTeX 的只有 `previews/example.mdx` 一篇。
+ * 而 remark-math 本来就不解析代码块与行内代码，所以它给出的判决与产物一致。
+ *
+ * 顺带省掉一次解析：`mdxProcessor` 本来就要 parse 一遍给 reading-time 用。
+ */
+function hasMathNode(node: MdastNode): boolean {
+	if (node.type === 'math' || node.type === 'inlineMath')
+		return true
+	for (const child of node.children ?? []) {
+		if (hasMathNode(child))
+			return true
+	}
+	return false
+}
+
+/** 取文本 + 判公式，一次解析两用；解析失败时公式一律按「无」处理（与 reading-time 同口径兜底） */
+function analyzeBody(body: string): { text: string, hasMath: boolean } {
+	try {
+		const { content } = parseFrontMatter(body)
+		const tree = mdxProcessor.parse(content) as MdastNode
+		const sink: string[] = []
+		collectCountableText(tree, sink)
+		return { text: sink.join(''), hasMath: hasMathNode(tree) }
+	}
+	catch {
+		return { text: toPlainTextByRegex(body), hasMath: false }
+	}
+}
+
+/**
  * MDX 解析万一失败（未预见的语法组合）时的兜底：宁可偏差也别让构建挂掉。
  * 正常路径不会走到这里。
  */
@@ -72,21 +109,6 @@ function toPlainTextByRegex(body: string): string {
 		.replace(/\{[^{}]*\}/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim()
-}
-
-/** 取出喂给 `reading-time` 的那段纯文本 */
-function toCountableText(body: string): string {
-	try {
-		// Nuxt 侧在进处理器前先用 `parseFrontMatter` 摘掉 YAML
-		// （`@nuxtjs/mdc/dist/runtime/parser/index.js`），这里保持一致
-		const { content } = parseFrontMatter(body)
-		const sink: string[] = []
-		collectCountableText(mdxProcessor.parse(content) as MdastNode, sink)
-		return sink.join('')
-	}
-	catch {
-		return toPlainTextByRegex(body)
-	}
 }
 
 /**
@@ -124,16 +146,19 @@ export function withArticleMeta(inner: Loader): Loader {
 			await inner.load(context)
 
 			for (const entry of context.store.values()) {
-				if (entry.data.isPost !== undefined && entry.data.readingTime)
+				if (entry.data.isPost !== undefined && entry.data.readingTime && entry.data.hasMath !== undefined)
 					continue
 
 				const isPost = /[\\/]posts[\\/]/.test(entry.filePath ?? '')
 
 				// `.md` / `.mdx` 统一走 mdast：Nuxt 侧数的是 mdast 文本节点，
-				// 渲染后的 HTML（含 KaTeX 双份表示、标签实体）反而无法对齐
-				const text = entry.body ? toCountableText(entry.body) : ''
+				// 渲染后的 HTML（含 KaTeX 双份表示、标签实体）反而无法对齐；
+				// 同一次解析顺带问出 hasMath（remark-math 的节点判决）
+				const { text, hasMath } = entry.body
+					? analyzeBody(entry.body)
+					: { text: '', hasMath: false }
 
-				const data: Record<string, unknown> = { ...entry.data, isPost }
+				const data: Record<string, unknown> = { ...entry.data, isPost, hasMath }
 				if (text && !entry.data.readingTime)
 					data.readingTime = readingTimeOf(text)
 

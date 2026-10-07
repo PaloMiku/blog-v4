@@ -117,7 +117,8 @@ const jsonLd: Record<string, unknown>[] = [
 		description={description}
 		image={entry.data.image}
 		ogType="article"
-		jsonLd={jsonLd}
+		hasMath={entry.data.hasMath}
+	jsonLd={jsonLd}
 	>
 	{/*
 	 * 这里**不能再套一层 `<main>`**：布局层 `Blog.astro` 已经提供了

@@ -55,6 +55,12 @@ interface Props {
 	 */
 	minimalSeo?: boolean
 	/**
+	 * 正文是否含公式（决定要不要输出 katex.min.css）。
+	 * 由 `[...slug].astro` 从 entry.data.hasMath 传入，判据见该 loader 的注释。
+	 * 缺省为 false：判错方向是「多扛一次 CSS」，而不是「公式掉样式」。
+	 */
+	hasMath?: boolean
+	/**
 	 * 内容页追加的 JSON-LD 节点（目前是 BlogPosting）。
 	 * 由 `[...slug].astro` 传入：结构化数据属于页面自己的数据。
 	 */
@@ -69,6 +75,7 @@ const {
 	ogType: ogTypeProp,
 	noindex = false,
 	minimalSeo = false,
+	hasMath = false,
 	jsonLd,
 } = Astro.props
 
@@ -242,7 +249,28 @@ const jsonLdText = JSON.stringify({ '@context': 'https://schema.org', '@graph': 
 		<link rel="icon" href={blogConfig.favicon}>
 		<link rel="alternate" type="application/atom+xml" href="/atom.xml">
 		<link rel="preconnect" href={blogConfig.twikoo.preload}>
-		<link rel="stylesheet" href="https://s4.zstatic.net/npm/katex@0.16.44/dist/katex.min.css">
+		<!--
+			KaTeX 样式**按需输出**（2026-10-07）。
+
+			原先它是无条件 link，于是 68 个页面里有 67 个在渲染关键路径上
+			扛一次第三方 CDN（s4.zstatic.net）的 DNS + TLS + 约 23 KB 阻塞 CSS，
+			换来的却是零个公式——全站只有 `previews/example.mdx` 真渲染出
+			KaTeX（实测 24 个 katex 根节点），而那个演示页本身
+			被 robots.txt Disallow、也被 sitemap filter 掉了。
+
+			`hasMath` 来自 loader 里 remark-math 的 AST 节点判决
+			（`src/loaders/with-article-meta.ts`），不是文本正则：
+			正则会把 `${CONTAINER_NAME}`、`.%@$!&~\_-` 这类代码围栏内容误判成公式
+			（实测 7 个命中里 6 个是假阳性）。判错方向是安全的——
+			多输出只是白扛一次 CSS，少输出才会让公式掉样式。
+
+			⚠️ 这段注释会被原样输出到每一页的 head，所以**不要在这里写
+			任何形如 class 属性字面量的示例**：实测把「KaTeX 根节点那个
+			class」原样写进来后，按 class 属性做统计的探针在 66 个无公式页面上
+			各报出一个假命中——工具会先信字面量，再去核对它出现在哪。
+			描述用词，不要贴原始属性串。
+		-->
+		{hasMath && <link rel="stylesheet" href="https://s4.zstatic.net/npm/katex@0.16.44/dist/katex.min.css">}
 		<!-- "InterVariable", "Inter" -->
 		<link rel="stylesheet" href="https://s4.zstatic.net/npm/inter-ui@4.1.1/inter-variable.css">
 		<link rel="stylesheet" href="https://s4.zstatic.net/npm/inter-ui@4.1.1/inter.css">
@@ -258,8 +286,27 @@ const jsonLdText = JSON.stringify({ '@context': 'https://schema.org', '@graph': 
 		<!-- "Ephesis" 页脚签名, "JetBrains Mono", 思源黑体 "Noto Sans SC", 思源宋体 "Noto Serif SC" -->
 		<link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin="">
 		<link rel="stylesheet" href="https://fonts.googleapis.cn/css2?family=Ephesis&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Noto+Sans+SC:wght@200..900&family=Noto+Serif+SC:wght@200..900&display=swap">
-		<!-- 抖音美好体 "DOUYINSANSBOLD-GB" -->
-		<link rel="stylesheet" href="https://fonts.bytedance.com/dfd/api/v1/css?family=DOUYINSANSBOLD-GB&display=swap">
+		<!--
+			抖音美好体 "DOUYINSANSBOLD-GB" —— **非阻塞加载**（2026-10-07）。
+
+			原先是无条件 `<link rel="stylesheet">`，于是 67 个页面的渲染关键路径上
+			排着一个第三方 CSS，只为了页脚那一行签名字体。改用与上面 LXGW WenKai
+			同一套 `media="print"` + `onload` 换回 `all` 的写法：首屏不再等它。
+
+			`--font-creative` 是它**唯一的消费点**（`src/styles/font.css` 的
+			`"DOUYINSANSBOLD-GB", "InterVariable"`），而 `--font-creative` 只挂在
+			`Comment.astro` 的评论区标题与 `PostFooter.astro` 的签名上，都在首屏之下。
+			字体到位前会短暂回退到 InterVariable，`display=swap` 下这正是预期行为。
+			由 `scripts/check-critical-assets.mjs` 的第三方阻塞预算盯着（上限 3）。
+		-->
+		<link
+			{...{
+				'rel': 'stylesheet',
+				'href': 'https://fonts.bytedance.com/dfd/api/v1/css?family=DOUYINSANSBOLD-GB&display=swap',
+				'media': 'print',
+				'onload': 'this.media=\'all\'',
+			}}
+		>
 
 		<!--
 			color-mode：@nuxtjs/color-mode 的替代。

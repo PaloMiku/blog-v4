@@ -34,14 +34,16 @@ interface Props {
 	noindex?: boolean
 	/** 透传给 Base.astro：省掉 description / og:image / canonical（见 Base 的注释） */
 	minimalSeo?: boolean
+	/** 正文含公式 → 透传给 Base.astro 决定是否输出 katex.min.css */
+	hasMath?: boolean
 	/** 透传给 Base.astro 的内容页结构化数据节点 */
 	jsonLd?: Record<string, unknown>[]
 }
 
-const { title, hasAside = false, description, image, ogType, noindex, minimalSeo, jsonLd } = Astro.props
+const { title, hasAside = false, description, image, ogType, noindex, minimalSeo, hasMath, jsonLd } = Astro.props
 ---
 
-<Base title={title} description={description} image={image} ogType={ogType} noindex={noindex} minimalSeo={minimalSeo} jsonLd={jsonLd}>
+<Base title={title} description={description} image={image} ogType={ogType} noindex={noindex} minimalSeo={minimalSeo} hasMath={hasMath} jsonLd={jsonLd}>
 	{/*
 	 * 键盘用户的「跳到正文」入口。对应 `app/layouts/default.vue` 里
 	 * `<BlogSkipToContent />` 的位置（BlogSidebar 之前）。

@@ -118,6 +118,10 @@ const OFFLINE_GATES = [
 	'audit-dead-scope',
 	'check-dropped-css',
 	'check-affordances',
+	// 关键路径资产：条件资源（KaTeX）与产物必须一致 + 第三方阻塞样式表预算。
+	// 放这里是因为它治的正是 2026-10-07 实测到的那类缺陷——把 hasMath 强制成
+	// false 时，其余 31 道门禁全绿，是产物核对才发现公式页丢了 CSS。
+	'check-critical-assets',
 	// 依赖边界与外部合同
 	'check-self-contained',
 	{
