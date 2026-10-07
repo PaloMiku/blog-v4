@@ -95,6 +95,20 @@ button, input, textarea {
 	transform: scaleX(-1);
 }
 
+/*
+ * 图标解析失败时的降级占位。**住在这里而不是 `src/components/Icon.astro`
+ * 的 `<style>` 里**：组件里只要有 `<style>`，Astro 就往该组件渲染出的每个元素
+ * 上盖 `data-astro-cid`。Icon.astro 模板只有 2 个标签，但 astro-icon 内部再包
+ * `<span>` + `<svg>`，实测一个图标摊到 3 个带 cid 的元素——全站 3,330 个、286 个/页。
+ * 而这条规则正常路径下永不命中，等于每页白付 6.7 KB、全站 78 KB。
+ * 全站只有 Icon.astro 的降级分支产出这个 class（实测 grep 只有那一处），故写成全局。
+ */
+.icon-missing {
+	border: 1px dashed currentcolor;
+	border-radius: 2px;
+	opacity: 0.6;
+}
+
 .light .iconify[class*="i-catppuccin:"] {
 	filter: invert(0.7) hue-rotate(180deg) saturate(4);
 }

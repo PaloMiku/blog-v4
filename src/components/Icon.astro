@@ -19,6 +19,26 @@
  * `:where(.iconify)`，与 Nuxt 基线注入的那条规则逐项一致：
  * `display:inline-block; flex-shrink:0; font-size:1.2em; vertical-align:sub`。
  * 本组件**不再**自带尺寸规则（占位实现里的 `1em` / `-0.125em` 是占位值，已废弃）。
+ *
+ * ## 为什么本组件没有 `<style>`（2026-10-07 实测，删掉省 6.7 KB/页）
+ * 降级占位 `.icon-missing` 原来住在这里。删它的理由不是洁癖，是**实测的字节账**：
+ * Astro 只要组件里有 `<style>`，就往**模板渲染出的每一个元素**上盖 cid。
+ * 本组件模板只有 2 个标签，却因为 astro-icon 内部再包 `<span>` + `<svg>`，
+ * 一个图标就摊到 3 个元素——实测全站 3,330 个带 cid 的元素、286 个/页，
+ * 而那条规则本身就是**永不命中**的（正常路径下没有 `.icon-missing` 元素）。
+ * 换算成产物：每页 6.7 KB、全站 78 KB 纯为一条死规则而付。
+ *
+ * ⚠️ 两条容易走错的路：
+ * 1. 改成 `:global(.icon-missing)` 也能省 cid，但会**新增一条顶层 `:global()` 豁免**，
+ *    撞上 `scripts/exemptions.json` 的 `meta.baseline` 棘轮（31 条）——用一个新债换掉一个旧债。
+ *    搬进 `src/styles/main.css`（紧挨 `:where(.iconify)`）则豁免数不变、棘轮不动。
+ * 2. 搬走之后**不要**再把尺寸类规则加回本组件的 `<style>`：那等于把 cid 请回来。
+ *    图标的样式一律走 `main.css`，这条是这个组件的硬约定。
+ *
+ * 顺带说明：删掉本组件的 cid **不会**让别处「开始需要豁免」——反过来，
+ * `Excerpt` / `Tip` / `OrderToggle` / `BlogSidebar` 里那些 `:global(.iconify)` 豁免
+ * 当初就是因为 Icon 元素带的是它自己那份 cid、父亲 scoped 选不到才写的，
+ * 删掉 cid 只会让它们依然匹配，不会让它们失效。
  */
 import { Icon as AstroIcon } from 'astro-icon/components'
 import { resolveIcon } from '../lib/icons'
@@ -64,15 +84,3 @@ const rootClass = ['iconify', className].filter(Boolean).join(' ')
 			/>
 		)
 }
-
-<style>
-	/*
-	 * 降级占位：刻意做得显眼（红色虚线框），避免图标缺失被当成正常样式漏过去。
-	 * 正常路径下这个选择器不匹配任何元素。
-	 */
-	.icon-missing {
-		border: 1px dashed currentcolor;
-		border-radius: 2px;
-		opacity: 0.6;
-	}
-</style>
