@@ -122,6 +122,7 @@ const OFFLINE_GATES = [
 	// 也不依赖构建是不是新的——一条豁免到期跟产物新旧无关。
 	'check-expirations',
 	'check-heading-ids',
+	'check-feeds',
 	'check-text-literal',
 	'check-aria-current',
 	// CSS
