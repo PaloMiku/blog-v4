@@ -118,11 +118,26 @@ const filled = Boolean(hasAside) || metaNames.length > 0
 			for (const widget of aside.querySelectorAll(':scope > .blog-widget'))
 				widget.dataset.nativeEntered = ''
 
-			subscribeLayout((state) => {
-				const on = state === 'aside'
+			// aria-hidden 只表达「抽屉关闭」这一种状态：≤1080px（与下方样式里
+			// 的断点一致）时侧栏是抽屉，收起态必须对辅助技术隐藏；桌面常驻列
+			// 一直可见，写 aria-hidden="true" 会让目录整块对读屏消失。
+			// mq change 也要重算：视口跨过断点时 layout state 未必变化，
+			// 只订阅 state 会把旧视口下的取值残留下来。
+			const drawerMq = window.matchMedia('(max-width: 1080px)')
+			let layoutState: string = 'none'
+			const applyLayout = () => {
+				const on = layoutState === 'aside'
 				aside.classList.toggle('show', on)
-				aside.setAttribute('aria-hidden', on ? 'false' : 'true')
+				if (drawerMq.matches)
+					aside.setAttribute('aria-hidden', on ? 'false' : 'true')
+				else
+					aside.removeAttribute('aria-hidden')
+			}
+			subscribeLayout((state) => {
+				layoutState = state
+				applyLayout()
 			})
+			drawerMq.addEventListener('change', applyLayout)
 
 			// 点侧栏自身（而非其内容）时关闭抽屉
 			aside.addEventListener('click', (e) => {

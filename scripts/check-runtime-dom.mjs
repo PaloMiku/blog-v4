@@ -11,6 +11,7 @@
  *   B. 计算样式指纹（10 个属性，按 标签名+class+状态 归并）交互前后不变
  *   C. 选中项对勾的渲染盒子跨步骤稳定
  *   D. dropdown 的展开态计数按步骤在 1/0 之间来回翻（/archive/ 那一组）
+ *   E. 文章页无障碍语义（BlogAside 的 aria-hidden 在桌面/窄屏两个视口下的取值）
  *
  * 比计算样式、而不是去样式表反推 cid：后者试过两版都不可靠——遍历写成
  * if (r.cssRules) 会把每条规则当嵌套容器跳过（空的 CSSRuleList 也 truthy），
@@ -604,6 +605,56 @@ for (const page of PAGES) {
 		console.log(`  ${label.padEnd(22)} symbol缺失 ${r.missingSymbol.length}  空白字形 ${r.blankGlyph.length}  样式变化 ${diffFingerprints(baseline.fingerprint, r.fingerprint).length}${r.checkBox ? `  对勾 ${r.checkBox.join('x')}` : ''}${expectOpen !== undefined ? `  展开 ${r.openDropdowns}/${expectOpen}` : ''}`)
 	}
 }
+
+/* ── E 组：文章页无障碍语义（2026-10-09 P0 Task 1）──────────────────────────
+ *
+ * 盯的是「静态产物全对、交互语义仍骗过辅助技术」这一类：BlogAside 的订阅回调
+ * 在桌面视口也把 #blog-aside 写成 aria-hidden="true"（layout state 初值 'none'），
+ * 目录对读屏整体隐身。窄屏抽屉的关闭态 aria-hidden 是**正确语义**，修复时
+ * 不许一起删没——所以桌面与窄屏两个视口各断言一次。
+ *
+ * 视口必须显式设（1280 / 800），不能依赖 headless 默认值：默认宽恰好 ≤1080
+ * 时「桌面」断言测的就是抽屉态，两条断言会同时对着错误状态取绿。
+ *
+ * 自证：没有 #blog-aside、或其中链接数为 0（侧栏没渲染），都判 FAIL——
+ * 对着空页面取绿是这道门禁最坏的失效模式（同 D 组接线自证的理由）。
+ */
+const E_ARTICLE = '/2025/01/arch-aur-kazumi/' // 同页具备 data-toc 侧栏与 img[data-zoom]（E 组后续任务复用）
+async function setViewport(width) {
+	await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false }, sid)
+}
+
+await setViewport(1280)
+await goto(`${LOCAL}${E_ARTICLE}`)
+
+const e1Desktop = await evaluate(`(() => {
+  const aside = document.querySelector('#blog-aside')
+  if (!aside) return '文章页上没有 #blog-aside —— E1 断言没接到东西'
+  if (window.innerWidth !== 1280) return '桌面视口没生效：innerWidth=' + window.innerWidth
+  const links = aside.querySelectorAll('a').length
+  if (links === 0) return '#blog-aside 内链接数为 0 —— 侧栏没渲染，断言无意义'
+  const hidden = aside.getAttribute('aria-hidden')
+  if (hidden === 'true') return '桌面视口(1280)下 #blog-aside 的 aria-hidden="true"（内含 ' + links + ' 个链接）—— 目录对辅助技术不可见'
+  return true
+})()`)
+if (e1Desktop !== true)
+	failures.push(`[文章页 / 桌面 1280 aria-hidden] ${typeof e1Desktop === 'string' ? e1Desktop : ''}${e1Desktop?.__error || ''}`)
+
+// 切窄屏：抽屉语义必须保留。matchMedia change 回调是异步排队的，等一拍再读。
+await setViewport(800)
+await sleep(400)
+const e1Narrow = await evaluate(`(() => {
+  const aside = document.querySelector('#blog-aside')
+  if (!aside) return '文章页上没有 #blog-aside —— E1 窄屏断言没接到东西'
+  if (window.innerWidth !== 800) return '窄屏视口没生效：innerWidth=' + window.innerWidth
+  const hidden = aside.getAttribute('aria-hidden')
+  if (hidden !== 'true') return '窄屏视口(800)、layout state 为默认 none 时，#blog-aside 的 aria-hidden 应为 "true"（抽屉关闭态），实际是 ' + JSON.stringify(hidden)
+  return true
+})()`)
+if (e1Narrow !== true)
+	failures.push(`[文章页 / 窄屏 800 aria-hidden] ${typeof e1Narrow === 'string' ? e1Narrow : ''}${e1Narrow?.__error || ''}`)
+
+console.log(`\n[文章页] E1 aria-hidden：桌面 1280 ${e1Desktop === true ? 'OK' : 'FAIL'}，窄屏 800 ${e1Narrow === true ? 'OK' : 'FAIL'}`)
 
 killTree(chrome)
 killTree(preview)
