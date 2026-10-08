@@ -37,7 +37,20 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
-const DIST = path.join(ROOT, '.output/public')
+
+/**
+ * 产物目录。**与仓库里其余门禁一致读 `dist/`**——deploy 步骤也是 `folder: dist`。
+ *
+ * ⚠️ 这里踩过一次：初版直接写 `.output/public`，本机一直绿，推到 CI 后
+ * runner 上那个路径不存在，门禁自我放弃 → `skip: never` 判定违规跳过 →
+ * 流水线红。**「本机绿」又一次没覆盖到环境差异**（坑位 26 的同族）。
+ * 教训是产物路径属于仓库约定，不是实现细节：跟着其余门禁走，别自己推导。
+ *
+ * `dist` 是指向 `.output/public` 的符号链接（Nuxt 时代留下的路径，见 CLAUDE.md），
+ * 干净 checkout 里两者可能都不存在——所以先认 `dist`，再退回 `.output/public`，
+ * 两处都没有才是真的「产物缺失」。
+ */
+const DIST = [path.join(ROOT, 'dist'), path.join(ROOT, '.output/public')].find(d => fs.existsSync(d))
 
 /**
  * 每页允许的第三方渲染阻塞样式表数量上限。**棘轮**：
@@ -224,8 +237,10 @@ function selftest() {
 /* ============================ 主流程 ============================ */
 if (process.argv.includes('--selftest')) selftest()
 
-if (!fs.existsSync(DIST)) {
-	console.error(`SKIP: 产物目录不存在（${DIST}）。先跑 pnpm build。`)
+// DIST 可能是 undefined（两个候选都不存在），existsSync(undefined) 会抛，
+// 所以判空要在调用 existsSync 之前。
+if (!DIST) {
+	console.error('SKIP: 产物目录不存在（已找 dist/ 与 .output/public/）。先跑 pnpm build。')
 	process.exit(0)
 }
 

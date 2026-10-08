@@ -305,6 +305,18 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
     `<main id="main-content">` 在产物里根本不是这么写的——按字面量切段会静默
     拿到 `indexOf === -1`，于是「main 之前 86 张 / main 之内 0 张」这种
     完全颠倒的结论看起来还很笃定。**用标签正则，不用字符串。**
+34. **「产物目录」是仓库约定，不是实现细节——自己推导会在 CI 上静默失效。**
+    `dist` 本机是一个 **Junction → `.output/public`**，`git ls-files -s dist`
+    **无输出**，也就是说这个 junction 没进仓库。而 CI 的干净 checkout 里没有它，
+    Astro 直接把产物写进 `dist/`。**于是本机 `dist` 与 `.output/public` 是同一份，
+    CI 上 `.output/public` 根本不存在**——两边的目录形状不一样，本机却看不出来。
+    踩过：`check-critical-assets` 初版读 `.output/public`，本机一路绿，推上去
+    门禁自我放弃 → `skip: never` 判违规跳过 → 流水线红，deploy 被跳过。
+    **产物路径必须跟着其余门禁走**（它们统一读 `dist`，deploy 也是 `folder: dist`）。
+    同族：`.output/public` 这个路径本身是 **Nuxt 时代的遗留**（`nuxt generate` 的输出），
+    Astro 的默认 `outDir` 就是 `dist`；那个 junction 是当年为对齐路径建的，
+    迁到 Astro 之后它不再需要，却会持续掩盖本机与 CI 的差异。
+    **好消息**：这次是 skip 策略机制抓到的，不是靠肉眼——判据做对了。
 
 ## 开放项
 
