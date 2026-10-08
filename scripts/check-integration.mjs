@@ -36,10 +36,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { DIST } from './lib/paths.mjs'
 
-const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const DIST = join(ROOT, 'dist')
 const ASSETS = join(DIST, '_astro')
 
 const PAGE = join(DIST, '2025', '11', 'riddle-joker', 'index.html')

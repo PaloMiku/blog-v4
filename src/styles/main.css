@@ -104,9 +104,9 @@ button, input, textarea {
  * 全站只有 Icon.astro 的降级分支产出这个 class（实测 grep 只有那一处），故写成全局。
  */
 .icon-missing {
+	opacity: 0.6;
 	border: 1px dashed currentcolor;
 	border-radius: 2px;
-	opacity: 0.6;
 }
 
 .light .iconify[class*="i-catppuccin:"] {

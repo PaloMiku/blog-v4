@@ -43,14 +43,15 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { REPO_ROOT } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
 // 路径从脚本自身位置解析，不跟进程 CWD。
 // 原 PowerShell 版写的是 `Resolve-Path '.\src'`——它跟的是 CWD 而不是脚本位置，
-// 在仓库根以外的目录里跑会扫到别的地方（或直接失败）。这里修掉。
-const HERE = fileURLToPath(new URL('.', import.meta.url))
-const SITE_ROOT = join(HERE, '..')
-const SRC = join(SITE_ROOT, 'src')
+// 在仓库根以外的目录里跑会扫到别的地方（或直接失败）。这里收敛到共享的
+// REPO_ROOT，理由见 scripts/lib/paths.mjs 文件头。
+const ROOT = REPO_ROOT
+const SRC = join(ROOT, 'src')
 
 /**
  * 判据表。数组而非对象，顺序即原 `[ordered]@{}` 的插入顺序，报告按此顺序输出。
@@ -77,19 +78,6 @@ const PATTERNS = [
 const COMMENT_LINE = /^\s*(?:\/\/|[/*])/
 
 /** 递归列出 dir 下所有文件；排序只为让报告逐次可复现，不影响判据。 */
-function walk(dir) {
-	const out = []
-	if (!existsSync(dir))
-		return out
-	for (const name of readdirSync(dir).sort()) {
-		const p = join(dir, name)
-		if (statSync(p).isDirectory())
-			out.push(...walk(p))
-		else
-			out.push(p)
-	}
-	return out
-}
 
 /** 切行按 .NET `File.ReadAllLines` 的语义：`\r\n` / `\r` / `\n` 都算断行。 */
 function readLines(file) {
@@ -100,7 +88,12 @@ function readLines(file) {
 // PowerShell 的 `-Include` 在 Windows 上大小写不敏感，这里用 `/i` 保持一致。
 // （原脚本没有 `-Force`，会跳过「隐藏属性」文件；Windows 上 src/ 里没有这类文件，
 //   实测 `ls -a src` 无隐藏项，所以不模拟这一条。）
-const files = walk(SRC).filter(p => /\.(?:astro|ts)$/i.test(p))
+//
+// 大小写不敏感是**必须留在谓词里**的：共享遍历器的 `ext` 虽然也大小写不敏感，
+// 但这里刻意不换成 `ext`，因为 `.astro` / `.ts` 之外还要保留原脚本的写法证据
+// （`-Include` 与 `-Filter` 的语义差别不在扩展名上，而在它匹配路径而非文件名）。
+// `sort: true` 是原脚本就有的：注释写着「排序只为让报告逐次可复现」。
+const files = walkFiles(SRC, { sort: true }).filter(p => /\.(?:astro|ts)$/i.test(p))
 
 const rows = PATTERNS.map(([kind, re]) => {
 	const hits = []

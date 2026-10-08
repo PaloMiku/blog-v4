@@ -21,6 +21,7 @@ import { pascalCase } from 'es-toolkit/string'
 import blogConfig from '../config/blog'
 import { themeHomepage, themeName, themeVersion } from '../config/site-meta'
 import { isNoindexPath } from '../lib/noindex-paths'
+import { normalizeContentPath } from '../lib/shared'
 import '../styles/index.css'
 
 interface Props {
@@ -97,8 +98,14 @@ const siteUrl = Astro.site ?? new URL(blogConfig.url)
  * 当前页路径。去掉尾斜杠的非根路径再拼绝对地址，
  * 使 canonical 与源项目（`app/app.vue` 经 unhead 产出 `/2024/10/xxx` 无尾斜杠）对齐。
  * `og:url` 复用同一个变量，两处天然一致。
+ *
+ * 尾斜杠归一化走 `lib/shared` 的 `normalizeContentPath`（此前这里是内联的
+ * `replace(/\/+$/, '') || '/'`）。⚠️ 那条 `|| '/'` 不是冗余：`build.format: 'directory'`
+ * 让根路径的 `Astro.url.pathname` 就是 `'/'`，去掉尾斜杠后是空串，
+ * 少了兜底会拼出 `https://site` 而不是 `https://site/`——而首页的 canonical
+ * 正是靠这个恰好正确。首页 0 差异不代表可以去掉它。
  */
-const pathname = Astro.url.pathname.replace(/\/+$/, '') || '/'
+const pathname = normalizeContentPath(Astro.url.pathname)
 const canonical = new URL(pathname, siteUrl).toString()
 
 /**

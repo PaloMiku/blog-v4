@@ -34,9 +34,22 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { resolveDistDir } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
-const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
+/**
+ * 产物目录。**与仓库里其余门禁一致读 `dist/`**——deploy 步骤也是 `folder: dist`。
+ *
+ * ⚠️ 这里踩过一次：初版直接写 `.output/public`，本机一直绿，推到 CI 后
+ * runner 上那个路径不存在，门禁自我放弃 → `skip: never` 判定违规跳过 →
+ * 流水线红。**「本机绿」又一次没覆盖到环境差异**（坑位 26 的同族）。
+ * 教训是产物路径属于仓库约定，不是实现细节：跟着其余门禁走，别自己推导。
+ *
+ * 先认 `dist`、再退回 `.output/public`，两处都没有才是真的「产物缺失」——
+ * 这两条候选的先后顺序**不能反**，它就是 CI 踩坑史的结论，现在由
+ * `resolveDistDir()` 表达（共享实现在 scripts/lib/paths.mjs）。
+ */
+const DIST = resolveDistDir()
 
 /**
  * 产物目录。**与仓库里其余门禁一致读 `dist/`**——deploy 步骤也是 `folder: dist`。
@@ -50,7 +63,6 @@ const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
  * 干净 checkout 里两者可能都不存在——所以先认 `dist`，再退回 `.output/public`，
  * 两处都没有才是真的「产物缺失」。
  */
-const DIST = [path.join(ROOT, 'dist'), path.join(ROOT, '.output/public')].find(d => fs.existsSync(d))
 
 /**
  * 每页允许的第三方渲染阻塞样式表数量上限。**棘轮**：
@@ -62,8 +74,15 @@ const DIST = [path.join(ROOT, 'dist'), path.join(ROOT, '.output/public')].find(d
  */
 const MAX_BLOCKING_THIRD_PARTY_PER_PAGE = 3
 
-/** KaTeX 的根节点是 `<span class="katex">` */
-const KATEX_NODE_RE = /<span[^>]*\bclass="[^"]*\bkatex\b[^"]*"/g
+/**
+ * KaTeX 的根节点是 `<span class="katex">`
+ *
+ * `[^>]+` 而不是 `[^>]*`：后面紧跟 `\b`，而 `<span` 末尾的 `n` 与紧随的 `class`
+ * 首字母 `c` 都是词字符，零位匹配处**不存在**词边界，所以量词最小值取 0 永远不会
+ * 命中——`+` 与 `*` 在这里等价，`+` 只是把「至少要跳过一个字符」写进正则本身。
+ * （`eslint regexp/no-contradiction-with-assertion` 报的就是这个矛盾，行为不变。）
+ */
+const KATEX_NODE_RE = /<span[^>]+\bclass="[^"]*\bkatex\b[^"]*"/g
 const KATEX_CSS_URL = 'katex.min.css'
 
 /**
@@ -92,10 +111,13 @@ function thirdPartyBlockingStylesheets(html) {
 	const out = []
 	for (const m of html.matchAll(/<link\b[^>]*>/g)) {
 		const tag = m[0]
-		if (!/rel="stylesheet"/.test(tag)) continue
-		if (/media="print"/.test(tag)) continue
+		if (!/rel="stylesheet"/.test(tag))
+			continue
+		if (/media="print"/.test(tag))
+			continue
 		const href = (tag.match(/href="(https:\/\/[^"]+)"/) || [])[1]
-		if (href) out.push(href)
+		if (href)
+			out.push(href)
 	}
 	return out
 }
@@ -104,9 +126,12 @@ function thirdPartyBlockingStylesheets(html) {
  * 判据核心。**纯函数**：不读盘、不碰构建产物，
  * 这样 `--selftest` 能在没有 dist/ 的情况下驱动它（不然自检就成了摆设）。
  *
- * @param {{path: string, markup: string}[]} pages 页面标记
+ * @param {{path: string, markup: string}[]} rawPages 页面标记（**未剥离**注释与
+ * script/style 正文，剥离在 `judge` 内部做）
  * @param {number} budget 每页第三方阻塞样式表上限
  * @returns {{failures: string[], inventory: Map<string, number>, maxPerPage: number}}
+ *   `failures` 每条是一个人类可读的落点；`inventory` 是「资源 → 出现页数」，
+ *   用来在失败时直接说出「哪几个资源重复加载了」；`maxPerPage` 是实测单页最高阻塞数。
  */
 export function judge(rawPages, budget = MAX_BLOCKING_THIRD_PARTY_PER_PAGE) {
 	// 剥离在这里做、而不是留给调用方：自检第一版就把「调用方忘了剥」这个洞暴露出来了
@@ -122,9 +147,11 @@ export function judge(rawPages, budget = MAX_BLOCKING_THIRD_PARTY_PER_PAGE) {
 	const withKatexNode = []
 	const withKatexCss = []
 	for (const p of pages) {
-		if (KATEX_NODE_RE.test(p.markup)) withKatexNode.push(p.path)
+		if (KATEX_NODE_RE.test(p.markup))
+			withKatexNode.push(p.path)
 		KATEX_NODE_RE.lastIndex = 0
-		if (p.markup.includes(KATEX_CSS_URL)) withKatexCss.push(p.path)
+		if (p.markup.includes(KATEX_CSS_URL))
+			withKatexCss.push(p.path)
 	}
 	const cssSet = new Set(withKatexCss)
 	const missing = withKatexNode.filter(p => !cssSet.has(p))
@@ -143,10 +170,12 @@ export function judge(rawPages, budget = MAX_BLOCKING_THIRD_PARTY_PER_PAGE) {
 		for (const u of all) inventory.set(u, (inventory.get(u) || 0) + 1)
 		// 预算只数无条件阻塞的那些（见 CONDITIONAL_ASSETS 的分工说明）
 		const urls = all.filter(u => !CONDITIONAL_ASSETS.some(c => u.includes(c)))
-		if (urls.length > maxPerPage) maxPerPage = urls.length
+		if (urls.length > maxPerPage)
+			maxPerPage = urls.length
 		if (urls.length > budget) {
 			const key = urls.join(' | ')
-			if (!overBudget.has(key)) overBudget.set(key, { urls, pages: [] })
+			if (!overBudget.has(key))
+				overBudget.set(key, { urls, pages: [] })
 			overBudget.get(key).pages.push(p.path)
 		}
 	}
@@ -159,16 +188,8 @@ export function judge(rawPages, budget = MAX_BLOCKING_THIRD_PARTY_PER_PAGE) {
 
 /** 扫 dist 收集页面 */
 function collectPages() {
-	const pages = []
-	const walk = (dir) => {
-		for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-			const f = path.join(dir, e.name)
-			if (e.isDirectory()) walk(f)
-			else if (e.name.endsWith('.html')) pages.push({ path: path.relative(DIST, f).replace(/\\/g, '/'), markup: fs.readFileSync(f, 'utf8') })
-		}
-	}
-	walk(DIST)
-	return pages
+	return walkFiles(DIST, { ext: '.html' })
+		.map(f => ({ path: path.relative(DIST, f).replace(/\\/g, '/'), markup: fs.readFileSync(f, 'utf8') }))
 }
 
 /* ============================ 自检 ============================ */
@@ -183,59 +204,56 @@ function selftest() {
 	const PLAIN = '<html><head></head><body><p>hi</p></body></html>'
 
 	const cases = [
-		['正确的 1:1（公式页有 CSS，其余没有）必须绿',
-			() => judge([{ path: 'a', markup: OK + MATH }, { path: 'b', markup: PLAIN }], 3).failures.length === 0],
-		['漏：公式页没有 CSS 必须红',
-			() => judge([{ path: 'a', markup: MATH }], 3).failures.length > 0],
-		['多：没有公式却有 CSS 必须红',
-			() => judge([{ path: 'a', markup: OK + PLAIN }], 3).failures.length > 0],
-		['每页都挂（迁移前的真实形态）必须红',
-			() => judge(Array.from({ length: 5 }, (_, i) => ({ path: `p${i}`, markup: OK + (i ? PLAIN : MATH) })), 3).failures.length > 0],
-		['注释里提到 katex 不算公式节点（假阳性回归）',
-			() => judge([{ path: 'a', markup: OK + '<!-- 见 class="katex" 节点 -->' }], 3).failures.length > 0],
-		['script 正文里的字符串不算公式节点',
-			() => judge([{ path: 'a', markup: OK + '<script>var c="katex"</script>' }], 3).failures.length > 0],
-		['style 正文里的字符串不算公式节点',
-			() => judge([{ path: 'a', markup: OK + '<style>.katex{color:red}</style>' }], 3).failures.length > 0],
-		['注释里的公式节点不算真的（注释在公式页但无 CSS → 仍应绿）',
-			() => judge([{ path: 'a', markup: '<!-- ' + MATH + ' -->' }], 3).failures.length === 0],
-		['media="print" 的第三方样式表不计入阻塞预算',
-			() => judge([{ path: 'a', markup: '<link rel="stylesheet" href="https://x/f.css" media="print">' }], 0).failures.length === 0],
-		['预算超了必须红',
-			() => judge([{ path: 'a', markup: Array.from({ length: 4 }, (_, i) => `<link rel="stylesheet" href="https://x/${i}.css">`).join('') }], 3).failures.length > 0],
-		['恰好等于预算不红',
-			() => judge([{ path: 'a', markup: Array.from({ length: 3 }, (_, i) => `<link rel="stylesheet" href="https://x/${i}.css">`).join('') }], 3).failures.length === 0],
-		['本地相对路径样式表不计入第三方预算',
-			() => judge([{ path: 'a', markup: '<link rel="stylesheet" href="/_astro/x.css">' }], 0).failures.length === 0],
-		['缺失与浪费要分别报出来（双向都测）',
-			() => { const r = judge([{ path: 'a', markup: MATH }, { path: 'b', markup: OK }], 3); return r.failures.length === 2 }],
-		['条件资产不计入预算：公式页 3 个基础阻塞 + 1 个 katex 仍不该红',
-			() => {
-				const three = Array.from({ length: 3 }, (_, i) => `<link rel="stylesheet" href="https://x/${i}.css">`).join('')
-				return judge([{ path: 'a', markup: OK + three + MATH }], 3).failures.length === 0
-			}],
-		['但条件资产出现在无公式的页上仍然红（不被预算豁免掉）',
-			() => {
-				const three = Array.from({ length: 3 }, (_, i) => `<link rel="stylesheet" href="https://x/${i}.css">`).join('')
-				return judge([{ path: 'a', markup: OK + three + PLAIN }], 3).failures.length > 0
-			}],
+		['正确的 1:1（公式页有 CSS，其余没有）必须绿', () => judge([{ path: 'a', markup: OK + MATH }, { path: 'b', markup: PLAIN }], 3).failures.length === 0],
+		['漏：公式页没有 CSS 必须红', () => judge([{ path: 'a', markup: MATH }], 3).failures.length > 0],
+		['多：没有公式却有 CSS 必须红', () => judge([{ path: 'a', markup: OK + PLAIN }], 3).failures.length > 0],
+		['每页都挂（迁移前的真实形态）必须红', () => judge(Array.from({ length: 5 }, (_, i) => ({ path: `p${i}`, markup: OK + (i ? PLAIN : MATH) })), 3).failures.length > 0],
+		['注释里提到 katex 不算公式节点（假阳性回归）', () => judge([{ path: 'a', markup: `${OK}<!-- 见 class="katex" 节点 -->` }], 3).failures.length > 0],
+		['script 正文里的字符串不算公式节点', () => judge([{ path: 'a', markup: `${OK}<script>var c="katex"</script>` }], 3).failures.length > 0],
+		['style 正文里的字符串不算公式节点', () => judge([{ path: 'a', markup: `${OK}<style>.katex{color:red}</style>` }], 3).failures.length > 0],
+		['注释里的公式节点不算真的（注释在公式页但无 CSS → 仍应绿）', () => judge([{ path: 'a', markup: `<!-- ${MATH} -->` }], 3).failures.length === 0],
+		['media="print" 的第三方样式表不计入阻塞预算', () => judge([{ path: 'a', markup: '<link rel="stylesheet" href="https://x/f.css" media="print">' }], 0).failures.length === 0],
+		['预算超了必须红', () => judge([{ path: 'a', markup: Array.from({ length: 4 }, (_, i) => `<link rel="stylesheet" href="https://x/${i}.css">`).join('') }], 3).failures.length > 0],
+		['恰好等于预算不红', () => judge([{ path: 'a', markup: Array.from({ length: 3 }, (_, i) => `<link rel="stylesheet" href="https://x/${i}.css">`).join('') }], 3).failures.length === 0],
+		['本地相对路径样式表不计入第三方预算', () => judge([{ path: 'a', markup: '<link rel="stylesheet" href="/_astro/x.css">' }], 0).failures.length === 0],
+		['缺失与浪费要分别报出来（双向都测）', () => {
+			const r = judge([{ path: 'a', markup: MATH }, { path: 'b', markup: OK }], 3)
+			return r.failures.length === 2
+		}],
+		['条件资产不计入预算：公式页 3 个基础阻塞 + 1 个 katex 仍不该红', () => {
+			const three = Array.from({ length: 3 }, (_, i) => `<link rel="stylesheet" href="https://x/${i}.css">`).join('')
+			return judge([{ path: 'a', markup: OK + three + MATH }], 3).failures.length === 0
+		}],
+		['但条件资产出现在无公式的页上仍然红（不被预算豁免掉）', () => {
+			const three = Array.from({ length: 3 }, (_, i) => `<link rel="stylesheet" href="https://x/${i}.css">`).join('')
+			return judge([{ path: 'a', markup: OK + three + PLAIN }], 3).failures.length > 0
+		}],
 	]
 
 	let bad = 0
 	for (const [name, fn] of cases) {
 		let ok = false
-		try { ok = !!fn() }
-		catch (e) { console.error(`FAIL  ${name}\n      抛错: ${e.message}`); bad++; continue }
+		try {
+			ok = !!fn()
+		}
+		catch (e) {
+			console.error(`FAIL  ${name}\n      抛错: ${e.message}`)
+			bad++
+			continue
+		}
 		console.log(`${ok ? '  ok  ' : 'FAIL  '} ${name}`)
-		if (!ok) bad++
+		if (!ok)
+			bad++
 	}
 	console.log(`\n自检 ${cases.length} 例，${cases.length - bad} 通过，${bad} 失败`)
-	if (bad) process.exit(1)
+	if (bad)
+		process.exit(1)
 	process.exit(0)
 }
 
 /* ============================ 主流程 ============================ */
-if (process.argv.includes('--selftest')) selftest()
+if (process.argv.includes('--selftest'))
+	selftest()
 
 // DIST 可能是 undefined（两个候选都不存在），existsSync(undefined) 会抛，
 // 所以判空要在调用 existsSync 之前。

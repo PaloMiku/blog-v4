@@ -11,6 +11,51 @@
 import Icon from '../Icon.astro'
 import blogConfig from '../../config/blog'
 import { getDomainIcon, isExtLink } from '../../lib/shared'
+import { toZdtLocaleString } from '../../lib/shared/time'
+
+/**
+ * `month: 'long'` + 不补零 ⇒ 与线上逐字一致的「2024年3月7日」形态。
+ *
+ * ⚠️ 这里**不能**用 `dateTimeFormat.full`：那个具名格式是 `month/day: '2-digit'`
+ * 且带时分秒，产出的是完全不同的形状。`toZdtLocaleString` 的第二个参数是
+ * `dateTimeFormatOptions = keyof typeof dateTimeFormat | Intl.DateTimeFormatOptions`
+ * （见 time.ts:110），所以具名格式与 options 对象两种写法都收，这里要的是后者。
+ */
+const postFooterDateFormat = { year: 'numeric', month: 'long', day: 'numeric' } as const
+
+/**
+ * 格式化 frontmatter 的 `date` / `updated`。
+ *
+ * ⚠️ 此前这里是自写的一份 `formatDate`：`new Date(value).toLocaleDateString('zh-CN', …)`，
+ * 既没走 `toZonedTemporal`，也没用 `blogConfig.language` / `blogConfig.timeZone`——
+ * 违反 `util/Date.astro:97-127` 那条「两个都不能留」的硬约定。
+ *
+ * 但要说清楚：**这不是在修一个正在发生的缺陷**。当前输出是对的，且产物逐字不变
+ * （已核验：`src/content` 下全部 mdx 里的 46 个真实 date/updated 原串，
+ *  旧实现与新实现输出 46/46 完全相同）。它成立靠的是两件碰巧同时成立的事：
+ *   1. frontmatter 里是**裸墙钟**（`2024-03-07 17:00:00`），而构建机时区恰好
+ *      是 `blogConfig.timeZone`（Asia/Shanghai），于是 `new Date(str)` 的
+ *      「按构建机本地时区解析」与 `toZonedTemporal` 的「按 Asia/Shanghai 解析」
+ *      落在同一个瞬间上；
+ *   2. 硬编码的 `'zh-CN'` 恰好等于 `blogConfig.language`。
+ * 任何一条不成立（CI 的 `TZ=UTC` runner 就是现成的例子），
+ * 产物就会随构建环境变——`util/Date.astro` 头注记的就是 2026-10-03 那次
+ * 63/63 篇全是英文日期的线上事故。同族教训见 CLAUDE.md 坑位 26。
+ *
+ * 所以这次是**消除约定违反 + 去掉时区依赖**，不是修回归。
+ */
+function formatDate(value?: string): string {
+	if (!value)
+		return ''
+	try {
+		// 守卫保留：`toZonedTemporal` 三级回退全抛时（格式非法）会把异常抛到这里，
+		// 与旧实现的 `Number.isNaN(d.getTime())` 分支同为「给不出结果就返回空串」。
+		return toZdtLocaleString(value, postFooterDateFormat)
+	}
+	catch {
+		return ''
+	}
+}
 
 interface Reference {
 	title?: string
@@ -38,20 +83,6 @@ const fullUrl = path
 		}
 	})()
 	: ''
-
-function formatDate(value?: string): string {
-	if (!value)
-		return ''
-	try {
-		const d = new Date(value)
-		if (Number.isNaN(d.getTime()))
-			return ''
-		return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
-	}
-	catch {
-		return ''
-	}
-}
 
 const formattedDate = formatDate(date)
 const formattedUpdatedDate = formatDate(updated)

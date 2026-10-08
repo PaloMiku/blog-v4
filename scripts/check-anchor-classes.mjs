@@ -28,21 +28,8 @@ import path from 'node:path'
  * 原版只能发现「Nuxt 有、Astro 没有」的 class，现在能发现任何一条让锚点脱靶的改动。
  */
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
-
-const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
-const DIST = path.join(ROOT, 'dist')
-
-function walk(dir, out = []) {
-	for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-		const p = path.join(dir, e.name)
-		if (e.isDirectory())
-			walk(p, out)
-		else if (e.name.endsWith('.html'))
-			out.push(p)
-	}
-	return out
-}
+import { DIST } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
 function articleClasses(html) {
 	const tag = html.match(/<article\b[^>]*>/)
@@ -54,7 +41,7 @@ function articleClasses(html) {
 	return cls[1].split(/\s+/).filter(Boolean).sort()
 }
 
-const pages = fs.existsSync(DIST) ? walk(DIST) : []
+const pages = fs.existsSync(DIST) ? walkFiles(DIST, { ext: '.html' }) : []
 if (!pages.length) {
 	console.log('SKIP: dist/ 没有 html，页面没构建出来')
 	process.exit(1)

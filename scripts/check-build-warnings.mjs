@@ -57,9 +57,9 @@ import { Buffer } from 'node:buffer'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { REPO_ROOT } from './lib/paths.mjs'
 
-const ROOT = fileURLToPath(new URL('..', import.meta.url))
+const ROOT = REPO_ROOT
 const DEFAULT_LOG = join(ROOT, '.astro-compare', 'acceptance-build.log')
 
 // -- warning allowlist --------------------------------------------------------

@@ -23,10 +23,22 @@ import path from 'node:path'
  *   node scripts/accept.mjs --print-policies    # 只打印门禁的跳过策略矩阵，不跑门禁
  *   ACCEPT_FORCE_CI=1 node scripts/accept.mjs   # 本机按 CI 判定跑（验 CI 行为，见下）
  *
- * 退出码：0 全绿；1 有门禁红；2 用法错 / 环境跑不起来。
+ * 退出码：
+ *   0  全绿
+ *   1  有门禁红，或出现违规跳过
+ *   2  用法错 / 环境跑不起来 / 门禁进程被杀
+ *
+ * ⚠️ **门禁自己的退出码比这套多，本 runner 一律按「非 0 = FAIL」处理**，
+ * 也就是说门禁的细分码到这一层就压平了。目前有两处已知会被压平：
+ * `probe-subtree.mjs` 用 `exitCode = 3` 表示「后代元素越出了根盒子」
+ * （探测器的几何结论，不是通过/不通过），用 `130` 表示 SIGINT。
+ * 两者都不是「判据判红」，但在 accept 的语境里都应该红——所以压平是对的。
+ * **新门禁若要引入新的非 0 码，请在这里补一行**，否则下一个人会以为
+ * 退出码只有 0/1/2 三档。
  */
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import stripAnsi from 'strip-ansi'
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
 const DIST = path.join(ROOT, 'dist')
@@ -75,7 +87,6 @@ function gatePolicy(g) {
 const IS_CI = process.env.ACCEPT_FORCE_CI === '1'
 	|| process.env.GITHUB_ACTIONS === 'true'
 	|| process.env.CI === 'true'
-
 
 /**
  * 默认档门禁。全部只读 dist/ 与 src/，零外网、零浏览器（check-runtime-dom 例外：
@@ -186,13 +197,35 @@ function record(step, exit, seconds, note, skipped) {
 	results.push({ step, exit, seconds, note: note || '', skipped: Boolean(skipped) })
 }
 
+/**
+ * 起一道门禁进程，返回**两份**输出：`out` 是原文（失败时原样打给人看，
+ * 保留颜色有助于读堆栈），`text` 是脱色后的（**所有判定只用它**）。
+ *
+ * ## 为什么要分两份
+ *
+ * 这道 runner 用正则判定子进程输出：`SKIP_MARKERS = /^SKIP(?:PED)?\b/m` 决定
+ * 「这道门禁是不是自己放弃了」，`lastResultLine` 用 `startsWith('RESULT:')`
+ * 决定汇总表那一列填什么。**两个都是逐行前缀匹配**——而门禁里 9 个脚本自发
+ * ANSI 颜色（`compare-ui-parity` 12 处、`check-dropped-css` 8 处、
+ * `audit-css-blocks` / `audit-dead-scope` 各 7 处、`check-runtime-dom` 4 处）。
+ *
+ * 只要有谁给 `RESULT:` 或 `SKIP:` 那一行加了颜色前缀，**判定会静默失效**：
+ * 汇总表那列恒为空、被放弃的门禁不再被计入 `skipped`、而流水线照样绿灯——
+ * 正是「绿灯失效」那一族。现在没炸是因为恰好没人给那两行上色，属运气不属设计。
+ *
+ * 收在这里而不是让每个门禁各自脱色，是因为**判定发生在这一层**：
+ * 脱色点必须与判定点同源，散在各门禁里就等于没有。
+ * 代价是 `strip-ansi` 从「零引用的死 devDep」变成真依赖——它本来就躺在
+ * devDependencies 里，正好。
+ */
 function runNode(script, args = []) {
 	const file = path.join(ROOT, 'scripts', script)
 	if (!fs.existsSync(file))
-		return { status: 2, out: `SKIP: scripts/${script} 不存在`, missing: true }
+		return { status: 2, out: `SKIP: scripts/${script} 不存在`, text: `SKIP: scripts/${script} 不存在`, missing: true }
 	// 用 process.execPath 而不是 'node'：跨平台，且不会因为 PATH 里没有 node 而失败
 	const r = spawnSync(process.execPath, [file, ...args], { encoding: 'utf8', cwd: ROOT, maxBuffer: 32 * 1024 * 1024 })
-	return { status: r.status === null ? 2 : r.status, out: `${r.stdout || ''}${r.stderr || ''}` }
+	const out = `${r.stdout || ''}${r.stderr || ''}`
+	return { status: r.status === null ? 2 : r.status, out, text: stripAnsi(out) }
 }
 
 // 门禁主动放弃时（内存不够、基线缺失、网络不可达…）多数脚本选择退 0 而不是报错，
@@ -210,12 +243,12 @@ function runGate(name) {
 	const t0 = process.hrtime.bigint()
 	const r = runNode(`${name}.mjs`)
 	const secs = Number(process.hrtime.bigint() - t0) / 1e9
-	const skipped = r.status === 0 && (r.missing || SKIP_MARKERS.test(r.out))
+	const skipped = r.status === 0 && (r.missing || SKIP_MARKERS.test(r.text))
 	const note = r.missing
 		? 'SKIP 脚本不存在'
 		: skipped
-			? firstSkipLine(r.out)
-			: lastResultLine(r.out)
+			? firstSkipLine(r.text)
+			: lastResultLine(r.text)
 	record(name, r.status, secs, note, skipped)
 	return { ...r, skipped }
 }
@@ -235,9 +268,9 @@ function skipViolation(name, policy) {
 		return null
 	const where = IS_CI ? 'CI 上' : '本机'
 	return {
-		reason: `${name} 跳过了，但它的 skip 策略是 '${policy}'，${where}不允许跳过。`
-			+ (policy === 'never' ? '它没有正当的跳过理由——跳过即缺陷。' : '')
-			+ (IS_CI ? '' : ' 若这是本机环境问题，先看它该不该标 env-dependent。'),
+		reason: `${name} 跳过了，但它的 skip 策略是 '${policy}'，${where}不允许跳过。${
+			policy === 'never' ? '它没有正当的跳过理由——跳过即缺陷。' : ''
+		}${IS_CI ? '' : ' 若这是本机环境问题，先看它该不该标 env-dependent。'}`,
 	}
 }
 
@@ -293,7 +326,8 @@ function printPolicies() {
 	console.log(`门禁 ${rows.length} 道；判定环境：${IS_CI ? 'CI' : '本机'}${process.env.ACCEPT_FORCE_CI === '1' && !process.env.GITHUB_ACTIONS ? '（ACCEPT_FORCE_CI=1 强制）' : ''}`)
 	for (const r of rows) {
 		console.log(`\n  ${r.门禁}  [${r.策略}]  本机跳过→${r.本机跳过}  CI跳过→${r.CI跳过}`)
-		if (r.理由) console.log(`      ${r.理由}`)
+		if (r.理由)
+			console.log(`      ${r.理由}`)
 	}
 	const exempt = rows.filter(r => r.策略 !== 'never')
 	console.log(`\n合计：${rows.length} 道门禁，其中 ${exempt.length} 道有跳过豁免（${exempt.map(r => r.门禁).join('、')}），其余 ${rows.length - exempt.length} 道跳过即红。`)
@@ -387,12 +421,13 @@ function main() {
 			const t0 = process.hrtime.bigint()
 			const r = runNode(meta.script)
 			const secs = Number(process.hrtime.bigint() - t0) / 1e9
-			const skipped = r.status === 0 && (r.missing || SKIP_MARKERS.test(r.out))
-			record(name, r.status, secs, skipped ? firstSkipLine(r.out) : lastResultLine(r.out), skipped)
+			const skipped = r.status === 0 && (r.missing || SKIP_MARKERS.test(r.text))
+			record(name, r.status, secs, skipped ? firstSkipLine(r.text) : lastResultLine(r.text), skipped)
 			if (skipped) {
 				// 加重档的门禁默认 never：它们要么打真实网络要么跑很久，没有正当跳过理由
 				const v = skipViolation(name, 'never')
-				if (v) violations.push(v)
+				if (v)
+					violations.push(v)
 			}
 			console.log(`  ${r.status !== 0 ? 'FAIL' : skipped ? 'SKIP' : 'OK  '}  ${name.padEnd(24)} ${secs.toFixed(1)}s  ${results.at(-1).note}`)
 			if (r.status !== 0)
@@ -407,7 +442,8 @@ function main() {
 		const badge = r.status !== 0 ? 'FAIL' : r.skipped ? 'SKIP' : 'OK  '
 		if (r.skipped) {
 			const v = skipViolation(name, policy)
-			if (v) violations.push(v)
+			if (v)
+				violations.push(v)
 		}
 		console.log(`  ${badge}  ${name.padEnd(24)} ${(results.at(-1).seconds).toFixed(1)}s  ${results.at(-1).note}`)
 		if (r.status !== 0)
@@ -428,8 +464,8 @@ function main() {
 			const t0 = process.hrtime.bigint()
 			const r = runNode(`${BUILD_WARNING_GATE}.mjs`, ['--log', BUILD_LOG])
 			const secs = Number(process.hrtime.bigint() - t0) / 1e9
-			record(BUILD_WARNING_GATE, r.status, secs, lastResultLine(r.out), r.status === 0 && SKIP_MARKERS.test(r.out))
-			console.log(`  ${r.status !== 0 ? 'FAIL' : 'OK  '}  ${BUILD_WARNING_GATE.padEnd(24)} ${secs.toFixed(1)}s  ${lastResultLine(r.out)}`)
+			record(BUILD_WARNING_GATE, r.status, secs, lastResultLine(r.text), r.status === 0 && SKIP_MARKERS.test(r.text))
+			console.log(`  ${r.status !== 0 ? 'FAIL' : 'OK  '}  ${BUILD_WARNING_GATE.padEnd(24)} ${secs.toFixed(1)}s  ${lastResultLine(r.text)}`)
 		}
 	}
 
@@ -478,4 +514,4 @@ function main() {
 
 // 名单在底部导出，是为了让 check-ci-triggers.mjs 能 import 它校验
 // 「名单里的脚本都真实存在」——CI 不再手抄名单。
-export { BUILD_WARNING_GATE, FULL_EXTRA, IS_CI, OFFLINE_GATES, gateName, gatePolicy }
+export { BUILD_WARNING_GATE, FULL_EXTRA, gateName, gatePolicy, IS_CI, OFFLINE_GATES }

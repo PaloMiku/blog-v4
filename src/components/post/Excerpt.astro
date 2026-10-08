@@ -100,6 +100,20 @@ const collapsible = excerpt.length > 80
 	/*
 	 * 打字机动画。Nuxt 版是 `for (const char of content) { ...; await delay(50) }`，
 	 * 这里换成原生 setTimeout 链——固定 50ms 的延时不值得把工具库打进客户端 chunk。
+	 *
+	 * ⚠️ 下面这个 768 是全站断点之一，**刻意没有提成常量**。试过
+	 * `import { NARROW_VIEWPORT_PX } from '../../lib/app-config'`，实测代价：
+	 *   1. `app-config.ts` 顶层 `import { Temporal } from 'temporal-polyfill'`，
+	 *      rollup 没有把它 tree-shake 掉，于是 56 KB 的 temporal-polyfill
+	 *      被拉进 Excerpt 的 chunk；而 Excerpt 挂在 `[...slug].astro` 上，
+	 *      等于**38 篇文章每篇都多下一个 56 KB 依赖**去换一个常量；
+	 *   2. 本脚本原先是**内联**进 HTML 的（实测 38 页皆如此），
+	 *      一旦有 import 就会被抽成独立 chunk，38 页的 HTML 全部变化。
+	 * 为 1 个数字付这个代价不划算，故维持字面量。
+	 * 真要统一断点，得先让 `app-config` 能被安全 tree-shake，
+	 * 或者把断点放进一个无依赖的小模块——两者都超出纯重构的范围。
+	 *
+	 * 改断点时记得 CSS 侧那 11 处 768（本组件的 `.ai-excerpt-*` 规则也在其中）要同改。
 	 */
 	function typeExcerpt(root, textEl, caretEl, full) {
 		textEl.textContent = ''
@@ -129,6 +143,7 @@ const collapsible = excerpt.length > 80
 			return
 
 		const full = textEl.textContent ?? ''
+		// 断点 768：与 CSS 侧那 11 处硬编码同值，改动需两处同改（理由见 <script> 头注）
 		const narrow = window.matchMedia('(max-width: 768px)')
 		const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 		// 对应 Nuxt 版的 isFolded 初值 true；宽屏时下面两个 class 都不会加上

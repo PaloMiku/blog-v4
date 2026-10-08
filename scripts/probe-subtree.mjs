@@ -42,18 +42,16 @@
  *
  * 不碰用户自己的 dev/preview 服务器：独立端口 4393，跑完按进程树清理。
  */
-import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { CDP, findBrowser, killTree, waitHttp } from './lib/cdp-session.mjs'
+import { REPO_ROOT } from './lib/paths.mjs'
 import { requirePreviewSlot } from './lib/preview-guard.mjs'
-
-function argOf(k, dflt = null) {
-	const a = process.argv.find(x => x.startsWith(`--${k}=`))
-	return a ? a.slice(k.length + 3) : dflt
-}
+import { argOf } from './lib/ui-parity-args.mjs'
 
 const REMOTE = 'https://blog.sotkg.com'
 const PORT = Number(argOf('port', '4393'))
@@ -75,81 +73,17 @@ if (!['tree', 'profile'].includes(MODE)) {
 	process.exit(2)
 }
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Z]:)/i, '$1')
+const ROOT = REPO_ROOT
 
-const CHROME = [
-	'C:/Program Files/Google/Chrome/Application/chrome.exe',
-	'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
-	'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
-	'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
-].find(p => existsSync(p))
+/*
+ * 浏览器可执行文件与会话层（`CDP` / `killTree` / `waitHttp`）都在
+ * `lib/cdp-session.mjs`，与 `compare-ui-parity.mjs` 共用同一份——见那里的边界说明。
+ * 找不到浏览器时的报错文案仍留在本文件（本脚本写的是 chrome/edge）。
+ */
+const CHROME = findBrowser()
 if (!CHROME) {
 	console.error('FAIL: no chrome/edge')
 	process.exit(1)
-}
-
-class CDP {
-	constructor(ws) {
-		this.ws = ws
-		this.id = 0
-		this.pending = new Map()
-		ws.addEventListener('message', (ev) => {
-			const m = JSON.parse(ev.data)
-			if (m.id && this.pending.has(m.id)) {
-				const { resolve, reject } = this.pending.get(m.id)
-				this.pending.delete(m.id)
-				m.error ? reject(new Error(m.error.message)) : resolve(m.result)
-			}
-		})
-	}
-
-	send(method, params = {}, sessionId) {
-		const id = ++this.id
-		const p = { id, method, params }
-		if (sessionId)
-			p.sessionId = sessionId
-		this.ws.send(JSON.stringify(p))
-		return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }))
-	}
-
-	static async connect(url) {
-		const ws = new WebSocket(url)
-		await new Promise((res, rej) => {
-			ws.addEventListener('open', res, { once: true })
-			ws.addEventListener('error', () => rej(new Error('ws')), { once: true })
-		})
-		return new CDP(ws)
-	}
-
-	async openPage() {
-		const { targetId } = await this.send('Target.createTarget', { url: 'about:blank' })
-		const { sessionId } = await this.send('Target.attachToTarget', { targetId, flatten: true })
-		await this.send('Page.enable', {}, sessionId)
-		await this.send('Runtime.enable', {}, sessionId)
-		return sessionId
-	}
-}
-
-function killTree(child) {
-	if (!child?.pid)
-		return
-	try {
-		spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
-	}
-	catch { /* 已退出 */ }
-}
-
-async function waitHttp(url, ms = 60000) {
-	const dl = Date.now() + ms
-	while (Date.now() < dl) {
-		try {
-			if ((await fetch(url, { signal: AbortSignal.timeout(3000) })).ok)
-				return true
-		}
-		catch { /* 还没起来 */ }
-		await sleep(400)
-	}
-	return false
 }
 
 /*

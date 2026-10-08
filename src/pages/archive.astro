@@ -244,6 +244,7 @@ const listStates = ['date', 'updated'] as const
 	 * 而分组键来自 `groupBy` 的插入序，故升序即年份升序）。
 	 */
 	import { hoistIconSprites } from '../lib/icon-sprite'
+	import { compareValues } from '../lib/shared/pagination'
 
 	function initArchiveList() {
 		const root = document.querySelector('[data-archive-list]')
@@ -299,13 +300,6 @@ const listStates = ['date', 'updated'] as const
 				.filter(k => k && pool.has(k))
 			return { group, menu, keys }
 		})
-
-		/** es-toolkit `compareAscending` 的字符串分支：无 localeCompare */
-		function compareValues(a, b) {
-			if (a < b) return -1
-			if (a > b) return 1
-			return 0
-		}
 
 		function apply(order, ascending, category) {
 			/*

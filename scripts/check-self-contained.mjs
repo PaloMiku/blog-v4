@@ -52,9 +52,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { REPO_ROOT } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
-const SITE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const SITE = REPO_ROOT
 
 /** 参与扫描的目录 / 文件：构建期的模块图 + 开发脚本 */
 const SCAN_TARGETS = ['src', 'scripts', 'astro.config.mjs']
@@ -230,8 +231,14 @@ function stripComments(text) {
 	return out
 }
 
+/**
+ * `SCAN_TARGETS` 的每一项可能是文件（`astro.config.mjs`）也可能是目录（`src` / `scripts`），
+ * 所以**文件分支留在本地**——那是这个门禁特有的入口形态，不是遍历机制。
+ * 目录分支交给共享遍历器：`SKIP_DIRS` 是本门禁的业务判断（产物、缓存、冻结基线
+ * 一律不扫），显式传进去而不是塞进遍历器默认值，理由见 scripts/lib/walk.mjs。
+ */
 function collectFiles(target, out = []) {
-	const abs = path.resolve(SITE, target)
+	const abs = path.resolve(REPO_ROOT, target)
 	if (!fs.existsSync(abs))
 		return out
 
@@ -241,16 +248,7 @@ function collectFiles(target, out = []) {
 		return out
 	}
 
-	for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
-		if (entry.isDirectory()) {
-			if (SKIP_DIRS.has(entry.name))
-				continue
-			collectFiles(path.join(target, entry.name), out)
-		}
-		else if (entry.isFile() && CODE_EXTS.has(path.extname(entry.name))) {
-			out.push(path.resolve(SITE, target, entry.name))
-		}
-	}
+	out.push(...walkFiles(abs, { skipDirs: [...SKIP_DIRS], test: (full, name) => CODE_EXTS.has(path.extname(name)) }))
 	return out
 }
 

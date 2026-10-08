@@ -12,12 +12,12 @@
  *   BASE_URL=https://blog.sotkg.com node scripts/compare-remote-sitemap.mjs
  *   BASE_URL=http://localhost:4397 node scripts/compare-remote-sitemap.mjs
  */
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
+import { DIST, fileToRoute, toRoute } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Z]:)/i, '$1')
-const DIST = join(ROOT, 'dist')
 const REMOTE = process.env.BASE_URL || 'https://blog.sotkg.com'
 
 /** 从 sitemap XML 里取全部 <loc>，归一化成带前导斜杠、不带尾斜杠的路径。 */
@@ -26,7 +26,9 @@ function parseLocs(xml) {
 		.map(m => m[1].trim())
 		.map((u) => {
 			const p = new URL(u).pathname
-			return p.length > 1 ? p.replace(/\/+$/, '') : p
+			// 收敛前这里写的是 `p.length > 1 ? p.replace(/\/+$/, '') : p`，
+			// 与 compare-urls / check-aria-current 的两份本地实现同义，现统一到 toRoute。
+			return toRoute(p)
 		})
 }
 
@@ -47,20 +49,31 @@ function readLocalSitemap() {
 			.join('\n')
 	}
 
-	// 没有 sitemap 文件（可能被过滤规则清空了）：退回从 dist 目录结构枚举
-	const walk = (dir, acc = []) => {
-		for (const e of readdirSync(dir, { withFileTypes: true })) {
-			if (e.name === '_astro' || e.name === 'api')
-				continue
-			const full = join(dir, e.name)
-			if (e.isDirectory())
-				walk(full, acc)
-			else if (e.name === 'index.html')
-				acc.push(`/${full.slice(DIST.length + 1).replace(/\\/g, '/').replace(/index\.html$/, '')}`)
-		}
-		return acc
-	}
-	return walk(DIST)
+	// 没有 sitemap 文件（可能被过滤规则清空了）：退回从 dist 目录结构枚举。
+	//
+	// `skipDirs: ['_astro', 'api']` 是**刻意**的差异，不是遗漏：这里枚举的对象是
+	// 「站点路由」，不是「产物里的文件」。`_astro` 是资源目录、`api` 是端点，
+	// 两者都不对应任何页面；其余门禁要的恰恰是这两类文件，所以它们要扫、这里不扫。
+	// 它会**替换**共享遍历器的默认跳过列表（node_modules / .git），而 dist 下本来
+	// 就没有那两个目录，所以无副作用——写全是让「覆盖了默认值」这件事可见。
+	//
+	// 路由用 `fileToRoute`，**不带尾斜杠**。收敛前这里是手写的
+	// `/${rel.replace(/index\.html$/, '')}`，对 `/2025/11/x/index.html` 产出
+	// `/2025/11/x/`（带尾斜杠）——与另两处（`compare-urls` / `check-aria-current`）
+	// 的形状不一致，属实。
+	//
+	// 但**它当时并没有造成假阳性**：产出随即被喂回 `parseLocs`，而 `parseLocs`
+	// 的归一化会把尾斜杠去掉，两边因此仍然相等（已实测：改前改后输出逐字相同）。
+	// 也就是说这处是**被下游掩盖的不一致**，不是活着的缺陷。
+	// 统一到 `fileToRoute` 的理由是：它依赖「下游一定会再归一化一次」这个
+	// 跨文件的巧合——哪天 `parseLocs` 因为别的理由不再抹尾斜杠（或者有人把这个
+	// 回退路径单独拿去用），带尾斜杠的那份就会静默地和线上对不上。
+	// 统一之后形状由产生它的那一步就定死，不再依赖下游兜底。
+	const fallbackRoutes = walkFiles(DIST, {
+		skipDirs: ['_astro', 'api'],
+		test: (full, name) => name === 'index.html',
+	}).map(fileToRoute)
+	return fallbackRoutes
 		.map(p => `<loc>${REMOTE}${p}</loc>`)
 		.join('\n')
 }

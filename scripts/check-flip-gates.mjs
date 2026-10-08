@@ -51,28 +51,16 @@
  * 内联脚本里的选择器字面量不算标记（n）。
  * 判据自己判错的时候，门禁就是在教人忽略红灯，所以自检不过直接 exit 1、不输出结论。
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
-
-const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Z]:)/i, '$1')
-const DIST = join(ROOT, 'dist')
+import { DIST } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
 /** 需要检查的两个页面；键名即报告里的名字 */
 const PAGES = {
 	index: 'index.html',
 	archive: join('archive', 'index.html'),
-}
-
-function walk(dir, out = []) {
-	for (const e of readdirSync(dir)) {
-		const full = join(dir, e)
-		if (statSync(full).isDirectory())
-			walk(full, out)
-		else
-			out.push(full)
-	}
-	return out
 }
 
 /**
@@ -110,7 +98,7 @@ function markupOf(html) {
 
 /** 把产物收成一份「页面 HTML / 全部 CSS / 全部 JS」的快照，判据只认这个结构 */
 function collectArtifacts(distDir) {
-	const files = walk(distDir)
+	const files = walkFiles(distDir)
 	const read = f => readFileSync(f, 'utf8')
 	const pages = {}
 	for (const [name, rel] of Object.entries(PAGES)) {

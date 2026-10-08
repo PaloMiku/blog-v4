@@ -55,30 +55,25 @@
  * 本门禁自己踩了这个坑两次（见下面 `attrs` 的注释），
  * 留着记录是因为：**任何手写标签解析器都会踩**。
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { readFileSync } from 'node:fs'
 import process from 'node:process'
+import { DIST, fileToRoute, toRoute } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
-const DIST = 'dist'
 const FAIL = []
 
-/** 归一化页面路径：去尾斜杠，空则 '/'（与 lib/shared/link.ts 的 normalizeContentPath 同规则） */
-const norm = p => p.replace(/\/+$/, '') || '/'
+/**
+ * 归一化页面路径：去尾斜杠，空则 '/'（与 lib/shared/link.ts 的 normalizeContentPath 同规则）。
+ *
+ * 收敛到 `toRoute`：本文件原来写的是 `p.replace(/\/+$/, '') || '/'`，与
+ * `compare-urls.mjs` 的 `normalizeUrl`、`compare-remote-sitemap.mjs` 的内联版
+ * 三份等价实现是同一语义。留着的代价是**改一处忘另一处**——`build.format: 'directory'`
+ * 让产物 URL 恒带尾斜杠，谁忘了归一化，谁的精确比较就会在首页之外整片失效。
+ */
+const norm = toRoute
 
 /** dist 文件路径 → 页面路径 */
-function routeOf(file) {
-	const rel = relative(DIST, file).split(sep).join('/')
-	if (rel === 'index.html')
-		return '/'
-	return `/${rel.replace(/\/?index\.html$/, '')}`
-}
-
-function walk(dir) {
-	return readdirSync(dir).flatMap((name) => {
-		const p = join(dir, name)
-		return statSync(p).isDirectory() ? walk(p) : (p.endsWith('.html') ? [p] : [])
-	})
-}
+const routeOf = fileToRoute
 
 /**
  * 只在引号外切属性，避免扫进属性值。
@@ -131,7 +126,7 @@ function attrs(tag, where) {
 	return out
 }
 
-const files = walk(DIST)
+const files = walkFiles(DIST, { ext: '.html' })
 let checkedLinks = 0
 let pageMarked = 0
 

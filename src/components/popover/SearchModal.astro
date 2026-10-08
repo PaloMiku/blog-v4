@@ -104,12 +104,27 @@ const locale = blogConfig.language
 	const segmenter = Intl.Segmenter && new Intl.Segmenter(document.documentElement.lang || 'zh-CN', { granularity: 'word' })
 
 	/**
-	 * 与 `shared/utils/str.ts` 的 `highlightHtml` 行为逐字一致。
+	 * `shared/str.ts` 的 `highlightHtml` 副本。**升级时需与源同改**（2026-10-08 复核）。
 	 *
-	 * 为什么不直接 `import { highlightHtml } from '../../lib/shared'`：
-	 * 那个模块经由 `shared/utils/str.ts` 依赖 `@vueuse/core`（只为了一个 `toArray`），
-	 * 会把框架依赖拖进客户端产物，而 `@vueuse/core` 并不是 astro-site 的依赖。
-	 * 这里只从直接依赖 `es-toolkit` 取 `escape` / `escapeRegExp`，其余照抄。
+	 * 副本与源的关系，两条都要记：
+	 *
+	 * 1. 原先写的复制理由**已经过期**：当时的注释说 `lib/shared` 经由
+	 *    `shared/str.ts` 依赖 `@vueuse/core`（只为一个 `toArray`）。实测
+	 *    `src/lib/shared/str.ts:13` 已把 `toArray` 内联（照抄 @vueuse/core@14.4.0
+	 *    的实现），**`@vueuse/core` 早已不在依赖图里**。所以「会把框架依赖拖进
+	 *    客户端产物」这个理由现在不成立。
+	 * 2. 但仍然不能直接 import，因为**两份行为并不一致**——原注释写的「逐字一致」
+	 *    是错的。实测差异只在「无任何有效搜索词」这一支：
+	 *
+	 *        text="多行\n文本", words=[]
+	 *          本副本    → "多行\n文本"   （提前 return，跳过换行替换）
+	 *          str.ts    → "多行<br>文本" （无提前 return，照样跑 .replace）
+	 *
+	 *    原因是本副本有一处 `if (!validTerms.length) return escape(source)`，
+	 *    而 `str.ts` 没有；其余分支（含正则切分、先切分后转义、`<mark>` 无 class）
+	 *    实测逐字相同。换句话说：**这份副本不能删，也不能改成 import**，
+	 *    否则空搜索词时结果正文里的换行会从「原样换行」变成 `<br>`。
+	 *    要合并就得先把两份的行为差异定义清楚，那是行为变更，不属于本次纯重构。
 	 */
 	function highlightHtml(text, words) {
 		const validTerms = (Array.isArray(words) ? words : [words])

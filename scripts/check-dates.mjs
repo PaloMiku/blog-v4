@@ -28,13 +28,15 @@
  * 全部从 `import.meta.url` 解析，不依赖进程 CWD。PS 原版踩过这个坑：
  * `Resolve-Path '..\x'` 跟的是 CWD 而不是脚本位置。
  */
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { REPO_ROOT } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
-// scripts/ 上一级 = 仓库根。不写死 'D:\...'，也不读 process.cwd()。
-const ROOT = fileURLToPath(new URL('..', import.meta.url))
+// 仓库根。不写死 'D:\...'，也不读 process.cwd()——收敛到共享的 REPO_ROOT，
+// 理由见 scripts/lib/paths.mjs 文件头。
+const ROOT = REPO_ROOT
 const CONTENT_ROOT = join(ROOT, 'src', 'content')
 const DIST = join(ROOT, 'dist')
 
@@ -44,16 +46,8 @@ const skipped = []
 
 /** 等价于 `Get-ChildItem $contentRoot -Recurse -File -Filter *.mdx`。 */
 function collectMdx(dir) {
-	const out = []
-	for (const entry of readdirSync(dir, { withFileTypes: true })) {
-		const full = join(dir, entry.name)
-		if (entry.isDirectory())
-			out.push(...collectMdx(full))
-		// -Filter 在 Windows 上大小写不敏感，这里保持一致。
-		else if (/\.mdx$/i.test(entry.name))
-			out.push(full)
-	}
-	return out
+	// `-Filter` 在 Windows 上大小写不敏感，这里保持一致 → 谓词而非 ext。
+	return walkFiles(dir, { test: (full, name) => /\.mdx$/i.test(name) })
 }
 
 /** .NET 的 File.ReadAllText 会吃掉 BOM，Node 的 readFileSync 不会。 */

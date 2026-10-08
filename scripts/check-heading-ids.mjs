@@ -40,11 +40,11 @@
  * `/` 落在 `dist/index.html`。只 glob `dist/*.html` 会漏掉绝大多数页面
  * （这是 §67.3 同一个教训的形态）。
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { relative } from 'node:path'
 import process from 'node:process'
-
-const DIST = new URL('../dist/', import.meta.url).pathname.replace(/^\/([A-Z]:)/i, '$1')
+import { DIST } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
 /** 三个后处理，与 `src/lib/slug.ts` 的 `nuxtHeadingId` 保持同一份语义 */
 function nuxtHeadingId(slug) {
@@ -55,15 +55,8 @@ function nuxtHeadingId(slug) {
 }
 
 /** 递归列出 dist 下所有 .html（不依赖层级约定） */
-function htmlFiles(dir, out = []) {
-	for (const name of readdirSync(dir)) {
-		const full = join(dir, name)
-		if (statSync(full).isDirectory())
-			htmlFiles(full, out)
-		else if (name.endsWith('.html'))
-			out.push(full)
-	}
-	return out
+function htmlFiles(dir) {
+	return walkFiles(dir, { ext: '.html' })
 }
 
 /**

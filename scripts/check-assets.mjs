@@ -31,13 +31,14 @@
  *
  * 退出码：0 = PASS，1 = FAIL，2 = 无法运行（dist 不存在）。
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { REPO_ROOT } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
-/** 脚本所在目录的上级 = 仓库根。**不要**换成 process.cwd()。 */
-const ROOT = fileURLToPath(new URL('..', import.meta.url))
+/** 仓库根。**不要**换成 process.cwd()。 */
+const ROOT = REPO_ROOT
 
 const DEFAULT_EXTENSIONS = [
 	'woff2',
@@ -145,16 +146,8 @@ function resolveReference(rawRef, fromDir) {
 }
 
 /** 递归列出 dist 下所有文件（不跟随符号链接目录，与 Get-ChildItem -Recurse -File 一致）。 */
-function walkFiles(dir) {
-	const out = []
-	for (const entry of readdirSync(dir, { withFileTypes: true })) {
-		const full = join(dir, entry.name)
-		if (entry.isDirectory())
-			out.push(...walkFiles(full))
-		else if (entry.isFile())
-			out.push(full)
-	}
-	return out
+function walkAll(dir) {
+	return walkFiles(dir)
 }
 
 let scanned = 0
@@ -181,7 +174,7 @@ function firstGroup(m) {
 	return m[1] !== undefined ? m[1] : (m[2] !== undefined ? m[2] : m[3])
 }
 
-for (const file of walkFiles(root)) {
+for (const file of walkAll(root)) {
 	const name = basename(file).toLowerCase()
 	const isHtml = name.endsWith('.html') || name.endsWith('.htm')
 	const isCss = name.endsWith('.css')

@@ -40,15 +40,15 @@
  *
  * 退出码：0 = 通过；1 = 有问题；2 = 脚本自身跑不起来（缺 dist 等）
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { readFileSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { DIST, REPO_ROOT } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
-const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
+const ROOT = REPO_ROOT
 const SRC = join(ROOT, 'src')
 const CONTENT = join(SRC, 'content')
-const DIST = join(ROOT, 'dist')
 
 /** 源码默认目录，与插件里的同名常量一致 */
 const DEFAULT_DIR = 'components/content'
@@ -114,15 +114,9 @@ function scanFences(source) {
 	return { fences: out, unclosed: open }
 }
 
-function walkMdx(dir, out = []) {
-	for (const name of readdirSync(dir)) {
-		const full = join(dir, name)
-		if (statSync(full).isDirectory())
-			walkMdx(full, out)
-		else if (name.endsWith('.mdx'))
-			out.push(full)
-	}
-	return out
+/** 递归列出 *.mdx（原 `walkMdx` 的扩展名筛选已由共享遍历器的 `ext` 表达） */
+function walkMdx(dir) {
+	return walkFiles(dir, { ext: '.mdx' })
 }
 
 function longestBacktickRun(text) {

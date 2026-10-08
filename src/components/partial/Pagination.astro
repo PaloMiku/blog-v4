@@ -26,11 +26,15 @@
  *    复现（给根元素加 `.expand` class）。**注意极性**：`useElementVisibility` 返回的是
  *    「可见=true」，所以锚点**进入**视口才展开。本轮曾把它写成 `!isIntersecting`，
  *    四种滚动状态全部与线上镜像相反，详见 <script> 里的注释。
- * 4. `getPaginationIndicator` 从 `app/composables/usePagination.ts` 内联到 frontmatter
+ * 4. `getPaginationIndicator` 来自 `app/composables/usePagination.ts`，
+ *    原先内联在本 frontmatter，现已移到 `src/lib/shared/pagination.ts`
  *    （不重建 composable 体系），逻辑逐字照搬。
+ *    ⚠️ 它必须与 `pages/index.astro` 的 `syncPager()` 共用同一份实现——
+ *    后者是客户端重画，两套算法一旦分叉就会出现页码个数与实际页数对不上。
  */
 import Button from './Button.astro'
 import Icon from '../Icon.astro'
+import { getPaginationIndicator } from '../../lib/shared/pagination'
 
 interface Props {
 	totalPages: number
@@ -43,21 +47,6 @@ interface Props {
 }
 
 const { totalPages, expandPages = 2, sticky = false, avoid = false, value = 1 } = Astro.props
-
-/** 内联自 app/composables/usePagination.ts（逐字照搬） */
-function getPaginationIndicator(current: number, total: number, expand = 2) {
-	const pages: number[] = [1]
-	const start = Math.max(2, current - expand)
-	const end = Math.min(total - 1, current + expand)
-	if (start > 2)
-		pages.push(-1) // -1 means ellipsis
-	for (let i = start; i <= end; i++) pages.push(i)
-	if (end < total - 1)
-		pages.push(-1)
-	if (total > 1)
-		pages.push(total)
-	return pages
-}
 
 const pageArr = getPaginationIndicator(value, totalPages, expandPages)
 ---

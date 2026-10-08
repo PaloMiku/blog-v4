@@ -40,12 +40,9 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
  * 若图标换成 `<i>` / `<img>` / 内联 SVG 文本，本门禁会**如实报错**而不是静默放过。
  */
 
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const DIST = join(ROOT, 'dist')
+import { DIST } from './lib/paths.mjs'
 
 if (!existsSync(DIST)) {
 	console.error('FAIL: dist/ 不存在。先跑 pnpm build —— 门禁读的是构建产物，不是源码。')

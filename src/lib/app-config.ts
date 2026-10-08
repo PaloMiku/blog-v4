@@ -27,7 +27,6 @@ import blogConfig from '../config/blog'
 import { themeVersion } from '../config/site-meta'
 
 /** 导航项，与 Nuxt 侧 `app/types/nav.ts` 的 NavItem 同构 */
-/** 导航项，与 Nuxt 侧 `app/types/nav.ts` 的 NavItem 同构 */
 export interface NavItem {
 	icon: string
 	text: string

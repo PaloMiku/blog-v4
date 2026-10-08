@@ -14,10 +14,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { REPO_ROOT } from './lib/paths.mjs'
 
-const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const CONFIG = join(ROOT, 'src', 'config', 'blog.ts')
+const CONFIG = join(REPO_ROOT, 'src', 'config', 'blog.ts')
 
 /**
  * 从配置里取出 twikoo 那条脚本的 URL 与版本，不写死任何一处。

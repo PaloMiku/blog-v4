@@ -60,12 +60,12 @@
  *
  * 用法：`node scripts/check-affordances.mjs [--dist <目录>]`
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import process from 'node:process'
 import { isExtLink } from '../src/lib/shared/link.ts'
-
-const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Z]:)/i, '$1')
+import { DIST as DEFAULT_DIST, REPO_ROOT } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
 /** 侧栏搜索键帽的选择器；产物 JS 里只有本组件会写出它 */
 const KEYCAP_SELECTOR = '.search-btn [data-key-root]'
@@ -171,17 +171,6 @@ function relTokens(tag) {
 	return (attr(tag, 'rel') || '').toLowerCase().split(/\s+/).filter(Boolean)
 }
 
-function walk(dir, out = []) {
-	for (const e of readdirSync(dir)) {
-		const full = join(dir, e)
-		if (statSync(full).isDirectory())
-			walk(full, out)
-		else
-			out.push(full)
-	}
-	return out
-}
-
 /**
  * 页面 HTML 里内联的 `<style>` / `<script>`：Astro 7 对够小的组件 CSS/JS 直接内联
  * 进页面，不落 `dist/_astro/*`，只看外链 chunk 会把这一大半产物当不存在。
@@ -219,10 +208,10 @@ function markupOf(html) {
 
 /** 把产物收成一份快照，判据只认这个结构（好让自检能喂合成数据） */
 function collectArtifacts(distDir) {
-	const files = walk(distDir)
+	const files = walkFiles(distDir)
 	const read = f => readFileSync(f, 'utf8')
 	const rel = f => relative(distDir, f).split(sep).join('/')
-	const exists = p => Boolean(statSync(join(ROOT, p), { throwIfNoEntry: false }))
+	const exists = p => Boolean(statSync(join(REPO_ROOT, p), { throwIfNoEntry: false }))
 	const pages = []
 	const inlineCss = []
 	const inlineJs = []
@@ -586,7 +575,7 @@ console.log(`self-test: ${SELF_TESTS.length} 例全过\n`)
 
 // 允许指向别的目录（自检/复现用），默认读本仓库的 dist/
 const distArg = process.argv.indexOf('--dist')
-const DIST = distArg === -1 ? join(ROOT, 'dist') : process.argv[distArg + 1]
+const DIST = distArg === -1 ? DEFAULT_DIST : process.argv[distArg + 1]
 
 if (!statSync(DIST, { throwIfNoEntry: false })) {
 	console.error(`FAIL: 找不到产物目录 ${DIST}。先构建再跑本门禁。`)

@@ -29,23 +29,11 @@
  * `--self-test` 覆盖这三种情形 + 真正的死规则；
  * **一个从没抓到真问题的检查器，它的"无发现"没有任何意义。**
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { relative, sep } from 'node:path'
 import process from 'node:process'
-
-const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Z]:)/i, '$1')
-const DIST = join(ROOT, 'dist')
-
-function walk(dir, out = []) {
-	for (const e of readdirSync(dir)) {
-		const full = join(dir, e)
-		if (statSync(full).isDirectory())
-			walk(full, out)
-		else
-			out.push(full)
-	}
-	return out
-}
+import { DIST } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
 /**
  * 取出**所有**规则的选择器（含嵌套在 `&` 里的），而不是只取最外层。
@@ -186,7 +174,7 @@ if (process.argv.includes('--self-test')) {
 
 /* ────────────────────────── 实际扫描 ────────────────────────── */
 
-const files = walk(DIST)
+const files = walkFiles(DIST)
 const htmls = files.filter(f => f.endsWith('.html'))
 const csss = files.filter(f => f.endsWith('.css'))
 

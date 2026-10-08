@@ -214,8 +214,13 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 	 *   - 分页 = `Math.ceil(len / perPage) || 1`，`slice((page - 1) * perPage, …)`
 	 *   - `@update:category="page = 1"`
 	 *   - `getFixedDelay(index * 0.05)` = `--delay: ${(index * 0.05).toFixed(2)}s`
+	 *
+	 * `compareValues` 与 `getPaginationIndicator` 原先在本文件内各写了一份，
+	 * 现已移到 `src/lib/shared/pagination.ts`——后者必须与 `Pagination.astro`
+	 * 的构建期实现同源，理由见下面 `syncPager` 的注释。
 	 */
 	import { hoistIconSprites } from '../lib/icon-sprite'
+	import { compareValues, getPaginationIndicator } from '../lib/shared/pagination'
 
 	function initPostList() {
 		const root = document.querySelector('[data-post-list]')
@@ -275,13 +280,6 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 		let category = ''
 		let page = 1
 
-		/** es-toolkit `compareAscending` 的字符串分支：无 localeCompare */
-		function compareValues(a, b) {
-			if (a < b) return -1
-			if (a > b) return 1
-			return 0
-		}
-
 		/** orderBy(list, [sortOrder, 'date'], [isAscending ? 'asc' : 'desc']) */
 		function compareBy(a, b) {
 			const dir = ascending ? 1 : -1
@@ -289,18 +287,6 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 			return primary !== 0
 				? primary * dir
 				: compareValues(a.date, b.date) * dir
-		}
-
-		/** `usePagination` 的 `getPaginationIndicator`，逐字照搬；-1 表示省略号 */
-		function indicator(current, total, expand = 2) {
-			const pages = [1]
-			const start = Math.max(2, current - expand)
-			const end = Math.min(total - 1, current + expand)
-			if (start > 2) pages.push(-1)
-			for (let i = start; i <= end; i++) pages.push(i)
-			if (end < total - 1) pages.push(-1)
-			if (total > 1) pages.push(total)
-			return pages
 		}
 
 		function currentTotal() {
@@ -320,6 +306,9 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 		 * 对不上——Nuxt 侧是响应式的，这里必须由页面自己重排。
 		 * 只动 prev / next 之间的那段，两侧的翻页按钮保持原位（CSS 的
 		 * `:first-child` / `:last-child` 自动外推间距依赖它们的位置）。
+		 *
+		 * ⚠️ 这就是它必须 import 同一个 `getPaginationIndicator` 的原因：
+		 * 这份重画结果与首屏那份是**同一套算法**的两个调用点，不是两份副本。
 		 */
 		function syncPager(total) {
 			if (!(pager instanceof HTMLElement))
@@ -339,7 +328,7 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 				n = doomed
 			}
 
-			const arr = indicator(page, total, 2)
+			const arr = getPaginationIndicator(page, total, 2)
 			for (const p of arr) {
 				const btn = document.createElement('button')
 				btn.className = 'pagination-num'

@@ -83,38 +83,33 @@
  * 于是后面整段被当成代码解析，报的却是 `src/content/...` 那一行的
  * `Unexpected token '*'`——离真正的病因（上面那行）差了两行。已用文字描述代替。
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
+import { DIST, REPO_ROOT } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
-const SRC = new URL('../src/content/', import.meta.url).pathname.replace(/^\/([A-Z]:)/i, '$1')
-const DIST = new URL('../dist/', import.meta.url).pathname.replace(/^\/([A-Z]:)/i, '$1')
+const SRC = join(REPO_ROOT, 'src', 'content')
 
 /** smartypants 会写入的目标字符 → 它的源形态（仅用于报错信息） */
 const CONVERTED = { '…': '...', '—': '---', '–': '--', '“': '"', '”': '"', '‘': '\'', '’': '\'' }
 const CHARS = Object.keys(CONVERTED)
 const RX = new RegExp(`[${CHARS.join('')}]`, 'g')
 
-function isDir(p) {
+/**
+ * 按谓词递归收集（原 `walk(dir, test, out)` 的共享版）。
+ *
+ * 目录读不到时返回空数组，与收敛前一致（`isDir` 吞异常）。保留它是因为两个调用点
+ * 各自的判红方式不同：`srcFiles` 为空 → FAIL + exit 1，而 `distFiles` 为空只会
+ * 让计数全 0。**判红在判据里**，遍历器只负责不崩。
+ */
+function walk(dir, test) {
 	try {
-		return statSync(p).isDirectory()
+		return walkFiles(dir, { test: (full, name) => test(name) })
 	}
 	catch {
-		return false
+		return []
 	}
-}
-
-function walk(dir, test, out = []) {
-	if (!isDir(dir))
-		return out
-	for (const name of readdirSync(dir)) {
-		const full = join(dir, name)
-		if (statSync(full).isDirectory())
-			walk(full, test, out)
-		else if (test(name))
-			out.push(full)
-	}
-	return out
 }
 
 function tally(text) {

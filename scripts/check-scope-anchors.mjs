@@ -48,14 +48,11 @@
  * 接管后判据换成了棘轮，负控要重做一遍：把 FeedGroup 那条改回裸 `:global(...)`，
  * 本门禁必须 exit 1 并指名道姓说是哪一条。
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
-
-const HERE = fileURLToPath(new URL('.', import.meta.url))
-const SITE_ROOT = join(HERE, '..')
-const DIST = join(SITE_ROOT, 'dist')
+import { DIST, REPO_ROOT } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
 /**
  * 接管当天（2026-10-03）src 里已有的一批顶层裸 `:global()`，**逐条按完整选择器钉住**。
@@ -89,7 +86,7 @@ const DIST = join(SITE_ROOT, 'dist')
  * 复核任意一条之后：把它连同一个 `dom` / `root` 不变式移进上面的 `KNOWN`，
  * 并从 `exemptions.json` 删掉。清单因此会变短，**但必须是显式删**。
  */
-const EXEMPTIONS_FILE = join(HERE, 'exemptions.json')
+const EXEMPTIONS_FILE = join(REPO_ROOT, 'scripts', 'exemptions.json')
 
 /**
  * 台账读不出来就直接崩在这里，不给默认值。
@@ -133,19 +130,20 @@ const KNOWN = [
 	},
 ]
 
+/**
+ * 按扩展名递归收集（`walk(dir, ext)` 的共享版）。
+ *
+ * 目录不存在时返回空数组，与收敛前一致：原实现先 `existsSync(dir)` 再返回 `out`。
+ * 这里保留吞异常，是因为调用方要的是「扫不到就 0 条」而不是崩——判据对 0 条的
+ * 处理见下面的 `files.length` 分支，**判红在判据里，不在遍历器里**。
+ */
 function walk(dir, ext) {
-	const out = []
-	if (!existsSync(dir))
-		return out
-	for (const name of readdirSync(dir)) {
-		const p = join(dir, name)
-		const s = statSync(p)
-		if (s.isDirectory())
-			out.push(...walk(p, ext))
-		else if (p.endsWith(ext))
-			out.push(p)
+	try {
+		return walkFiles(dir, { ext })
 	}
-	return out
+	catch {
+		return []
+	}
 }
 
 /**
@@ -254,7 +252,7 @@ const pinnedKeys = new Set(UNREVIEWED.map(norm))
 const hitPins = new Set()
 
 const astroGlobal = new Map()
-for (const file of walk(join(SITE_ROOT, 'src'), '.astro')) {
+for (const file of walk(join(REPO_ROOT, 'src'), '.astro')) {
 	const rows = []
 	for (const r of topLevelSelectors(file)) {
 		const sel = r.sel.trim()

@@ -17,10 +17,8 @@ import path from 'node:path'
  * 骨架是否完好，本地产物自己就能回答。
  */
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { DIST } from './lib/paths.mjs'
 
-const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
-const DIST = path.join(ROOT, 'dist')
 const PAGE = path.join(DIST, '2025', '11', 'riddle-joker', 'index.html')
 
 if (!fs.existsSync(PAGE)) {

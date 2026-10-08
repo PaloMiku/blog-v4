@@ -52,13 +52,14 @@
  * 用法（需先构建）：
  *   node scripts/check-icon-swap.mjs [--dist dist]
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, relative } from 'node:path'
 import process from 'node:process'
+import { DIST as DEFAULT_DIST, REPO_ROOT } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
 const require_ = createRequire(import.meta.url)
-const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([a-z]:)/i, '$1')
 
 /**
  * 段落引用按钮约定的字形。
@@ -71,17 +72,6 @@ const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([a-z]:)/i, '$1
 const QUOTE_ICON = 'tabler:message-circle-2'
 
 /* ────────────────────────── 产物快照 ────────────────────────── */
-
-function walk(dir, out = []) {
-	for (const e of readdirSync(dir)) {
-		const full = join(dir, e)
-		if (statSync(full).isDirectory())
-			walk(full, out)
-		else
-			out.push(full)
-	}
-	return out
-}
 
 /** 该页会跑到的脚本：内联 `<script type="module">` + 外链 chunk 的源码 */
 function scriptsOf(distDir, html) {
@@ -101,7 +91,7 @@ function scriptsOf(distDir, html) {
 /** 把产物收成一份快照，判据只认这个结构（自检才能喂合成数据） */
 function collectArtifacts(distDir) {
 	const pages = []
-	for (const file of walk(distDir).filter(f => f.endsWith('.html'))) {
+	for (const file of walkFiles(distDir, { ext: '.html' })) {
 		const html = readFileSync(file, 'utf8')
 		pages.push({
 			rel: relative(distDir, file).split('\\').join('/'),
@@ -344,7 +334,14 @@ console.log(`self-test: ${SELF_TESTS.length} 例全过\n`)
 /* ────────────────────────── 实际检查 ────────────────────────── */
 
 const argv = process.argv.slice(2)
-const DIST = join(ROOT, argv[argv.indexOf('--dist') + 1] ?? 'dist')
+// 默认值收敛到共享的 DIST。逐字对过三种 argv，三种都与原式同值：
+//   argv=[]            原式 join(ROOT, undefined ?? 'dist') = <根>/dist
+//   argv=['--dist',d]  原式 join(ROOT, d)                = <根>/d
+// 区别只在 `join(ROOT, …)` 与 `DIST` 同值这一事实上——`--dist` 给的是**相对**路径时
+// 原式才把它接到仓库根下，所以这里保留 join(REPO_ROOT, …)，不是直接用 argv 值。
+const DIST = argv[argv.indexOf('--dist') + 1] === undefined
+	? DEFAULT_DIST
+	: join(REPO_ROOT, argv[argv.indexOf('--dist') + 1])
 
 if (!statSync(DIST, { throwIfNoEntry: false })) {
 	console.error(`FAIL: 找不到产物目录 ${DIST}。先构建再跑本门禁。`)

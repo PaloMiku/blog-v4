@@ -137,6 +137,17 @@ const listStates = ['date', 'updated'] as const
 	 * 于是排序按钮与方向按钮都是死的。现在三个字段全部参与。
 	 *
 	 * 比较器 = `orderBy(list, [sortOrder, 'date'], [isAscending ? 'asc' : 'desc'])`。
+	 *
+	 * ⚠️ 这里也有一份与 `index.astro` / `archive.astro` 逐字相同的 `compareValues`
+	 * （es-toolkit `compareAscending` 的字符串分支），本轮**刻意没有**改成
+	 * `import { compareValues } from '../lib/shared/pagination'`。
+	 * 原因实测过：本页的 `<script>` 原本**没有 import**，因而是被内联进 HTML 的；
+	 * 一旦加 import，Astro 就把它抽成独立 chunk，`preview/index.html` 的产物随之改变
+	 * （多一个 `<script src>`、HTML 不再逐字不变）。
+	 * 而 `index.astro` / `archive.astro` 的脚本本来就有 import，改成共享模块后
+	 * 页面产物只有 chunk 文件名的引用变化，其余逐字不变。
+	 * 结论：合并的收益（去掉第 3 份副本）小于破坏「产物逐字不变」的代价，
+	 * 故保留副本。真要合，需要先接受产物变化并单独说明。
 	 */
 	function initPreviewList() {
 		const list = document.querySelector('[data-preview-list]')
@@ -165,7 +176,7 @@ const listStates = ['date', 'updated'] as const
 
 		const items = [...list.querySelectorAll('[data-article-item]')]
 
-		/** es-toolkit `compareAscending` 的字符串分支：无 localeCompare */
+		/** es-toolkit `compareAscending` 的字符串分支：无 localeCompare。副本理由见 <script> 头注 */
 		function compareValues(a, b) {
 			if (a < b) return -1
 			if (a > b) return 1

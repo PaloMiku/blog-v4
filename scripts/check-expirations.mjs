@@ -64,10 +64,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { REPO_ROOT } from './lib/paths.mjs'
 
-const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const FILE = join(ROOT, 'scripts', 'exemptions.json')
+const FILE = join(REPO_ROOT, 'scripts', 'exemptions.json')
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -92,7 +91,7 @@ const MIN_REASON = 20
  * 「配置读不到就按默认时区算」在 CI 上就是一个会飘的绿。
  */
 function siteTimeZone() {
-	const cfg = join(ROOT, 'src', 'config', 'blog.ts')
+	const cfg = join(REPO_ROOT, 'src', 'config', 'blog.ts')
 	if (!existsSync(cfg))
 		return null
 	const m = readFileSync(cfg, 'utf8').match(/timeZone:\s*'([^']+)'/)

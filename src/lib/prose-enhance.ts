@@ -229,10 +229,29 @@ function onTableToggle(event: Event) {
  * 算好写进 `data-tip`，这里只做显隐（Nuxt ProseA.vue:10-13）。
  *
  * ⚠️ vue-tippy 在 Astro 侧不可用，浮层用 `.tippy-box` / `.tippy-content`
- * 复刻（与 partial/Dropdown.astro、post/Comment.astro 同一套路）。
- * 定位策略对齐 Nuxt 的 `inlinePositioning: true`：`position: absolute` +
+ * 复刻。定位策略对齐 Nuxt 的 `inlinePositioning: true`：`position: absolute` +
  * 实测偏移，而不是 fixed + 视口翻转。代价是链接贴着视口上沿时浮层会被裁掉
  * 一角——Comment.astro 的浮层也是同样的取舍。
+ *
+ * ═══ 为什么这 4 处浮层没有抽成共享模块（2026-10-08 复核，别再试一次）═══
+ * `partial/Dropdown.astro`、`post/Comment.astro`、`content/FeedCard.astro`
+ * 也都用 `.tippy-box` + `.tippy-content`，看着像同一套东西抄了 4 遍，
+ * 但逐个读过之后它们的**定位坐标系、宿主元素、markup 形状全都不同**，
+ * 抽 `showTip`/`hideTip` 只会得到一个四维配置对象，不是去重：
+ *
+ *   Dropdown   纯 CSS 定位（`position:absolute; top:100%; left:0`），**没有任何 JS 定位**；
+ *              面板留在组件内，不传送到 body。
+ *   Comment    JS 定位，但坐标系是 **section 局部**（`rect.bottom - sectionRect.top`），
+ *              不传送到 body。
+ *   FeedCard   `position: fixed` + 视口上沿翻转 + 左右夹边，且**开时传送到 body、
+ *              关时搬回 wrapper**；另外它**没有 `.tippy-content` 这层壳**。
+ *   本文件     运行时 `createElement` + `position:absolute` + **页面绝对坐标**
+ *              （`scrollX/scrollY`）+ 挂 body + 单例重挂。
+ *
+ * 真正共享的只有类名与 `hidden` 开关那几行，抽象收益为负。
+ * 另：这里的 `data-placement="top"` 与 `plugins/prose.ts:628` 那个一样，
+ * 是从 tippy API 抄来的**死属性**——全仓库没有任何 `[data-placement]` 的 CSS 规则
+ * （实测 grep 只有这两处赋值、零处消费），改它不影响渲染，故保持原样。
  */
 let linkTip: HTMLElement | null = null
 

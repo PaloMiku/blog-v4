@@ -30,12 +30,13 @@
  *
  * 退出码：0 = 通过；1 = 有问题
  */
-import { readdirSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { REPO_ROOT } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
-const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
+const ROOT = REPO_ROOT
 const CONTENT = join(ROOT, 'src', 'content')
 
 /** 面板标记：独占一行的 `#tab1` */
@@ -52,15 +53,8 @@ const MARK_RE = /^#tab(\d+)[ \t]*$/gm
  */
 const MARK_TEST_RE = /^#tab\d+[ \t]*$/m
 
-function collectMdx(dir, out = []) {
-	for (const entry of readdirSync(dir, { withFileTypes: true })) {
-		const full = join(dir, entry.name)
-		if (entry.isDirectory())
-			collectMdx(full, out)
-		else if (entry.name.endsWith('.mdx'))
-			out.push(full)
-	}
-	return out
+function collectMdx(dir) {
+	return walkFiles(dir, { ext: '.mdx' })
 }
 
 /** 从 `tabs={[…]}` 里数出顶层元素个数；数不出（变量引用）返回 null */

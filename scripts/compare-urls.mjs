@@ -7,42 +7,30 @@
  * ⚠️ 依赖未入库的 `baseline/`（见 CLAUDE.md「冻结基线」）。**基线不在时它自我
  * 跳过、退出 0** —— 在 CI 里今天提供的是零覆盖，别把接线当成已有覆盖。
  *
- * 路径全部从 `import.meta.url` 解析（不跟进程 CWD），并用 path.sep 归一。
+ * 路径全部从共享的 REPO_ROOT 解析（不跟进程 CWD，见 scripts/lib/paths.mjs 文件头），
+ * 并用 path.sep 归一。
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join, sep as pathSep, relative } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { DIST, REPO_ROOT, toRoute } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
-const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const BASE = join(ROOT, 'baseline', 'nuxt', 'urls.txt')
-const DIST = join(ROOT, 'dist')
+const BASE = join(REPO_ROOT, 'baseline', 'nuxt', 'urls.txt')
 
 /** 排除名单，逐字沿用 .ps1。两侧目前都是空的。 */
 const excludeFromBaseline = []
 const excludeFromAstro = []
 
 /**
- * 去掉尾斜杠，但**不要**让站点根塌成空串：'' 会被下面的空值过滤丢掉，
- * 首页就静默从比对里消失了。
+ * 去掉尾斜杠，但**不要**让站点根塌成空串。
+ *
+ * 收敛到 `toRoute`：本地这份实现语义最严谨（`''` / `'/'` 都归 `'/'`），是三份
+ * 重复实现里的**判据来源**。塌成空串会被下面的空值过滤吃掉，于是首页静默从比对里
+ * 消失——那正是「两边都少一条」仍然能通过的形态，所以这个分支必须保留在共享实现里，
+ * 不能简化成 `p.replace(/\/+$/, '')`。
  */
-function normalizeUrl(raw) {
-	const t = raw.trim()
-	if (t === '' || t === '/')
-		return '/'
-	return t.replace(/\/+$/, '')
-}
-
-function walk(dir, out = []) {
-	for (const name of readdirSync(dir)) {
-		const p = join(dir, name)
-		if (statSync(p).isDirectory())
-			walk(p, out)
-		else
-			out.push(p)
-	}
-	return out
-}
+const normalizeUrl = toRoute
 
 let baseline
 try {
@@ -55,7 +43,7 @@ catch {
 	//
 	// 这一行必须以 SKIP 开头：accept.mjs 靠它把「没跑」和「跑过且通过」分开计数。
 	// 写 FAIL 会让这道门禁在 CI 上被当成通过——而它其实什么都没测。
-	console.error(`SKIP: 基线缺失 ${relative(ROOT, BASE)}`)
+	console.error(`SKIP: 基线缺失 ${relative(REPO_ROOT, BASE)}`)
 	console.error('  它是未入库的冻结产物，且已无法再冻结。干净 CI 里这道门禁不成立。')
 	process.exit(0)
 }
@@ -68,10 +56,11 @@ const baselineSet = new Set(
 )
 
 const astroSet = new Set()
-for (const file of walk(DIST)) {
-	if (!file.endsWith('.html'))
-		continue
-	const base = file.slice(DIST.length).split(sep).join('/')
+for (const file of walkFiles(DIST, { ext: '.html' })) {
+	// `slice(DIST.length)`（不是 +1）**故意**留一个前导斜杠，下面再靠
+	// `base.slice(base.lastIndexOf('/') + 1)` 把文件名摘掉，两处对消。
+	// 改成 relative() 会让 base 不带前导斜杠，多处 `.replace()` 的锚点跟着变。
+	const base = file.slice(DIST.length).split(pathSep).join('/')
 	const name = base.slice(base.lastIndexOf('/') + 1)
 	if (name === '200.html' || name === '404.html')
 		continue

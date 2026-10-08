@@ -35,14 +35,16 @@
  * 而那两页的正文确实都在 dist 里。这条门禁要回答的是「一大段散文有没有穿过整条管线」，
  * 字符连续性能回答这个问题，而不会在排版上翻车。
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { join, sep } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { REPO_ROOT } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
 // 路径从**脚本自身位置**解析，不跟进程 CWD。PS 版踩过这个坑（findings 85.6）：
 // `Resolve-Path '..\x'` 跟的是 CWD，于是从别的目录调用时会安静地扫空目录然后报 PASS。
-const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..')
+// 现收敛到共享的 REPO_ROOT，理由见 scripts/lib/paths.mjs 文件头。
+const ROOT = REPO_ROOT
 const MDX_ROOT = join(ROOT, 'src', 'content')
 const DIST = join(ROOT, 'dist')
 const BLOG_CFG = join(ROOT, 'src', 'config', 'blog.ts')
@@ -131,25 +133,31 @@ function roundHalfToEven(value, digits) {
 	return Number(`${rounded}e-${digits}`)
 }
 
-/** 递归列出 *.mdx（-Filter 在 NTFS 上大小写不敏感，所以这里也大小写不敏感）。 */
-function listMdx(dir, acc = []) {
-	let entries
+/**
+ * 递归列出 *.mdx（-Filter 在 NTFS 上大小写不敏感，所以这里也大小写不敏感）。
+ *
+ * 三处都与收敛前的实现刻意一致，任何一条都不能顺手「改进」：
+ *   - 大小写不敏感 → 用 `test` 而不是 `ext`。`ext` 虽然也大小写不敏感，但把
+ *     这条语义写死在遍历器里，调用处就看不出「.MDX 也要收」，而它在 Linux CI 上
+ *     是静默的（源里本来没有大写扩展名，门禁永远绿）。
+ *   - 按名排序 → 顺序决定 unmapped 列表的「前 10 个」，是**输出的一部分**。
+ *     比较函数逐字沿用 `localeCompare(name, 'en')`。
+ *   - 目录读不到就返回空 → 见 walkFiles 文件头第 1 条：遍历器抛，由这里决定吞不吞。
+ */
+function listMdx(dir) {
 	try {
-		entries = readdirSync(dir, { withFileTypes: true })
+		// 比较函数逐字沿用原实现：`localeCompare(b.name, 'en')` 的**显式 'en' 不能省**。
+		// `sort: true` 用的是运行机的默认 locale，在中文 Windows 上与 'en' 的
+		// 排序规则未必一致（连字符、数字与字母的相对权重会变），而顺序决定
+		// unmapped 列表的「前 10 个」，那是**输出的一部分**。
+		return walkFiles(dir, {
+			sort: (a, b) => a.name.localeCompare(b.name, 'en'),
+			test: (full, name) => name.toLowerCase().endsWith('.mdx'),
+		})
 	}
 	catch {
-		return acc
+		return []
 	}
-	// 按名排序：Get-ChildItem 也是按名遍历，顺序决定 unmapped 列表的「前 10 个」。
-	entries.sort((a, b) => a.name.localeCompare(b.name, 'en'))
-	for (const entry of entries) {
-		const full = join(dir, entry.name)
-		if (entry.isDirectory())
-			listMdx(full, acc)
-		else if (entry.isFile() && entry.name.toLowerCase().endsWith('.mdx'))
-			acc.push(full)
-	}
-	return acc
 }
 
 // 只读一个设置，而不是把 true 写死。搞错了会静默改变「哪些页面存在」，

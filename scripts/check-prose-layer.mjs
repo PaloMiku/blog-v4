@@ -22,20 +22,11 @@ import path from 'node:path'
  * 留在原文件里、并且现在仍然有价值的就是本文件这两节。
  */
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
+import { DIST } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
-const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
-const DIST = path.join(ROOT, 'dist')
-
-function walk(dir, out = []) {
-	for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-		const p = path.join(dir, e.name)
-		if (e.isDirectory())
-			walk(p, out)
-		else if (e.name.endsWith('.html'))
-			out.push(p)
-	}
-	return out
+function walkHtml(dir) {
+	return walkFiles(dir, { ext: '.html' })
 }
 
 const SAMPLE = path.join(DIST, '2025', '10', 'misskey-fediverse-deploy', 'index.html')
@@ -47,7 +38,7 @@ if (fs.existsSync(cssDir)) {
 			css += `${fs.readFileSync(path.join(cssDir, f), 'utf8')}\n`
 	}
 }
-for (const p of walk(DIST)) {
+for (const p of walkHtml(DIST)) {
 	for (const m of fs.readFileSync(p, 'utf8').matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)) css += `${m[1]}\n`
 }
 
@@ -87,7 +78,7 @@ else {
 console.log('--- 2. ProseA 的域名图标确实渲染了 ---')
 // 样例页可能一条外链都没有，所以扫全站而不是只看一个文件
 let icons = 0
-for (const p of walk(DIST)) {
+for (const p of walkHtml(DIST)) {
 	const h = fs.readFileSync(p, 'utf8').replace(/<script[\s\S]*?<\/script>/g, ' ').replace(/<style[\s\S]*?<\/style>/g, ' ')
 	icons += (h.match(/domain-icon/g) || []).length
 }

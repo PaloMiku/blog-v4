@@ -39,12 +39,13 @@
  * `dist/2025/12/x/index.html`，只 glob `dist/*.html` 会漏掉绝大多数页面
  * （§67.3 同一个教训）。
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import process from 'node:process'
+import { DIST, REPO_ROOT } from './lib/paths.mjs'
+import { walkFiles } from './lib/walk.mjs'
 
-const DIST = new URL('../dist/', import.meta.url).pathname.replace(/^\/([A-Z]:)/i, '$1')
-const REGISTRY = new URL('../src/lib/content-components.ts', import.meta.url).pathname.replace(/^\/([A-Z]:)/i, '$1')
+const REGISTRY = join(REPO_ROOT, 'src', 'lib', 'content-components.ts')
 
 /**
  * 从注册表源文件里读出组件名。
@@ -71,28 +72,6 @@ function kebab(name) {
 	return name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
 }
 
-function isDir(p) {
-	try {
-		return statSync(p).isDirectory()
-	}
-	catch {
-		return false
-	}
-}
-
-function walk(dir, test, out = []) {
-	if (!isDir(dir))
-		return out
-	for (const name of readdirSync(dir)) {
-		const full = join(dir, name)
-		if (statSync(full).isDirectory())
-			walk(full, test, out)
-		else if (test(name))
-			out.push(full)
-	}
-	return out
-}
-
 const names = registeredNames()
 /** 三种写法合到一个 alternation，整体不区分大小写 */
 const variants = new Set()
@@ -103,7 +82,16 @@ for (const n of names) {
 }
 const RX = new RegExp(`<(${[...variants].map(v => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(?=[\\s/>])`, 'gi')
 
-const files = walk(DIST, n => n.endsWith('.html'))
+// 原 walk 在目录读不到时返回空数组（isDir 吞异常），这里保留该语义：
+// 判据下一句就是 `if (!files.length) → FAIL + exit 1`，所以「读不到」与「没有 html」
+// 都会红，不会静默通过——判红由判据决定，不由遍历器决定。
+let files = []
+try {
+	files = walkFiles(DIST, { ext: '.html' })
+}
+catch {
+	files = []
+}
 if (!files.length) {
 	console.error('FAIL  dist 下没有 .html，先跑 pnpm build')
 	process.exit(1)
