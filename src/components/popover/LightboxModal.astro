@@ -33,8 +33,8 @@ const DURATION = 200
  * 约定：SSR 期不输出该属性，客户端脚本用 `toggleAttribute` 加/删。
  * CSS 侧另加 `:not([data-show="false"])` 兜底。
  */}
-<div class="lightbox-modal" data-modal="lightbox" aria-hidden="true">
-	<button class="lightbox-close" type="button" data-modal-close aria-label="关闭">
+<div class="lightbox-modal" data-modal="lightbox" role="dialog" aria-modal="true" aria-hidden="true" tabindex="-1">
+	<button class="lightbox-close" type="button" data-modal-close data-modal-autofocus aria-label="关闭">
 		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
 			<path d="M18 6 6 18M6 6l12 12" />
 		</svg>
@@ -65,6 +65,11 @@ const DURATION = 200
 			const img = e.target.closest?.('img[data-zoom]')
 			if (!img)
 				return
+			// openModal 用 document.activeElement 记「关闭后焦点归还给谁」，
+			// 而 <img> 本身不可聚焦（程序化点击也不改变焦点）——不先把焦点放上
+			// 触发器，Esc/关闭后焦点会落回 body，modal 的焦点契约断在这一环。
+			img.tabIndex = -1
+			img.focus({ preventScroll: true })
 			const { openModal } = await import('../../lib/modal')
 			openModal({
 				key: 'lightbox',

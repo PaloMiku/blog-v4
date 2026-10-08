@@ -11,7 +11,8 @@
  *   B. 计算样式指纹（10 个属性，按 标签名+class+状态 归并）交互前后不变
  *   C. 选中项对勾的渲染盒子跨步骤稳定
  *   D. dropdown 的展开态计数按步骤在 1/0 之间来回翻（/archive/ 那一组）
- *   E. 文章页无障碍语义（BlogAside 的 aria-hidden 在桌面/窄屏两个视口下的取值）
+ *   E. 文章页无障碍语义（BlogAside 的 aria-hidden 双视口取值；灯箱的
+ *      dialog 语义与「打开进模态 → Esc 归还触发器」整条焦点链）
  *
  * 比计算样式、而不是去样式表反推 cid：后者试过两版都不可靠——遍历写成
  * if (r.cssRules) 会把每条规则当嵌套容器跳过（空的 CSSRuleList 也 truthy），
@@ -654,7 +655,48 @@ const e1Narrow = await evaluate(`(() => {
 if (e1Narrow !== true)
 	failures.push(`[文章页 / 窄屏 800 aria-hidden] ${typeof e1Narrow === 'string' ? e1Narrow : ''}${e1Narrow?.__error || ''}`)
 
-console.log(`\n[文章页] E1 aria-hidden：桌面 1280 ${e1Desktop === true ? 'OK' : 'FAIL'}，窄屏 800 ${e1Narrow === true ? 'OK' : 'FAIL'}`)
+/*
+ * E2 —— 灯箱的对话框语义与焦点链（P0 Task 2）。
+ * 断的是整条链：点触发器 → 焦点进模态 → Esc → 焦点归还触发器。
+ * 只验「打开后」不够：modal 契约的另一半在关闭归还（lib/modal.ts restoreFocus），
+ * 丢任何一半都是缺陷（Review Focus 2）。
+ * 自证：没有灯箱根元素、没有 img[data-zoom]、点击后不出现，都判 FAIL。
+ */
+await setViewport(1280)
+await sleep(300)
+const e2 = await evaluate(`(async () => {
+  const lb = document.querySelector('[data-modal="lightbox"]')
+  if (!lb) return '文章页上没有 [data-modal="lightbox"] —— E2 断言没接到东西'
+  const trigger = document.querySelector('img[data-zoom]')
+  if (!trigger) return '文章页上没有 img[data-zoom] 灯箱触发器 —— E2 断言没接到东西'
+  trigger.scrollIntoView({ block: 'center' })
+  trigger.click()
+  // 点击委托是 async（内部动态 import lib/modal），data-show 不会同步出现
+  for (let i = 0; i < 30 && !lb.hasAttribute('data-show'); i++)
+    await new Promise(r => setTimeout(r, 100))
+  if (!lb.hasAttribute('data-show')) return '点击 img[data-zoom] 后 3s 内灯箱没有出现（根元素始终缺 data-show）'
+  const bad = []
+  if (lb.getAttribute('role') !== 'dialog')
+    bad.push('[data-modal="lightbox"] 根元素 role 是 ' + JSON.stringify(lb.getAttribute('role')) + '，应为 "dialog"')
+  if (lb.getAttribute('aria-modal') !== 'true')
+    bad.push('[data-modal="lightbox"] 根元素缺 aria-modal="true"')
+  if (!lb.contains(document.activeElement))
+    bad.push('打开灯箱后焦点仍在模态外（activeElement=<' + ((document.activeElement || {}).tagName || 'null') + '>，触发器是 <' + trigger.tagName + '>）')
+  if (bad.length) return { bad }
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+  // closeModal 有 200ms 退场时长，出栈后才 restoreFocus；600ms 富余
+  await new Promise(r => setTimeout(r, 600))
+  if (document.activeElement !== trigger)
+    bad.push('Esc 关闭灯箱后焦点没有归还触发器（activeElement=<' + ((document.activeElement || {}).tagName || 'null') + '>）')
+  return bad.length ? { bad } : true
+})()`)
+const e2Bad = typeof e2 === 'string' || e2?.__error
+	? [String(e2?.__error || e2)]
+	: Array.isArray(e2?.bad) ? e2.bad : []
+for (const b of e2Bad)
+	failures.push(`[文章页 / 灯箱 dialog 与焦点] ${b}`)
+
+console.log(`\n[文章页] E1 aria-hidden：桌面 1280 ${e1Desktop === true ? 'OK' : 'FAIL'}，窄屏 800 ${e1Narrow === true ? 'OK' : 'FAIL'}；E2 灯箱链：${e2Bad.length ? `FAIL（${e2Bad.length} 条）` : 'OK'}`)
 
 killTree(chrome)
 killTree(preview)
