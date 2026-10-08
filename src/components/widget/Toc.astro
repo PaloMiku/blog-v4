@@ -85,11 +85,6 @@ function buildTocTree(flat: TocHeading[]): TocLink[] {
 
 const links = buildTocTree(headings)
 
-/** 判断某节点自身或其子树是否包含当前高亮标题 */
-function hasHeading(node: TocLink, heading: string): boolean {
-	return node.id === heading || !!node.children?.some(child => hasHeading(child, heading))
-}
-
 /** 等价于 Nuxt 侧 `tocOffsets.length`（flattenToc 后的条目数 = 标题总数） */
 const headingCount = headings.length
 
@@ -180,14 +175,6 @@ const tocHtml = links.length ? renderToc(links) : ''
 			}
 		}
 
-		function sync(activeId) {
-			for (const li of items) {
-				li.classList.toggle('active', li.dataset.tocId === activeId)
-				li.classList.toggle('has-active', hasHeading(li, activeId))
-			}
-		}
-
-		// 与 frontmatter 里的 hasHeading 保持一致（两处不能互相 import）
 		function sync(activeId) {
 			for (const li of items) {
 				li.classList.toggle('active', li.dataset.tocId === activeId)
