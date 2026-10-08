@@ -24,6 +24,11 @@
  * 3. 首位不是裸数字（是数字就必须写成 `_1` 这种）
  * 4. 幂等：再过一次后处理不变（保证重复 build 不会让 id 漂移）
  *
+ * 外加两条独立数据通路的核对：目录链接指向的 id 必须存在（旧有），
+ * 以及**第五判据**——`dist/search-index.json` 的每个片段锚点必须 ∈
+ * 对应页面产物的标题 id 集合（搜索索引自己跑 slugger，与 DOM 那套不同步
+ * 就会「点搜索结果跳到不存在的片段」；全量核对，见下方判据处的说明）。
+ *
  * **为什么值得单开一道门禁**：页高与计算样式两道门禁都**看不见**它——
  * `<a href="#…">` 指向一个不存在的 id，盒子尺寸一点不变。
  * 它是本轮新增的语义签名探针（`live:ui-parity`）抓出来的，
@@ -40,8 +45,8 @@
  * `/` 落在 `dist/index.html`。只 glob `dist/*.html` 会漏掉绝大多数页面
  * （这是 §67.3 同一个教训的形态）。
  */
-import { readFileSync } from 'node:fs'
-import { relative } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import process from 'node:process'
 import { DIST } from './lib/paths.mjs'
 import { walkFiles } from './lib/walk.mjs'
@@ -146,6 +151,49 @@ for (const file of files) {
 }
 
 const headings = files.reduce((n, f) => n + headingIds(readFileSync(f, 'utf8')).length, 0)
+
+/*
+ * 第五判据：dist/search-index.json 的每个片段锚点必须 ∈ 对应页面产物里的标题 id 集合。
+ *
+ * 搜索索引由 `src/pages/search-index.json.ts` 独立跑一遍 github-slugger（数据通路
+ * 与 `src/plugins/heading-ids.ts` 写进 DOM 的 id 完全分离），两边算法不同步时
+ * 坏的是「点搜索结果跳到不存在的片段」——页高、样式门禁都看不见它。
+ * 全量核对，不抽样（这是回归面最大的一条通路）。
+ *
+ * 自证：json 缺失、锚点总数为 0、url 定位不到产物 HTML，都判 FAIL。
+ */
+const idxFile = join(DIST, 'search-index.json')
+const idxProblems = []
+let idxAnchors = 0
+if (!existsSync(idxFile)) {
+	idxProblems.push('dist/search-index.json 不存在 —— 无法核对搜索锚点，先跑 pnpm build')
+}
+else {
+	const sections = JSON.parse(readFileSync(idxFile, 'utf8'))
+	const idsOfPage = new Map()
+	for (const sec of sections) {
+		const hashAt = sec.id.indexOf('#')
+		if (hashAt === -1)
+			continue
+		const urlPath = sec.id.slice(0, hashAt) || '/'
+		const anchor = decodeURIComponent(sec.id.slice(hashAt + 1))
+		// build.format=directory：/x → dist/x/index.html，站点根 → dist/index.html
+		const rel = urlPath === '/'
+			? 'index.html'
+			: `${urlPath.replace(/^\/+/, '').replace(/\/+$/, '')}/index.html`
+		const file = join(DIST, rel)
+		if (!idsOfPage.has(file))
+			idsOfPage.set(file, existsSync(file) ? new Set(headingIds(readFileSync(file, 'utf8')).map(h => h.id).filter(Boolean)) : null)
+		idxAnchors++
+		const ids = idsOfPage.get(file)
+		if (ids === null)
+			idxProblems.push(`${sec.id} → 定位不到产物 HTML（dist/${rel}）`)
+		else if (!ids.has(anchor))
+			idxProblems.push(`${sec.id} → #${anchor} 不在页面标题 id 集合里${ids.has(nuxtHeadingId(anchor)) ? `（补 nuxtHeadingId 后处理即存在：#${nuxtHeadingId(anchor)}）` : ''}`)
+	}
+	if (idxAnchors === 0)
+		idxProblems.push('search-index.json 里锚点总数为 0 —— 断言没接到东西，不能算通过')
+}
 // 无 id 的这些是**布局壳**里的标题，不是 markdown 内容标题：
 //   h1.post-title（文章头）、h3.title（侧栏文章列表）、h3.text-creative（评论区）
 //   ——全都在 .astro 模板里写死，Nuxt 侧同样没有 id。
@@ -160,8 +208,8 @@ const headings = files.reduce((n, f) => n + headingIds(readFileSync(f, 'utf8')).
 // 少一个组件就是少 67 个标题，数字掉下去未必是缺陷。要判断得先看 diff。
 const missingNote = missingId ? `，另有 ${missingId} 个布局壳标题没有 id（不判红，见本行上方注释）` : ''
 
-if (!problems.length) {
-	console.log(`OK: 标题锚点 id —— ${files.length} 个 HTML / ${headings} 个标题，全部符合 Nuxt 的 github-slugger + 三步后处理${missingNote}`)
+if (!problems.length && !idxProblems.length) {
+	console.log(`OK: 标题锚点 id —— ${files.length} 个 HTML / ${headings} 个标题，全部符合 Nuxt 的 github-slugger + 三步后处理；search-index 的 ${idxAnchors} 个片段锚点全部 ∈ 对应页面标题 id 集合${missingNote}`)
 	process.exit(0)
 }
 
@@ -169,5 +217,7 @@ for (const [rel, list] of problems) {
 	console.error(`FAIL  ${rel}`)
 	for (const b of list) console.error(`        ${b}`)
 }
-console.error(`\nFAIL: ${problems.length}/${files.length} 个 HTML 有标题锚点问题`)
+for (const b of idxProblems)
+	console.error(`FAIL  search-index  ${b}`)
+console.error(`\nFAIL: ${problems.length}/${files.length} 个 HTML 有标题锚点问题，另有 ${idxProblems.length} 条搜索索引锚点问题`)
 process.exit(1)

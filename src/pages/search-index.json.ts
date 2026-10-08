@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro'
 import { getCollection } from 'astro:content'
 import GithubSlugger from 'github-slugger'
+import { nuxtHeadingId } from '../lib/slug'
 
 /**
  * 搜索索引（构建期静态 JSON），对应 Nuxt 侧的
@@ -175,8 +176,11 @@ function splitSections(body: string, path: string, docTitle: string): SearchSect
 			const depth = heading[1].length
 			// 收尾井号（`## 标题 ##`）在这里剥，正则里不做以免歧义量词
 			const text = toPlainText(heading[2].replace(/[ \t]*(?:#+[ \t]*)?$/, ''))
-			// slugger 必须按文档顺序消费每一个标题，才能与 Astro 生成的 id 一致
-			const anchor = slugger.slug(text)
+			// slugger 必须按文档顺序消费每一个标题，才能与 Astro 生成的 id 一致。
+			// 再过一次 nuxtHeadingId 后处理：DOM 侧（plugins/heading-ids.ts）是
+			// slug + 三步后处理，少这一步时 `#123-…`、`a--b` 这类标题的搜索结果
+			// 锚点会指向不存在的片段（由 check-heading-ids 第五判据钉住）。
+			const anchor = nuxtHeadingId(slugger.slug(text))
 
 			ensureFirstSection()
 			headingStack.length = depth - 1
