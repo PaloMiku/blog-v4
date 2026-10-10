@@ -32,10 +32,10 @@ const {
 	bindBigPictureGlobals,
 	enterBigPicture,
 	exitBigPicture,
-	getBigPictureMode,
+	getBigPictureState,
 	isAutoEntrySuppressed,
 	setAutoEntrySuppressed,
-	setBigPictureMode,
+	setBigPictureState,
 	subscribeBigPicture,
 } = bigPictureState
 
@@ -121,7 +121,7 @@ beforeEach(() => {
 	sessionStorage.clear()
 	documentDouble.reset()
 	setAutoEntrySuppressed(false)
-	setBigPictureMode('inactive')
+	setBigPictureState('inactive')
 	layoutState.closeLayout()
 })
 
@@ -163,7 +163,7 @@ describe('会话模式读写', () => {
 	})
 })
 
-describe('存储抛错时降级到内存，页面不崩', () => {
+describe('存储不可用时降级到内存（抛错 / 为 null），页面不崩', () => {
 	it('读取不抛，且模式回落到 inactive', () => {
 		const storage = createThrowingStorage()
 
@@ -202,6 +202,21 @@ describe('存储抛错时降级到内存，页面不崩', () => {
 		consumeNavigationSource(storage, '/x')
 
 		assert.deepEqual(storage.calls, { get: 0, set: 1, remove: 0 })
+	})
+
+	it('storage 为 null 时五个公开入口全部存活（WeakMap 拿非对象当键会抛 TypeError）', () => {
+		assert.equal(readSessionMode(null), 'inactive')
+		assert.equal(readAutoEntrySuppressed(null), false)
+		assert.equal(consumeNavigationSource(null, '/b'), null)
+
+		assert.doesNotThrow(() => writeSessionMode(null, true))
+		assert.doesNotThrow(() => writeAutoEntrySuppressed(null, true))
+		assert.doesNotThrow(() => recordNavigationSource(null, { path: '/a', key: 'k', page: 'home' }))
+
+		// 共享同一个兜底，所以这些读写在本次运行内自洽（与「压根没存储」可分辨）
+		assert.equal(readSessionMode(null), 'active')
+		assert.equal(readAutoEntrySuppressed(null), true)
+		assert.equal(consumeNavigationSource(null, '/b')?.path, '/a')
 	})
 })
 
@@ -247,14 +262,22 @@ describe('导航来源记录', () => {
 		})
 	})
 
-	it('站外来源根本不写入（读端也再验一次，两头都不放行）', () => {
-		for (const path of ['https://evil.example/a', '//evil.example/a', '/\\evil.example/a', 'posts/a'])
-			recordNavigationSource(createStorage(), { path }, 1000)
-		assert.equal(createStorage().peek(SOURCE_KEY), null)
+	it('站外来源根本不写入（每个 storage 各自断言，不借读端共用逻辑）', () => {
+		for (const path of ['https://evil.example/a', '//evil.example/a', '/\\evil.example/a', 'posts/a']) {
+			const storage = createStorage()
+			recordNavigationSource(storage, { path }, 1000)
 
-		const storage = createStorage()
-		recordNavigationSource(storage, { path: 'https://evil.example/a' }, 1000)
-		assert.equal(storage.peek(SOURCE_KEY), null, '站外路径不得落到存储里')
+			assert.equal(storage.peek(SOURCE_KEY), null, path)
+		}
+	})
+
+	it('path 不合型时早退而不抛（下游是内联点击处理器）', () => {
+		for (const source of [{ path: 42 }, { path: null }, {}, null, undefined]) {
+			const storage = createStorage()
+
+			assert.doesNotThrow(() => recordNavigationSource(storage, source, 1000))
+			assert.equal(storage.peek(SOURCE_KEY), null, JSON.stringify(source))
+		}
 	})
 
 	it('坏 JSON 不抛，按没有来源处理并清掉这条记录', () => {
@@ -267,12 +290,16 @@ describe('导航来源记录', () => {
 		}
 	})
 
-	it('字段不合型一律判废：缺 path、缺 timestamp、timestamp 非有限', () => {
+	it('字段不合型一律判废：缺 path、timestamp 缺失/非有限/非正', () => {
 		const cases = [
 			{ key: 'k', page: 'home', timestamp: 1000 },
 			{ path: '/a', timestamp: '1000' },
 			{ path: '/a', timestamp: Number.NaN },
 			{ path: '/a', timestamp: Number.POSITIVE_INFINITY },
+			// 0 与负数是「没有时间」的写法：放行会让一条永远算不出年龄的记录
+			// 变成永久有效的返回来源
+			{ path: '/a', timestamp: 0 },
+			{ path: '/a', timestamp: -1 },
 		]
 
 		for (const payload of cases) {
@@ -311,11 +338,17 @@ describe('导航来源记录', () => {
 		}
 	})
 
-	it('不同标签页互不可见（各自的 sessionStorage）', () => {
+	it('记录只落在传入的 storage 上（模块内不留跨标签页的隐藏状态）', () => {
+		const tab = createStorage()
 		const otherTab = createStorage()
-		recordNavigationSource(otherTab, { path: '/a', key: 'k', page: 'home' }, 1000)
 
-		assert.equal(consumeNavigationSource(createStorage(), '/b', 1000), null)
+		recordNavigationSource(tab, { path: '/a', key: 'k', page: 'home' }, 1000)
+
+		assert.notEqual(tab.peek(SOURCE_KEY), null, '写进传入的 storage')
+		assert.equal(otherTab.peek(SOURCE_KEY), null, '写入不得外溢到别的 storage')
+		assert.equal(consumeNavigationSource(otherTab, '/b', 1000), null)
+		// 别的标签页的消费动不了这一份：若模块内藏着单例存储，这里会是 null
+		assert.equal(consumeNavigationSource(tab, '/b', 1000)?.path, '/a')
 	})
 })
 
@@ -325,13 +358,13 @@ describe('模式状态单例', () => {
 		const unsubscribe = subscribeBigPicture(mode => seen.push(mode))
 
 		try {
-			assert.deepEqual(seen, [getBigPictureMode()])
+			assert.deepEqual(seen, [getBigPictureState()])
 
-			setBigPictureMode('active')
+			setBigPictureState('active')
 			assert.deepEqual(seen, ['inactive', 'active'])
 
 			// 同值赋值不通知：只有真实变化才 emit
-			setBigPictureMode('active')
+			setBigPictureState('active')
 			assert.deepEqual(seen, ['inactive', 'active'])
 		}
 		finally {
@@ -344,16 +377,16 @@ describe('模式状态单例', () => {
 		const unsubscribe = subscribeBigPicture(mode => seen.push(mode))
 		unsubscribe()
 
-		setBigPictureMode('active')
+		setBigPictureState('active')
 
 		assert.deepEqual(seen, ['inactive'])
-		assert.equal(getBigPictureMode(), 'active')
+		assert.equal(getBigPictureState(), 'active')
 	})
 
 	it('进入写入根属性与会话', () => {
 		enterBigPicture('manual')
 
-		assert.equal(getBigPictureMode(), 'active')
+		assert.equal(getBigPictureState(), 'active')
 		assert.equal(documentDouble.documentElement.dataset.bigPicture, 'active')
 		assert.equal(sessionStorage.peek(SESSION_KEY), 'active')
 	})
@@ -362,7 +395,7 @@ describe('模式状态单例', () => {
 		enterBigPicture('manual')
 		exitBigPicture('auto')
 
-		assert.equal(getBigPictureMode(), 'inactive')
+		assert.equal(getBigPictureState(), 'inactive')
 		assert.equal('bigPicture' in documentDouble.documentElement.dataset, false)
 		assert.equal(sessionStorage.peek(SESSION_KEY), 'inactive')
 	})
@@ -379,12 +412,36 @@ describe('模式状态单例', () => {
 		assert.equal(sessionStorage.peek(AUTO_ENTRY_SUPPRESSED_KEY), 'true')
 	})
 
+	it('非手动退出不动已经为真的抑制（不碰用户已经做过的选择）', () => {
+		setAutoEntrySuppressed(true)
+
+		enterBigPicture('manual')
+		exitBigPicture('auto')
+
+		assert.equal(isAutoEntrySuppressed(), true)
+		assert.equal(sessionStorage.peek(AUTO_ENTRY_SUPPRESSED_KEY), 'true')
+	})
+
+	it('模式本来就是 inactive 时退出仍写回 inactive（陈旧的 active 不得复活模式）', () => {
+		// `beforeEach` 已把模式复位成 inactive，这里只往会话里塞一条陈旧记录，
+		// 模拟「上一次进过模式、之后由别的路径退出」留下的痕迹
+		sessionStorage.setItem(SESSION_KEY, 'active')
+
+		exitBigPicture('auto')
+		assert.equal(sessionStorage.peek(SESSION_KEY), 'inactive')
+
+		// 抑制解除后重新加载，那条陈旧记录也拉不回模式
+		setAutoEntrySuppressed(false)
+		documentDouble.dispatch('astro:page-load')
+		assert.equal(getBigPictureState(), 'inactive')
+	})
+
 	it('抑制生效时自动进入被拒绝', () => {
 		setAutoEntrySuppressed(true)
 
 		enterBigPicture('auto')
 
-		assert.equal(getBigPictureMode(), 'inactive')
+		assert.equal(getBigPictureState(), 'inactive')
 		assert.equal('bigPicture' in documentDouble.documentElement.dataset, false)
 	})
 
@@ -393,7 +450,7 @@ describe('模式状态单例', () => {
 
 		enterBigPicture('manual')
 
-		assert.equal(getBigPictureMode(), 'active')
+		assert.equal(getBigPictureState(), 'active')
 	})
 
 	it('进入不解除抑制：解除是设置面板开关的事，不是进入的副作用', () => {
@@ -407,18 +464,18 @@ describe('模式状态单例', () => {
 	it('模式与抽屉状态互不覆盖', () => {
 		enterBigPicture('manual')
 		layoutState.setLayoutState('sidebar')
-		assert.equal(getBigPictureMode(), 'active')
+		assert.equal(getBigPictureState(), 'active')
 		assert.equal(documentDouble.documentElement.dataset.bigPicture, 'active')
 
 		layoutState.toggleLayout('search')
 		assert.equal(layoutState.isLayoutOpen('search'), true)
 		assert.equal(layoutState.getLayoutState(), 'search')
-		assert.equal(getBigPictureMode(), 'active')
+		assert.equal(getBigPictureState(), 'active')
 
 		layoutState.closeLayout()
 		assert.equal(layoutState.getLayoutState(), 'none')
 		assert.equal(layoutState.isLayoutOpen('search'), false)
-		assert.equal(getBigPictureMode(), 'active')
+		assert.equal(getBigPictureState(), 'active')
 	})
 
 	it('sessionStorage 抛错时进入与退出仍可用（页面不崩）', () => {
@@ -427,11 +484,11 @@ describe('模式状态单例', () => {
 
 		try {
 			enterBigPicture('manual')
-			assert.equal(getBigPictureMode(), 'active')
+			assert.equal(getBigPictureState(), 'active')
 			assert.equal(documentDouble.documentElement.dataset.bigPicture, 'active')
 
 			exitBigPicture('manual')
-			assert.equal(getBigPictureMode(), 'inactive')
+			assert.equal(getBigPictureState(), 'inactive')
 			assert.equal(isAutoEntrySuppressed(), true)
 		}
 		finally {
@@ -445,10 +502,10 @@ describe('模式状态单例', () => {
 
 		try {
 			enterBigPicture('manual')
-			assert.equal(getBigPictureMode(), 'active')
+			assert.equal(getBigPictureState(), 'active')
 
 			exitBigPicture('manual')
-			assert.equal(getBigPictureMode(), 'inactive')
+			assert.equal(getBigPictureState(), 'inactive')
 		}
 		finally {
 			globalThis.document = original
@@ -471,7 +528,7 @@ describe('astro 页面生命周期', () => {
 
 		documentDouble.dispatch('astro:page-load')
 
-		assert.equal(getBigPictureMode(), 'active')
+		assert.equal(getBigPictureState(), 'active')
 		assert.equal(documentDouble.documentElement.dataset.bigPicture, 'active')
 	})
 
@@ -481,7 +538,19 @@ describe('astro 页面生命周期', () => {
 
 		documentDouble.dispatch('astro:page-load')
 
-		assert.equal(getBigPictureMode(), 'inactive')
+		assert.equal(getBigPictureState(), 'inactive')
+		assert.equal('bigPicture' in documentDouble.documentElement.dataset, false)
+	})
+
+	it('会话里的外来状态不会变成第三种模式（设备状态不得写进模式键）', () => {
+		// 连接/提示一类状态若被写进模式键，恢复路径只能把它读成 inactive，
+		// 而不是把它认作一个模式；否则「手柄断开」就会顺手改掉模式
+		for (const foreign of ['connected', 'disconnected', 'prompted', 'true', '1'])
+			sessionStorage.setItem(SESSION_KEY, foreign)
+
+		documentDouble.dispatch('astro:page-load')
+
+		assert.equal(getBigPictureState(), 'inactive')
 		assert.equal('bigPicture' in documentDouble.documentElement.dataset, false)
 	})
 
@@ -490,7 +559,7 @@ describe('astro 页面生命周期', () => {
 
 		documentDouble.dispatch('astro:before-swap')
 
-		assert.equal(getBigPictureMode(), 'active')
+		assert.equal(getBigPictureState(), 'active')
 		assert.equal(sessionStorage.peek(SESSION_KEY), 'active')
 		assert.equal(sessionStorage.peek(AUTO_ENTRY_SUPPRESSED_KEY), 'false')
 		assert.equal(isAutoEntrySuppressed(), false)
@@ -501,7 +570,7 @@ describe('astro 页面生命周期', () => {
 
 		documentDouble.dispatch('click', clickOn('[data-big-picture-exit]'))
 
-		assert.equal(getBigPictureMode(), 'inactive')
+		assert.equal(getBigPictureState(), 'inactive')
 		assert.equal(isAutoEntrySuppressed(), true)
 	})
 
@@ -511,24 +580,22 @@ describe('astro 页面生命周期', () => {
 		documentDouble.dispatch('click', clickOn('[data-big-picture-exit]', false))
 		documentDouble.dispatch('click', clickOn('[data-theme-set]'))
 
-		assert.equal(getBigPictureMode(), 'active')
+		assert.equal(getBigPictureState(), 'active')
 		assert.equal(isAutoEntrySuppressed(), false)
 	})
 })
 
-describe('不该存在的导出', () => {
+describe('不该外泄的东西', () => {
 	it('两个模块都不导出可变的订阅者集合', () => {
 		assert.equal('subscribers' in bigPictureState, false)
 		assert.equal('subscribers' in layoutState, false)
 	})
 
-	it('模式联合里没有设备连接状态（断开不得改模式）', () => {
-		const values = new Set()
-		for (const source of [sessionStorage, createStorage()]) {
-			values.add(readSessionMode(source))
-			writeSessionMode(source, true)
-			values.add(readSessionMode(source))
-		}
-		assert.deepEqual([...values].sort(), ['active', 'inactive'])
+	it('模式访问器只有一个拼写（规格的 getBigPictureState / setBigPictureState）', () => {
+		// 两个名字指一件事就是 CLAUDE.md 说的第二份真相，所以不留别名
+		assert.equal(typeof bigPictureState.getBigPictureState, 'function')
+		assert.equal(typeof bigPictureState.setBigPictureState, 'function')
+		assert.equal('getBigPictureMode' in bigPictureState, false)
+		assert.equal('setBigPictureMode' in bigPictureState, false)
 	})
 })

@@ -17,6 +17,8 @@
  * 存储访问都走 `guarded()`：首次抛错即把该 storage 判为不可用并转入进程内内存，
  * 之后不再反复试错（一个每次点击都抛一次的 storage 会把日志与耗时一起放大）。
  * 内存兜底只保证**本次标签页内**的往返一致，刷新即失效——这正是可接受的降级。
+ * 「压根没有 storage 对象」（传进来的就是 `null`）走同一条降级：它和抛错的 storage
+ * 在结果上没区别，都是这一标签页只剩内存，所以共用一个兜底而不是各自造一个。
  *
  * ## 键名
  * 沿用 `lib/admin.ts` 的 `blog-<域>:<语义>` 前缀，便于在同一份站点数据里辨认来源。
@@ -57,7 +59,21 @@ interface StorageFallback {
 
 const fallbacks = new WeakMap<StorageLike, StorageFallback>()
 
-function fallbackOf(storage: StorageLike): StorageFallback {
+/** 压根没拿到 storage 时用的共享兜底。`broken` 直接为真：没有对象可试错 */
+let missingStorage: StorageFallback | null = null
+
+/**
+ * 取（必要时建立）某个 storage 的兜底状态。
+ *
+ * `null` / `undefined` 也走这里：`WeakMap` 的键必须是对象，喂 `null` 会抛
+ * `Invalid value used as weak map key`，而「拿不到存储」恰恰是本模块声明要扛住的
+ * 情形之一——调用方给不出 storage 时应当得到降级，不是 TypeError。
+ */
+function fallbackOf(storage: StorageLike | null): StorageFallback {
+	if (typeof storage !== 'object' || storage === null) {
+		missingStorage ??= { broken: true, data: new Map() }
+		return missingStorage
+	}
 	let entry = fallbacks.get(storage)
 	if (!entry) {
 		entry = { broken: false, data: new Map() }
@@ -67,16 +83,18 @@ function fallbackOf(storage: StorageLike): StorageFallback {
 }
 
 /**
- * 包一层，保证三个方法都不抛。
+ * 包一层，保证三个方法都不抛（**包括 storage 本身为 `null`**）。
  * 读：能读真存储就读真存储；已降级或抛错则读内存。
  * 写/删：成功即止（不同时写内存，避免真存储一旦恢复又被陈旧值盖回去）；
  * 抛错则标记降级并落到内存。
  */
-function guarded(storage: StorageLike): StorageLike {
+function guarded(storage: StorageLike | null): StorageLike {
 	const entry = fallbackOf(storage)
+	// `storage &&` 是承重的那一半：storage 为 null 时 `entry` 直接就是共享兜底
+	// （`broken` 为真），下面三处永远不会去解引用一个空对象。
 	return {
 		getItem(key: string): string | null {
-			if (!entry.broken) {
+			if (storage && !entry.broken) {
 				try {
 					return storage.getItem(key)
 				}
@@ -87,7 +105,7 @@ function guarded(storage: StorageLike): StorageLike {
 			return entry.data.get(key) ?? null
 		},
 		setItem(key: string, value: string): void {
-			if (!entry.broken) {
+			if (storage && !entry.broken) {
 				try {
 					storage.setItem(key, value)
 					return
@@ -99,7 +117,7 @@ function guarded(storage: StorageLike): StorageLike {
 			entry.data.set(key, value)
 		},
 		removeItem(key: string): void {
-			if (!entry.broken) {
+			if (storage && !entry.broken) {
 				try {
 					storage.removeItem(key)
 					return
@@ -117,8 +135,10 @@ function guarded(storage: StorageLike): StorageLike {
  * 读会话模式。
  * 任何非 `'active'` 的取值（含 `null`、脏值）一律收敛成 `'inactive'`：
  * 这个联合只有两态，宁可少判也不能造出第三种模式。
+ *
+ * @param storage `null` 表示拿不到存储，走共享内存兜底
  */
-export function readSessionMode(storage: StorageLike): BigPictureMode {
+export function readSessionMode(storage: StorageLike | null): BigPictureMode {
 	return guarded(storage).getItem(SESSION_KEY) === 'active' ? 'active' : 'inactive'
 }
 
@@ -126,22 +146,29 @@ export function readSessionMode(storage: StorageLike): BigPictureMode {
  * 写会话模式。
  * 两种取值都写死而不是「false 就删键」：键的取值本身就是契约，
  * 删键会让「上一次是什么」无从判断，而下一次读本来就会把缺失当 `inactive`。
+ *
+ * @param storage `null` 表示拿不到存储，走共享内存兜底
  */
-export function writeSessionMode(storage: StorageLike, active: boolean): void {
+export function writeSessionMode(storage: StorageLike | null, active: boolean): void {
 	guarded(storage).setItem(SESSION_KEY, active ? 'active' : 'inactive')
 }
 
-/** 读「本标签页不再自动进入」标记；非 `'true'` 一律按未抑制解析 */
-export function readAutoEntrySuppressed(storage: StorageLike): boolean {
+/**
+ * 读「本标签页不再自动进入」标记；非 `'true'` 一律按未抑制解析。
+ * @param storage `null` 表示拿不到存储，走共享内存兜底
+ */
+export function readAutoEntrySuppressed(storage: StorageLike | null): boolean {
 	return guarded(storage).getItem(AUTO_ENTRY_SUPPRESSED_KEY) === 'true'
 }
 
 /**
  * 写「本标签页不再自动进入」标记。
- * 与模式同理，`false` 也落盘——设置面板把它当可读状态读回来，
+ * 与模式同理，`false` 也落盘——`isAutoEntrySuppressed()` 把它当可读状态读回来，
  * 而不是靠「键不存在」推断当前值。
+ *
+ * @param storage `null` 表示拿不到存储，走共享内存兜底
  */
-export function writeAutoEntrySuppressed(storage: StorageLike, suppressed: boolean): void {
+export function writeAutoEntrySuppressed(storage: StorageLike | null, suppressed: boolean): void {
 	guarded(storage).setItem(AUTO_ENTRY_SUPPRESSED_KEY, suppressed ? 'true' : 'false')
 }
 
@@ -206,8 +233,10 @@ function parseNavigationSource(raw: string): NavigationSource | null {
 	// 站外来源绝不返回：它可能来自 referrer 或任何第三方写入的键
 	if (typeof path !== 'string' || !isSameOriginPath(path))
 		return null
-	// 时间戳缺失就没法判过期，一律判废——宁可少一条返回，也不要拿陈旧来源导航
-	if (typeof timestamp !== 'number' || !Number.isFinite(timestamp))
+	// 时间戳缺失就没法判过期，一律判废——宁可少一条返回，也不要拿陈旧来源导航。
+	// `0` 与负数同样判废：它们是「没有时间」的写法（缺省填 0、时钟被拨回），
+	// 放行会让一条永远算不出年龄的记录变成永久有效的返回来源。
+	if (typeof timestamp !== 'number' || !Number.isFinite(timestamp) || timestamp <= 0)
 		return null
 
 	return {
@@ -223,13 +252,17 @@ function parseNavigationSource(raw: string): NavigationSource | null {
  *
  * 站外路径**根本不写**：写入端筛一次、读取端再验一次，两头都不放行。
  * `now` 是可注入的时间源，测试据此断言过期规则，生产用墙钟。
+ *
+ * @param storage `null` 表示拿不到存储，走共享内存兜底
+ * @param source 载荷不合型（含 `path` 不是字符串）一律早退而不抛：下游调用点
+ *   是「点了站内链接」的内联处理器，抛错会打断整条点击链，而这里最多只是少记一条来源
  */
 export function recordNavigationSource(
-	storage: StorageLike,
+	storage: StorageLike | null,
 	source: NavigationSourceInput,
 	now: number = Date.now(),
 ): void {
-	if (!isSameOriginPath(source.path))
+	if (typeof source?.path !== 'string' || !isSameOriginPath(source.path))
 		return
 
 	const record: NavigationSource = {
@@ -248,12 +281,12 @@ export function recordNavigationSource(
  * 更重要的是「返回来源」这个动作会把用户送走，若记录留着，同一份来源会被第二次
  * 触发（例如返回后又点一次同一处）而把用户来回弹。
  *
- * @param storage 标签页会话存储；取不到或抛错时内部降级到内存
+ * @param storage 标签页会话存储；为 `null`、取不到或抛错时内部降级到内存
  * @param currentPath 当前落地页路径。与来源同路径时没有「返回来源」的含义，判为无来源
  * @param now 可注入的时间源，缺省墙钟
  */
 export function consumeNavigationSource(
-	storage: StorageLike,
+	storage: StorageLike | null,
 	currentPath: string,
 	now: number = Date.now(),
 ): NavigationSource | null {

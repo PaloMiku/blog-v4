@@ -99,7 +99,7 @@ function applyModeAttribute(next: BigPictureMode) {
 
 /**
  * 从标签页会话恢复模式。
- * 每次换页都跑：`<html>` 是被 swap 换掉的新节点，只在 `setBigPictureMode`
+ * 每次换页都跑：`<html>` 是被 swap 换掉的新节点，只在 `setBigPictureState`
  * 里贴的属性会跟着没，所以贴属性这一步无条件重做。
  */
 function restoreFromSession() {
@@ -109,7 +109,8 @@ function restoreFromSession() {
 		enterBigPicture('restored')
 }
 
-export function getBigPictureMode(): BigPictureMode {
+/** 读当前模式。名字按规格（spec §模式与布局状态），联合类型才叫 `BigPictureMode` */
+export function getBigPictureState(): BigPictureMode {
 	return mode
 }
 
@@ -118,7 +119,7 @@ export function getBigPictureMode(): BigPictureMode {
  * 三步顺序是固定的：先让 DOM 真的变成这个模式，再写会话，最后才 emit——
  * 订阅者被叫醒时读到的根属性与会话值都已经与模式一致。
  */
-export function setBigPictureMode(next: BigPictureMode) {
+export function setBigPictureState(next: BigPictureMode) {
 	if (next === mode)
 		return
 	mode = next
@@ -135,7 +136,7 @@ export function setBigPictureMode(next: BigPictureMode) {
 export function enterBigPicture(reason: BigPictureEntryReason) {
 	if (reason !== 'manual' && isAutoEntrySuppressed())
 		return
-	setBigPictureMode('active')
+	setBigPictureState('active')
 }
 
 /**
@@ -145,7 +146,11 @@ export function enterBigPicture(reason: BigPictureEntryReason) {
 export function exitBigPicture(reason: BigPictureExitReason) {
 	if (reason === 'manual')
 		setAutoEntrySuppressed(true)
-	setBigPictureMode('inactive')
+	setBigPictureState('inactive')
+	// 会话模式**无条件**再写一遍，不靠 `setBigPictureState` 顺带写：
+	// 模式本来就是 inactive 时它是彻底的 no-op，而会话里可能还留着上一次进模式
+	// 时写下的 `'active'`。那条陈旧记录会在抑制后来被解除时把模式凭空复活。
+	writeSessionMode(getSessionStorage(), false)
 }
 
 /**
@@ -163,12 +168,26 @@ export function subscribeBigPicture(fn: (mode: BigPictureMode) => void): () => v
 	}
 }
 
-/** 设置「本标签页不再自动进入」。设置面板改开关时用，不经过 `exitBigPicture` */
+/**
+ * 写**手动退出的副作用**：本标签页内不再自动进入大屏模式（`sessionStorage`）。
+ *
+ * ⚠️ 它**不是**设置面板里「首次按键自动进入」那个开关。规格把两者写成两件事：
+ * - 本标志：手动退出时随 `exitBigPicture('manual')` 一起写，作用域是**本标签页**，
+ *   关掉标签页即结束；手动进入、恢复会话这两条路径都会看它。
+ * - 设置面板的开关：用户可主动开/关、跨会话保留、落在 `localStorage`，默认开启。
+ *   调用方若从面板调本函数，会把用户「我不想自动进」的意图整个抹掉。
+ *
+ * 因此下游只应通过 `exitBigPicture('manual')` 与 `enterBigPicture` 的抑制闸间接触碰它；
+ * 设置面板的开关由 Task 5 自带存储实现，不走这里。
+ */
 export function setAutoEntrySuppressed(suppressed: boolean) {
 	writeAutoEntrySuppressed(getSessionStorage(), suppressed)
 }
 
-/** 读抑制标记。自动进入路径先问它 */
+/**
+ * 读「本标签页不再自动进入」标记。自动进入路径先问它。
+ * 与 `setAutoEntrySuppressed` 同一条标志：手动退出的副作用，不是设置面板的开关。
+ */
 export function isAutoEntrySuppressed(): boolean {
 	return readAutoEntrySuppressed(getSessionStorage())
 }

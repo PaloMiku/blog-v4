@@ -70,9 +70,11 @@ export function getLayoutState(): LayoutState {
 }
 
 /**
- * 某个抽屉是否开着。`state` 为 `'none'` 时任何键都为 `false`。
- * 与 `getLayoutState()` 的区别只在于把「等于某个键」这一步收在这里，
- * 让调用方不必自己比较，也不会把互斥枚举当成一组独立开关。
+ * 当前抽屉状态是否就是 `key`，等价于 `getLayoutState() === key`。
+ * `'none'` 是合法入参：传它就是问「现在是不是什么都没开」，答 `true`。
+ * 之所以不把 `'none'` 特判成恒 `false`，是因为这层不做语义解释——
+ * 「是否打开」与「是否等于」一旦分成两套规则，调用方就得记住两件事，
+ * 而互斥枚举的 `===` 是唯一不需要解释的那一条。
  */
 export function isLayoutOpen(key: LayoutState): boolean {
 	return state === key
