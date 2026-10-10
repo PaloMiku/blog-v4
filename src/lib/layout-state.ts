@@ -59,6 +59,26 @@ export function closeLayout() {
 }
 
 /**
+ * 读当前抽屉状态，**不发命令**。
+ * 存在是因为大屏模式需要「按抽屉当前形态决定焦点与滚动范围」：
+ * 侧栏开着和关着时可选目标不是同一批，没有理由为了看一眼就把状态重设一遍。
+ * 只读单个值而不导出订阅者集合，是为了不把「谁在听」变成外部可改的东西——
+ * 那会让订阅集在模块外被遍历或替换，emit 的复制遍历也就失去意义。
+ */
+export function getLayoutState(): LayoutState {
+	return state
+}
+
+/**
+ * 某个抽屉是否开着。`state` 为 `'none'` 时任何键都为 `false`。
+ * 与 `getLayoutState()` 的区别只在于把「等于某个键」这一步收在这里，
+ * 让调用方不必自己比较，也不会把互斥枚举当成一组独立开关。
+ */
+export function isLayoutOpen(key: LayoutState): boolean {
+	return state === key
+}
+
+/**
  * 订阅布局状态变化。
  * 回调会**立即以当前状态执行一次**，这样各组件不必再单独写一次初始化
  * （等价于 Vue 侧 computed 首次求值就拿到 store 初值）。
