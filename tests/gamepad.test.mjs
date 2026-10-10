@@ -10,13 +10,14 @@
 // 另外钉住纯度：穿插其它调用后结果不变（模块内没有隐藏的「上一帧」）、
 // 不改写入参（否则下游无法用状态回灌）、以及多按键同帧时的产出顺序。
 import assert from 'node:assert/strict'
-import { describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import {
 	createInputState,
 	getScrollDelta,
 	isStandardGamepad,
 	normalizeGamepadFrame,
 } from '../src/lib/gamepad-input.ts'
+import { createGamepadController } from '../src/lib/gamepad.ts'
 
 /** 造一帧：只写按下（或轴有值）的下标，其余默认 0 / false */
 function frame({ pressed = [], axes = [], timestamp = 0 } = {}) {
@@ -461,5 +462,770 @@ describe('纯度', () => {
 		assert.deepEqual([dpad.direction, dpad.source], ['left', 'd-pad'])
 		assert.deepEqual([stick.direction, stick.source], ['left', 'stick'])
 		assert.deepEqual([idle.direction, idle.source], [null, null])
+	})
+})
+
+// ---------------------------------------------------------------------------
+// EC-005：`src/lib/gamepad.ts`（浏览器生命周期）的假设备夹具。
+//
+// 上面的用例钉的是**纯映射**；这一段钉的是纯映射管不到、却最容易在真机上
+// 「差不多能用」地错掉的那部分：设备热插拔、index 被复用、页面隐藏/失焦，
+// 以及「没有东西可读时还在空跑 rAF」。这些在 CI 里插不上真手柄，于是把浏览器
+// 能力面（window 的事件与 rAF、document 的 hidden/hasFocus、getGamepads、时钟）
+// 做成 double 去驱动**真实实现**——不改生产代码里的 `typeof` 守卫，也不新加依赖。
+//
+// 两条夹具纪律：
+// - `getGamepads()` 每次返回**新的**稀疏数组。真机每次调用都是新快照，
+//   若实现靠引用相等蒙混过关，这里就抓不到它。
+// - 时钟由夹具推进，实现里的 `now()` 是注入的缝。见下方 `rig.frame()`。
+
+/** 事件监听表：只存回调，够驱动 add / remove / dispatch 与「绑定是否幂等」的计数 */
+function createListeners() {
+	const table = new Map()
+	return {
+		add(type, fn) {
+			const list = table.get(type) ?? []
+			list.push(fn)
+			table.set(type, list)
+		},
+		remove(type, fn) {
+			const list = table.get(type) ?? []
+			const at = list.indexOf(fn)
+			if (at >= 0)
+				list.splice(at, 1)
+		},
+		dispatch(type) {
+			// 复制一份再遍历：实现里的回调可能反过来摘监听
+			for (const fn of [...(table.get(type) ?? [])])
+				fn({ type })
+		},
+		count: () => [...table.values()].reduce((sum, list) => sum + list.length, 0),
+	}
+}
+
+/**
+ * 浏览器能力面 double。
+ * `pending()` 是这一段的核心断言口：控制器停摆时挂起的 rAF 必须是 0，
+ * 「不空跑 rAF」是规格里的一句硬要求，靠「跑几帧看有没有回调」是钉不死的。
+ */
+function createEnvironment({ hidden = false, focused = true } = {}) {
+	const windowListeners = createListeners()
+	const documentListeners = createListeners()
+	const frames = new Map()
+	let nextHandle = 0
+	let focusedState = focused
+	const win = {
+		addEventListener: (type, fn) => windowListeners.add(type, fn),
+		removeEventListener: (type, fn) => windowListeners.remove(type, fn),
+		requestAnimationFrame(fn) {
+			const handle = ++nextHandle
+			frames.set(handle, fn)
+			return handle
+		},
+		cancelAnimationFrame(handle) {
+			frames.delete(handle)
+		},
+	}
+	const doc = {
+		hidden,
+		hasFocus: () => focusedState,
+		addEventListener: (type, fn) => documentListeners.add(type, fn),
+		removeEventListener: (type, fn) => documentListeners.remove(type, fn),
+	}
+	return {
+		win,
+		doc,
+		pending: () => frames.size,
+		listeners: () => windowListeners.count() + documentListeners.count(),
+		/** 执行一个已排期的 rAF 回调。一帧一个回调，所以取最早排期的那个 */
+		runFrame() {
+			const entry = frames.entries().next().value
+			if (!entry)
+				return false
+			frames.delete(entry[0])
+			entry[1]()
+			return true
+		},
+		hide: () => {
+			doc.hidden = true
+			documentListeners.dispatch('visibilitychange')
+		},
+		show: () => {
+			doc.hidden = false
+			documentListeners.dispatch('visibilitychange')
+		},
+		focus: () => {
+			focusedState = true
+			windowListeners.dispatch('focus')
+		},
+		blur: () => {
+			focusedState = false
+			windowListeners.dispatch('blur')
+		},
+		connect: () => windowListeners.dispatch('gamepadconnected'),
+		disconnect: () => windowListeners.dispatch('gamepaddisconnected'),
+		leave: () => windowListeners.dispatch('pagehide'),
+		back: () => windowListeners.dispatch('pageshow'),
+	}
+}
+
+/** 标准映射设备：0–16 共 17 个按钮，与真机标准布局的按钮数一致 */
+function createDevice({ pressed = [], axes = [], mapping = 'standard', buttons = 17 } = {}) {
+	return {
+		mapping,
+		buttons: Array.from({ length: buttons }, (_, i) => ({ pressed: pressed.includes(i) })),
+		axes: [...axes],
+	}
+}
+
+/**
+ * 稀疏设备表：未连接的槽位保持 `null` 或干脆留空洞，模拟 `getGamepads()`
+ * 的空洞与 index 复用。`read()` 每次返回**新的**数组（`slice` 保留空洞），
+ * 见上面的夹具纪律——真机每次调用都是新快照。
+ */
+function createDevices(initial = []) {
+	const slots = [...initial]
+	return {
+		slots,
+		read: () => slots.slice(),
+		connect: (index, options) => {
+			slots[index] = createDevice(options)
+		},
+		disconnect: (index) => {
+			slots[index] = null
+		},
+		press: (index, pressed) => {
+			const pad = slots[index]
+			if (pad)
+				pad.buttons = Array.from({ length: pad.buttons.length }, (_, i) => ({ pressed: pressed.includes(i) }))
+		},
+		axes: (index, axes) => {
+			if (slots[index])
+				slots[index].axes = [...axes]
+		},
+	}
+}
+
+/**
+ * 已装上的浏览器能力面。
+ * 实现是从 `globalThis.window` / `globalThis.document` 上取能力的，所以夹具必须
+ * 装全局、断言也必须看**同一个**环境——各造各的会得到「控制器在跑、夹具说没跑」
+ * 这种自相矛盾的现象（第一版就踩过）。
+ */
+let installed = null
+
+/** 一整套可驱动的夹具：浏览器能力面 + 设备表 + 时钟 + 控制器 */
+function createRig(devices, overrides = {}) {
+	const environment = installed ?? createEnvironment()
+	const clock = { value: 0 }
+	const events = { actions: [], intents: [], connected: [], disconnections: 0 }
+	const modes = { active: false, autoEntryAllowed: true }
+	const controller = createGamepadController({
+		getGamepads: () => devices.read(),
+		now: () => clock.value,
+		isModeActive: () => modes.active,
+		isAutoEntryAllowed: () => modes.autoEntryAllowed,
+		onAction: (action, context) => events.actions.push({ action, context }),
+		onEntryIntent: action => events.intents.push(action),
+		onConnection: status => events.connected.push(status),
+		onDisconnection: () => events.disconnections++,
+		...overrides,
+	})
+	/** 推进一帧：先走时钟再执行 rAF 回调（实现是在回调里读 `now()`） */
+	const frame = (ms = 16) => {
+		clock.value += ms
+		return environment.runFrame()
+	}
+	return {
+		controller,
+		events,
+		environment,
+		status: () => controller.getStatus(),
+		frame,
+		/** 连跑若干帧，返回真的跑了几帧。返回 0 即「根本没有循环在跑」 */
+		frames(count, ms = 16) {
+			let ran = 0
+			for (let i = 0; i < count; i++) {
+				if (environment.pending() === 0)
+					break
+				if (frame(ms))
+					ran++
+			}
+			return ran
+		},
+		actions: () => events.actions.map(item => item.action),
+		contexts: () => events.actions.map(item => item.context),
+		/** 模拟 Shell 完成 `enterBigPicture()` */
+		enter: () => {
+			modes.active = true
+		},
+		suppress: (value = true) => {
+			modes.autoEntryAllowed = !value
+		},
+	}
+}
+
+/** 装上浏览器能力面 double。每个用例块自己装、自己拆，块与块之间不串味 */
+function installEnvironment() {
+	installed = createEnvironment()
+	globalThis.window = installed.win
+	globalThis.document = installed.doc
+	return installed
+}
+
+function uninstallEnvironment() {
+	installed = null
+	delete globalThis.window
+	delete globalThis.document
+}
+
+describe('手柄生命周期：连接与设备选择', () => {
+	beforeEach(installEnvironment)
+	afterEach(uninstallEnvironment)
+
+	it('标准映射设备接入：报一次连接、开始轮询，状态可读', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+
+		rig.controller.start()
+
+		assert.deepEqual(rig.events.connected, ['ready'])
+		assert.deepEqual(rig.status(), { support: 'supported', device: 'ready' })
+		assert.equal(rig.controller.isRunning(), true)
+		assert.equal(rig.environment.pending(), 1)
+	})
+
+	it('状态不变时不重复报连接', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+
+		rig.controller.start()
+		rig.frames(5)
+		rig.controller.refresh()
+		rig.controller.refresh()
+
+		assert.deepEqual(rig.events.connected, ['ready'])
+	})
+
+	it('设备全部消失：报一次断开并停轮询（模式由 Shell 决定，本层不动它）', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.frames(2)
+
+		devices.disconnect(0)
+		rig.environment.disconnect()
+
+		assert.equal(rig.events.disconnections, 1)
+		assert.deepEqual(rig.status(), { support: 'supported', device: 'none' })
+		assert.equal(rig.controller.isRunning(), false)
+		assert.equal(rig.environment.pending(), 0)
+		assert.equal(rig.frames(3), 0, '断开后不应留下空跑的 rAF')
+	})
+
+	it('非标准映射：报不支持、继续正常浏览（不轮询）', () => {
+		const devices = createDevices([createDevice({ mapping: '' })])
+		const rig = createRig(devices)
+
+		rig.controller.start()
+
+		assert.deepEqual(rig.events.connected, ['unsupported-mapping'])
+		assert.equal(rig.controller.isRunning(), false)
+		assert.equal(rig.environment.pending(), 0)
+	})
+
+	it('标准映射但按钮数不足：与「非标准映射」区分开（门槛来自 MIN_STANDARD_BUTTONS）', () => {
+		const insufficient = createRig(createDevices([createDevice({ buttons: 15 })]))
+		insufficient.controller.start()
+		assert.deepEqual(insufficient.events.connected, ['insufficient-buttons'])
+		assert.equal(insufficient.controller.isRunning(), false)
+
+		// 恰好 16 个按钮即达标
+		const enough = createRig(createDevices([createDevice({ buttons: 16 })]))
+		enough.controller.start()
+		assert.deepEqual(enough.events.connected, ['ready'])
+		assert.equal(enough.controller.isRunning(), true)
+	})
+
+	it('稀疏数组里的空洞与 null 不算设备，index 从真实槽位读起', () => {
+		// 下标 0 是 null、1 是真正的空洞（没有这个槽位）、2 才是设备
+		const slots = [null, createDevice(), createDevice()]
+		delete slots[1]
+		const devices = createDevices(slots)
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+
+		devices.press(2, [13])
+		rig.frame()
+
+		assert.deepEqual(rig.actions(), ['down'])
+		assert.equal(rig.contexts().at(-1).index, 2)
+	})
+
+	it('未连接时只保留连接监听，不空跑 rAF；插上后自动开始', () => {
+		const devices = createDevices([])
+		const rig = createRig(devices)
+
+		rig.controller.start()
+
+		assert.equal(rig.environment.pending(), 0)
+		assert.equal(rig.frames(3), 0)
+		// 6 个 window 监听（连接/断开/焦点/失焦/pagehide/pageshow）+ 1 个 visibilitychange
+		assert.equal(rig.environment.listeners(), 7)
+
+		devices.connect(0)
+		rig.environment.connect()
+
+		assert.deepEqual(rig.events.connected, ['ready'])
+		assert.equal(rig.controller.isRunning(), true)
+	})
+
+	it('静置的设备不白占名额：按下按钮的那个才成为输入来源', () => {
+		const devices = createDevices([createDevice(), createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+
+		// 只有 index 1 被按下
+		devices.press(1, [5])
+		rig.frame()
+
+		assert.deepEqual(rig.actions(), ['next-region'])
+		assert.equal(rig.contexts().at(-1).index, 1)
+	})
+
+	it('多个手柄同时按下：只回应 index 最小的那个', () => {
+		const devices = createDevices([createDevice(), createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+
+		devices.press(0, [13])
+		devices.press(1, [13])
+		rig.frame()
+
+		assert.deepEqual(rig.actions(), ['down'])
+		assert.equal(rig.contexts().at(-1).index, 0)
+
+		// 松开 1 再按 0：被忽略的那个设备全程没有产生任何动作
+		devices.press(1, [])
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['down'])
+	})
+
+	it('当前设备断开、仍有其它可用设备：不报断开，另一设备可用新按键接管', () => {
+		const devices = createDevices([createDevice(), createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+		devices.press(0, [0])
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['confirm'])
+
+		// 0 号拔掉，同时 1 号已经按住
+		devices.disconnect(0)
+		devices.press(1, [13])
+		rig.environment.disconnect()
+
+		assert.deepEqual(rig.events.connected, ['ready'])
+		assert.equal(rig.events.disconnections, 0)
+
+		// 接管前必须看到「全部松开」
+		rig.frames(3)
+		assert.deepEqual(rig.actions(), ['confirm'])
+
+		devices.press(1, [])
+		rig.frame()
+		devices.press(1, [13])
+		rig.frame()
+
+		assert.deepEqual(rig.actions(), ['confirm', 'down'])
+		assert.equal(rig.contexts().at(-1).index, 1)
+	})
+
+	it('index 被复用：槽位换人后仍按住的按钮不会被当成新按下', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+		devices.press(0, [0])
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['confirm'])
+
+		// 旧设备拔掉，新设备立刻占住同一个槽位，A 仍然是按下的
+		devices.disconnect(0)
+		devices.connect(0, { pressed: [0] })
+		rig.environment.disconnect()
+		rig.environment.connect()
+		rig.frames(4)
+
+		assert.deepEqual(rig.actions(), ['confirm'], '不得凭记住的 index 生成输入')
+
+		devices.press(0, [])
+		rig.frame()
+		devices.press(0, [0])
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['confirm', 'confirm'])
+	})
+})
+
+describe('手柄生命周期：首次输入只进入，且要松开再按', () => {
+	beforeEach(installEnvironment)
+	afterEach(uninstallEnvironment)
+
+	it('模式未激活：第一次按键只请求进入，**不**发布动作', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.frames(2)
+
+		devices.press(0, [0])
+		rig.frame()
+
+		assert.deepEqual(rig.events.intents, ['confirm'])
+		assert.deepEqual(rig.actions(), [], '进入用的那次按键必须被消耗')
+
+		// 一直按住：不再请求进入，也不发布动作
+		rig.frames(5)
+		assert.deepEqual(rig.events.intents, ['confirm'])
+		assert.deepEqual(rig.actions(), [])
+	})
+
+	it('进入后必须松开再按，下一次按下才执行为动作', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.frames(2)
+
+		devices.press(0, [0])
+		rig.frame()
+		assert.deepEqual(rig.events.intents, ['confirm'])
+
+		// 松开：门闩解开，但模式尚未激活，仍不发布动作
+		devices.press(0, [])
+		rig.frame()
+		assert.deepEqual(rig.actions(), [])
+
+		// Shell 完成进入；重新按下才是「确认」
+		rig.enter()
+		devices.press(0, [0])
+		rig.frame()
+
+		assert.deepEqual(rig.actions(), ['confirm'])
+		assert.deepEqual(rig.events.intents, ['confirm'])
+	})
+
+	it('方向键也能请求进入（它同样是按钮），摇杆漂移则不能', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.frames(2)
+
+		// 左摇杆漂移：既不进入也不动作
+		devices.axes(0, [0.9])
+		rig.frame()
+		assert.deepEqual(rig.events.intents, [])
+		assert.deepEqual(rig.actions(), [])
+
+		// 摇杆回中后按方向键：请求进入
+		devices.axes(0, [0])
+		devices.press(0, [12])
+		rig.frame()
+		assert.deepEqual(rig.events.intents, ['up'])
+		assert.deepEqual(rig.actions(), [])
+	})
+
+	it('未映射的按钮按下：不进入也不动作', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.frames(2)
+
+		devices.press(0, [2, 3])
+		rig.frames(3)
+
+		assert.deepEqual(rig.events.intents, [])
+		assert.deepEqual(rig.actions(), [])
+
+		// 随后按下真正的动作键，进入意图照常
+		devices.press(0, [2, 3, 1])
+		rig.frame()
+		assert.deepEqual(rig.events.intents, ['back'])
+	})
+})
+
+describe('手柄生命周期：可见性、失焦与离开', () => {
+	beforeEach(installEnvironment)
+	afterEach(uninstallEnvironment)
+
+	it('页面隐藏：停轮询；重新可见：重新读设备后恢复', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+		assert.equal(rig.environment.pending(), 1)
+
+		rig.environment.hide()
+		assert.equal(rig.controller.isRunning(), false)
+		assert.equal(rig.environment.pending(), 0)
+		assert.equal(rig.frames(3), 0, '隐藏期间确实没有 rAF 在跑')
+
+		rig.environment.show()
+		assert.equal(rig.controller.isRunning(), true)
+		rig.frames(2)
+		devices.press(0, [0])
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['confirm'])
+	})
+
+	it('重新可见时仍按住的按钮必须先松开才被认', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+		devices.press(0, [0])
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['confirm'])
+
+		rig.environment.hide()
+		rig.environment.show()
+		rig.frames(4)
+
+		assert.deepEqual(rig.actions(), ['confirm'], '恢复时不得把「仍按住」当成新按下')
+
+		devices.press(0, [])
+		rig.frame()
+		devices.press(0, [0])
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['confirm', 'confirm'])
+	})
+
+	it('失焦停轮询，重新聚焦后恢复', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+
+		rig.environment.blur()
+		assert.equal(rig.environment.pending(), 0)
+		assert.equal(rig.frames(2), 0)
+
+		rig.environment.focus()
+		assert.equal(rig.environment.pending(), 1)
+		devices.press(0, [1])
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['back'])
+	})
+
+	it('页面离开：停轮询但保留监听；回到页面时自动恢复', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+
+		rig.environment.leave()
+		assert.equal(rig.controller.isRunning(), false)
+		assert.equal(rig.environment.pending(), 0)
+		assert.equal(rig.environment.listeners(), 7, '离开页面不能把监听也摘掉，否则 pageshow 没人接')
+
+		rig.environment.back()
+		assert.equal(rig.controller.isRunning(), true)
+		devices.press(0, [1])
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['back'])
+	})
+
+	it('start / stop / refresh 幂等；stop 之后不留任何挂起的 rAF 与监听', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+
+		rig.controller.start()
+		rig.controller.start()
+		assert.equal(rig.environment.pending(), 1, '重复 start 不得出现两条循环')
+		assert.equal(rig.environment.listeners(), 7, '重复 start 不得重复绑监听')
+
+		rig.controller.refresh()
+		assert.equal(rig.environment.pending(), 1)
+
+		rig.controller.stop()
+		assert.equal(rig.controller.isRunning(), false)
+		assert.equal(rig.environment.pending(), 0)
+		assert.equal(rig.environment.listeners(), 0)
+
+		rig.controller.stop()
+		assert.equal(rig.environment.pending(), 0)
+
+		// stop 之后事件不再影响它，重新 start 可以复活
+		devices.press(0, [0])
+		rig.environment.connect()
+		assert.equal(rig.environment.pending(), 0)
+
+		rig.controller.start()
+		assert.equal(rig.environment.pending(), 1)
+	})
+
+	it('自动进入被抑制且模式未激活时不轮询；进入模式后由调用方再次 start 恢复', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.suppress(true)
+
+		rig.controller.start()
+		assert.equal(rig.environment.pending(), 0)
+
+		rig.enter()
+		rig.controller.start()
+		assert.equal(rig.environment.pending(), 1)
+		devices.press(0, [0])
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['confirm'])
+	})
+})
+
+describe('手柄生命周期：帧上下文与跨帧状态', () => {
+	beforeEach(installEnvironment)
+	afterEach(uninstallEnvironment)
+
+	it('滚动是电平动作，像素由消费方用 getScrollDelta 算（控制器不产生像素）', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+
+		devices.axes(0, [0, 0, 0, -0.625])
+		rig.frame()
+		devices.axes(0, [0, 0, 0, -0.625])
+		rig.frame()
+
+		assert.deepEqual(rig.actions(), ['scroll-up', 'scroll-up'], '电平量每帧都报')
+		const [first, second] = rig.contexts()
+		assert.deepEqual([first.axisY, second.axisY], [-0.625, -0.625])
+		// 帧间隔量的是「距上一帧」，与上一帧有没有动作无关：两帧都是真实的 16ms
+		assert.deepEqual([first.deltaMs, second.deltaMs], [16, 16])
+		assert.ok(second.timestamp > first.timestamp)
+		// travel = (0.625 - 0.25) / 0.75 = 0.5 → 450px/s → 16ms 即 7.2px
+		assert.equal(getScrollDelta(second.axisY, second.deltaMs), -7.2)
+	})
+
+	it('帧间隔被夹到 250ms：标签页解冻后的第一帧不会一次滚掉好几屏', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+
+		devices.axes(0, [0, 0, 0, -1])
+		rig.frame()
+		rig.frame(5000)
+
+		assert.equal(rig.contexts().at(-1).deltaMs, 250)
+	})
+
+	it('按住方向时跨帧维持节流状态：350ms 后第一次重复', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+
+		devices.axes(0, [0.9])
+		rig.frame() // 首次立刻
+		rig.frame(349) // 距按下 349ms：不重复
+		rig.frame() // 365ms ≥ 350：重复
+
+		assert.deepEqual(rig.actions(), ['right', 'right'])
+	})
+
+	it('真机 Gamepad 对象被浏览器复用时，按键边沿判定仍然成立', () => {
+		// 同一个对象原地改写按钮数组（真机就是这样复用 Gamepad 的）
+		const pad = createDevice()
+		const devices = createDevices([pad])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+
+		pad.buttons[0].pressed = true
+		rig.frame()
+		rig.frame()
+		pad.buttons[0].pressed = false
+		rig.frame()
+		pad.buttons[0].pressed = true
+		rig.frame()
+
+		assert.deepEqual(rig.actions(), ['confirm', 'confirm'])
+	})
+
+	it('getGamepads 抛错：当作没有设备，不把异常抛给页面', () => {
+		const rig = createRig(createDevices([]), {
+			getGamepads: () => {
+				throw new Error('SecurityError')
+			},
+		})
+
+		rig.controller.start()
+
+		assert.deepEqual(rig.status(), { support: 'supported', device: 'none' })
+		assert.equal(rig.environment.pending(), 0)
+	})
+})
+
+describe('手柄生命周期：能力回退', () => {
+	afterEach(uninstallEnvironment)
+
+	it('没有 window / document / getGamepads：给出可读的不支持状态，且不抛', () => {
+		globalThis.window = undefined
+		globalThis.document = undefined
+
+		const controller = createGamepadController()
+
+		assert.deepEqual(controller.getStatus(), { support: 'unsupported', device: 'none' })
+		assert.doesNotThrow(() => {
+			controller.start()
+			controller.refresh()
+			controller.stop()
+		})
+		assert.equal(controller.isRunning(), false)
+	})
+
+	it('有设备源但没有 rAF：同样判为不支持（没有轮询载体）', () => {
+		globalThis.window = { addEventListener() {}, removeEventListener() {} }
+		globalThis.document = { hidden: false, addEventListener() {}, removeEventListener() {} }
+
+		const controller = createGamepadController({ getGamepads: () => [] })
+
+		assert.equal(controller.getStatus().support, 'unsupported')
+		assert.equal(controller.isRunning(), false)
+	})
+
+	it('有 rAF 与事件但浏览器没有 getGamepads：判为不支持', () => {
+		// Node 的 navigator 上没有 getGamepads，正好模拟旧浏览器 / 非安全上下文
+		const environment = installEnvironment()
+		const controller = createGamepadController()
+
+		assert.equal(controller.getStatus().support, 'unsupported')
+		controller.start()
+		assert.equal(environment.pending(), 0)
+	})
+
+	it('回调全部缺省也能跑：只注入 getGamepads 即可', () => {
+		const environment = installEnvironment()
+		const controller = createGamepadController({ getGamepads: () => [createDevice({ pressed: [0] })] })
+
+		assert.doesNotThrow(() => {
+			controller.start()
+			environment.runFrame()
+			controller.stop()
+		})
 	})
 })
