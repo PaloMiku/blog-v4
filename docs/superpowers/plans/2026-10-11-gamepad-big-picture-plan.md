@@ -79,7 +79,7 @@ Modify the following existing files:
 
 **Interfaces:**
 - `big-picture-session.ts` exports `SESSION_KEY`, `AUTO_ENTRY_SUPPRESSED_KEY`, `SOURCE_KEY`, `readSessionMode(storage)`, `writeSessionMode(storage, active)`, `readAutoEntrySuppressed(storage)`, `writeAutoEntrySuppressed(storage, suppressed)`, `recordNavigationSource(storage, source)`, and `consumeNavigationSource(storage, currentPath)`.
-- `big-picture-state.ts` exports `BigPictureMode`, `getBigPictureMode()`, `setBigPictureMode(mode)`, `enterBigPicture(reason)`, `exitBigPicture(reason)`, `subscribeBigPicture(fn)`, `setAutoEntrySuppressed(value)`, `isAutoEntrySuppressed()`, and `bindBigPictureGlobals()`.
+- `big-picture-state.ts` exports `BigPictureMode`, `getBigPictureState()`, `setBigPictureState(mode)`, `enterBigPicture(reason)`, `exitBigPicture(reason)`, `subscribeBigPicture(fn)`, `setAutoEntrySuppressed(value)`, `isAutoEntrySuppressed()`, and `bindBigPictureGlobals()`.（访问器按 spec §运行时架构 用 `State` 拼写，不是 `Mode`；类型名仍是 `BigPictureMode`。）
 - `layout-state.ts` adds `getLayoutState(): LayoutState` and `isLayoutOpen(key): boolean` without changing `setLayoutState` or `toggleLayout` behavior.
 
 - [ ] **Step 1: Write failing storage tests.** Use an in-memory Storage double to cover missing storage, exceptions, active-mode round trips, suppression round trips, malformed source JSON, same-origin path validation, and one-shot source consumption.
