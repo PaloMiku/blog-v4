@@ -977,11 +977,11 @@ describe('状态区文案与手动进入入口（纯函数）', () => {
 		})
 	}
 
-	it('常规状态：提示「按任意键进入」，没有手动入口', () => {
+	it('常规状态：提示「按任意键进入」，并同时给出那颗按钮', () => {
 		assert.deepEqual(view(), {
 			prompt: '手柄已连接，按任意键进入大屏模式',
 			status: '',
-			manualEntry: false,
+			manualEntry: true,
 		})
 	})
 
@@ -995,16 +995,38 @@ describe('状态区文案与手动进入入口（纯函数）', () => {
 		})
 	})
 
-	it('设置关掉了自动进入但未被抑制：轮询仍在跑，Menu 键提示成立', () => {
+	it('关掉了自动进入但未被抑制：同样不提任何按键，同样给出手动入口', () => {
+		// 「关闭自动进入只改变后续进入行为」——它不该拿走进入的能力。
+		// 曾经这里写的是「按 Menu 键打开设置」，那是假的：
+		// 模式未激活时 `gamepad.ts` 把每一次按键都吞成进入意图，
+		// `onAction` 一次都不发，菜单键永远到不了 Shell。
+		// 用户只消一次「首次按键自动进入」，新标签页就再也进不去了
 		assert.deepEqual(view({ autoEntryEnabled: false }), {
-			prompt: '手柄已连接，按 Menu 键打开设置',
+			prompt: '手柄已连接，已关闭首次按键自动进入',
 			status: '',
-			manualEntry: false,
+			manualEntry: true,
 		})
 	})
 
+	it('设备在且未进模式 ⇒ 恒有手动入口（被抑制与关掉自动进入都不是例外）', () => {
+		for (const state of [
+			{},
+			{ suppressed: true },
+			{ autoEntryEnabled: false },
+			{ suppressed: true, autoEntryEnabled: false },
+		]) {
+			assert.equal(view(state).manualEntry, true, JSON.stringify(state))
+		}
+		// 进了模式 / 没有设备 ⇒ 不出手动入口（普通模式的视觉必须与今天一致）
+		for (const state of [{ active: true }, { device: 'none', everConnected: false }]) {
+			assert.equal(view(state).manualEntry, false, JSON.stringify(state))
+		}
+	})
+
 	it('任何状态下都不提示一个此刻做不到的动作', () => {
-		// 枚举整张表：凡是 suppressed 为真的行，提示里不得出现「按…键」
+		// 枚举整张表。未进模式时全部按键都被输入层吞成进入意图，
+		// 于是：除「按任意键进入」（只在允许自动进入时成立）之外，
+		// 提示里不得出现任何按键指令
 		const states = []
 		for (const active of [false, true]) {
 			for (const suppressed of [false, true]) {
@@ -1015,13 +1037,12 @@ describe('状态区文案与手动进入入口（纯函数）', () => {
 		}
 		for (const state of states) {
 			const result = view(state)
-			// 只在「未进模式」时才有「怎么进」这件事；已进模式时抑制标记不参与
-			if (state.suppressed && !state.active) {
-				assert.equal(result.manualEntry, true, JSON.stringify(state))
+			if (state.active)
+				continue
+			if (state.suppressed || !state.autoEntryEnabled)
 				assert.doesNotMatch(result.prompt, /按.+键/, JSON.stringify(state))
-			}
-			if (result.manualEntry)
-				assert.equal(state.suppressed, true, '手动入口只服务于「被抑制」这一种锁死状态')
+			else
+				assert.equal(result.prompt, '手柄已连接，按任意键进入大屏模式', JSON.stringify(state))
 		}
 	})
 
@@ -1210,6 +1231,18 @@ describe('Shell 边界：首次输入被消耗，模式激活后才发布动作'
 		environment.runFrame()
 
 		assert.deepEqual(intents, [])
+		assert.deepEqual(actions, [])
+		assert.equal(getBigPictureState(), 'inactive')
+	})
+
+	it('未进模式时菜单键也只产生进入意图，永远到不了 Shell', () => {
+		// 这条是文案选择的**依据**：模式未激活时输入层吞掉全部按钮动作，
+		// 于是「按 Menu 键打开设置」在任何未进模式的状态下都是一句假话，
+		// `resolveShellView()` 的取文因此只能是「不提键、给按钮」
+		pads[0] = createStandardPad([9])
+		environment.runFrame()
+
+		assert.deepEqual(intents, ['menu'])
 		assert.deepEqual(actions, [])
 		assert.equal(getBigPictureState(), 'inactive')
 	})

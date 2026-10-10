@@ -470,8 +470,11 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 	 *
 	 * **从 CSS 读，不写死**。这一段窗口的作用是「吞掉 B」：面板正在收起时若 B 穿透到
 	 * 下面那一层（抽屉或页面返回），用户按两下 B 就会被送走。
-	 * 今天的实态是 `hidden`（`display: none`）→ 根本没有过渡 → 退回 modal 家族共享的
-	 * `MODAL_DEFAULT_DURATION`；Task 6 加上过渡之后这里自动跟随面板声明的时长，
+	 *
+	 * 读的是**此刻**的计算样式，而此刻面板还开着（`hidden` 是 `finish()` 稍后才加的），
+	 * 所以拿到的是它声明的 `transition-duration`，不是 0s。
+	 * 今天还没有任何过渡声明 → 解析出 0 → 退回 modal 家族共享的 `MODAL_DEFAULT_DURATION`；
+	 * Task 6 加上过渡之后这里自动跟随面板声明的时长，
 	 * 不会再出现「CSS 过渡比守卫窗口长，第二次 B 穿透」这种只在真实浏览器里复现的离站 bug。
 	 */
 	function settingsCloseDelay() {
@@ -489,11 +492,13 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 	function closeSettings() {
 		if (settingsState === 'closed')
 			return
-		// 先置 `closing`：这段时间 resolveBackLayer() 会吞掉 B，
+		// 上一轮还在收起时（双击 Menu / A 连按返回）先把它收干净，否则两个收尾函数并存。
+		// **顺序要紧**：收尾函数会把形态落回 `'closed'`，所以它必须跑在置 `'closing'` 之前，
+		// 否则这一轮刚置上的「吞掉 B」会被上一个收尾函数当场抹掉
+		settingsFinish?.()
+		// 这段时间 resolveBackLayer() 会吞掉 B，
 		// 否则第二次 B 会穿透到抽屉或页面返回把用户送走
 		settingsState = 'closing'
-		// 重复调用（面板已经在收起）时先收干净上一轮，避免两个收尾函数并存
-		settingsFinish?.()
 		const panel = query('[data-big-picture-settings]')
 		// 退场真的播了动画时以 `transitionend` 为准（CSS 说了算），
 		// 定时器只当它不来时的兜底；两条路径都汇聚到同一个收尾函数
@@ -502,7 +507,7 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 				clearTimeout(settingsTimer)
 				settingsTimer = 0
 			}
-			panel?.removeEventListener('transitionend', finish)
+			panel?.removeEventListener('transitionend', onTransitionEnd)
 			if (settingsFinish === finish)
 				settingsFinish = null
 			settingsState = 'closed'
@@ -516,8 +521,22 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 			manager?.refresh()
 			renderHints()
 		}
+		/*
+		 * 只认**面板自己**的 transitionend。
+		 * `transitionend` 会冒泡，面板里任何一个子元素（复选框、返回按钮……
+		 * Task 6 之后还有更多）播它自己的过渡，都会在面板还没收起时把这次关闭提前收尾——
+		 * 于是「吞掉 B」的窗口在动画播到一半时就没了。
+		 * 不按 `propertyName` 过滤：Task 6 会动哪几个属性还不定，
+		 * 按属性名过滤等于让下一个人必须回来改这里；而「面板自己任一属性过渡结束」
+		 * 正好就是「面板收起完了」这件事本身。
+		 */
+		function onTransitionEnd(event) {
+			if (event.target !== panel)
+				return
+			finish()
+		}
 		settingsFinish = finish
-		panel?.addEventListener('transitionend', finish)
+		panel?.addEventListener('transitionend', onTransitionEnd)
 		settingsTimer = setTimeout(finish, settingsCloseDelay())
 	}
 
