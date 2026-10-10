@@ -20,7 +20,7 @@
  * （直接违反上面的纯度约束，也让测试之间互相污染）。把新状态与动作一起返回，
  * 调用方只需 `state = result.state`，一个变量就完成闭环。
  *
- * ## 动作流的三条约定
+ * ## 动作流的四条约定
  * 1. **顺序**：按键边沿（按按钮号升序）→ 方向（若触发）→ 滚动（若触发）。下游
  *    焦点管理器可以依赖这个顺序，但它不该依赖顺序做语义判断。
  * 2. **按键是边沿**：确认 / 返回 / 肩键 / 菜单只在「本帧按下且上帧未按下」时产出，
@@ -28,10 +28,16 @@
  * 3. **方向与滚动是电平**：方向按节流重复产出；滚动只要摇杆越过死区就**每帧**产出，
  *    动作本身**不含像素**——连续滚动的位移由 `getScrollDelta()` 单独算。
  *    两条路径不叠加：要么用动作驱动固定步长，要么用 `getScrollDelta()` 驱动比例位移。
+ * 4. **换来源即新按下**：`GamepadInputState.source` 记下当前方向来自方向键还是左摇杆。
+ *    方向相同但来源变了（补按了同向方向键，或松开方向键时摇杆已经偏在同侧）同样是
+ *    新的一次操作：立刻产出方向动作并重置计时，不能静默吞掉或沿用上一段的计时。
  */
 
 /** 方向（同时也是 `GamepadAction` 的一部分） */
 export type Direction = 'up' | 'down' | 'left' | 'right'
+
+/** 方向的输入来源。区分它是因为方向键与左摇杆的交接必须能被当成一次新的按下 */
+export type DirectionSource = 'd-pad' | 'stick'
 
 /** 按键类动作：只在按下边沿产出 */
 export type ButtonAction = 'confirm' | 'back' | 'previous-region' | 'next-region' | 'menu'
@@ -55,12 +61,15 @@ export interface StandardGamepadFrame {
 
 /**
  * 跨帧记忆。
- * 四个字段缺一不可：没有 `activeSince` 就算不出「按住多久」，没有 `lastRepeatAt`
- * 就分不清「第一次重复」和「第二次重复」，没有 `buttons` 就做不了边沿判定。
+ * 五个字段缺一不可：没有 `activeSince` 就算不出「按住多久」，没有 `lastRepeatAt`
+ * 就分不清「第一次重复」和「第二次重复」，没有 `buttons` 就做不了边沿判定；
+ * `source` 则用来识别「方向没变但换了输入来源」——那是用户的一次新操作，不是延续。
  */
 export interface GamepadInputState {
 	/** 当前保持的方向（方向键优先于左摇杆），未保持时为 `null` */
 	readonly direction: Direction | null
+	/** 当前方向来自方向键还是左摇杆；未保持方向时为 `null` */
+	readonly source: DirectionSource | null
 	/** `direction` 开始保持的时间戳；未保持时为 0 */
 	readonly activeSince: number
 	/** 上一次产出重复动作的时间戳；未保持时为 0 */
@@ -90,21 +99,25 @@ export interface GamepadInputOptions {
 }
 
 /** 标准映射的字符串值；非此值一律不做增强（规格：只对 `mapping === 'standard'` 启用） */
-export const STANDARD_MAPPING = 'standard'
+const STANDARD_MAPPING = 'standard'
 
 /**
- * 标准映射的按钮下标。
+ * 启用增强所需的最小按钮数。
  * 标准映射实际有 0–16 共 17 个按钮，这里把门槛定在 16：低于它的设备按下标 12–15
  * 取到的多半不是方向键，与其给一个错的提示，不如判定为「按钮数量不足」并停用增强。
+ *
+ * 导出是因为 Task 2 的「不支持该手柄」提示要引用这个数字，
+ * 下游不该再手写一个 16。下面的调优常量则不需要导出——调用方要么走默认值，
+ * 要么通过 `GamepadInputOptions` 覆盖，写死数字反而让测试失去「默认值就是规格值」的钉。
  */
 export const MIN_STANDARD_BUTTONS = 16
 
-export const DEFAULT_STICK_THRESHOLD = 0.55
-export const DEFAULT_RELEASE_THRESHOLD = 0.35
-export const DEFAULT_REPEAT_DELAY_MS = 350
-export const DEFAULT_REPEAT_INTERVAL_MS = 120
-export const SCROLL_DEAD_ZONE = 0.25
-export const DEFAULT_MAX_SCROLL_PIXELS_PER_SECOND = 900
+const DEFAULT_STICK_THRESHOLD = 0.55
+const DEFAULT_RELEASE_THRESHOLD = 0.35
+const DEFAULT_REPEAT_DELAY_MS = 350
+const DEFAULT_REPEAT_INTERVAL_MS = 120
+const SCROLL_DEAD_ZONE = 0.25
+const DEFAULT_MAX_SCROLL_PIXELS_PER_SECOND = 900
 
 /** 按键 → 动作。顺序即动作流里的产出顺序（见文件头「动作流的三条约定」） */
 const BUTTON_ACTIONS: readonly (readonly [index: number, action: GamepadAction])[] = [
@@ -132,11 +145,12 @@ const NO_BUTTONS: readonly boolean[] = Object.freeze([])
 
 /**
  * 造一份中性初值。
- * 调用方不该手搓这个字面量：四个字段两两耦合（`activeSince` 与 `lastRepeatAt`
- * 在保持方向时必须同步推进），手搓出来的半初始化状态会让节流时序难以推理。
+ * 调用方不该手搓这个字面量：五个字段两两耦合（`direction` 与 `source` 必须同时非空，
+ * `activeSince` 与 `lastRepeatAt` 在保持方向时必须同步推进），手搓出来的半初始化状态
+ * 会让节流时序难以推理。
  */
 export function createInputState(): GamepadInputState {
-	return { direction: null, activeSince: 0, lastRepeatAt: 0, buttons: NO_BUTTONS }
+	return { direction: null, source: null, activeSince: 0, lastRepeatAt: 0, buttons: NO_BUTTONS }
 }
 
 function readAxis(frame: StandardGamepadFrame, index: number): number {
@@ -220,9 +234,11 @@ export function normalizeGamepadFrame(
 
 	// 方向：方向键优先于左摇杆（规格：方向键优先）
 	let next: Direction | null = null
+	let source: DirectionSource | null = null
 	for (const [index, direction] of DPAD_DIRECTIONS) {
 		if (isPressed(frame.buttons, index)) {
 			next = direction
+			source = 'd-pad'
 			break
 		}
 	}
@@ -234,21 +250,25 @@ export function normalizeGamepadFrame(
 			stickThreshold,
 			releaseThreshold,
 		)
+		source = next === null ? null : 'stick'
 	}
 
-	// 节流：首次立刻，之后 350ms 起每 120ms 重复一次
+	// 节流：首次立刻，之后 350ms 起每 120ms 重复一次。
+	// `next === null` 时两个计时保持 0：松手后下次按下必须立刻触发，
+	// 不能继承上一段「已经按够 350ms」的资格。
 	let directionAction: Direction | null = null
 	let activeSince = 0
 	let lastRepeatAt = 0
-	if (next === null) {
-		// 松手后计时归零：下次按下必须立刻触发，不能继承上一段「已经按够 350ms」的资格
-	}
-	else if (next !== previous.direction) {
+	// 换方向**或换来源**都算一次新的按下。方向键与左摇杆指向同一方时，
+	// 用户仍然做了新操作：按下方向键的那一下必须被认出来，反之亦然。
+	// 只比 `direction` 会把这两种交接静默吞掉——要么整帧无动作，
+	// 要么沿用上一段的计时，在交接瞬间吐出一个时机不可预测的重复。
+	if (next !== null && (next !== previous.direction || source !== previous.source)) {
 		directionAction = next
 		activeSince = timestamp
 		lastRepeatAt = timestamp
 	}
-	else {
+	else if (next !== null) {
 		activeSince = previous.activeSince
 		lastRepeatAt = previous.lastRepeatAt
 		if (timestamp - activeSince >= repeatDelayMs && timestamp - lastRepeatAt >= repeatIntervalMs) {
@@ -266,7 +286,7 @@ export function normalizeGamepadFrame(
 
 	return {
 		actions,
-		state: { direction: next, activeSince, lastRepeatAt, buttons: frame.buttons },
+		state: { direction: next, source, activeSince, lastRepeatAt, buttons: frame.buttons },
 	}
 }
 
@@ -287,8 +307,9 @@ export function normalizeGamepadFrame(
  * `scrollBy` 的正负号一致，不需要调用方再翻一次符号。
  *
  * @param axisValue axes[3] 的原始值
- * @param deltaMs 距上一帧的毫秒数
- * @param maxPixelsPerSecond 速度上限，规格 900
+ * @param deltaMs 距上一帧的毫秒数。非有限或非正数一律按 0 处理
+ * @param maxPixelsPerSecond 速度上限，规格 900。非有限或非正数同样按 0 处理，
+ *   不会反向滚动
  * @param deadZone 死区，规格 0.25。若调用方改了 `GamepadInputOptions.scrollDeadZone`，
  *   必须把同一个值传进来，否则会出现「动作流说有滚动、像素却是 0」的不一致
  */
@@ -298,17 +319,19 @@ export function getScrollDelta(
 	maxPixelsPerSecond = DEFAULT_MAX_SCROLL_PIXELS_PER_SECOND,
 	deadZone = SCROLL_DEAD_ZONE,
 ): number {
-	// 帧间隔为负（挂钟回拨、rAF 首帧）按 0 处理，否则会反向滚动一帧；
-	// 提前返回还能避免 `sign * 0` 产出 -0 混进 scrollBy
-	const seconds = Math.max(0, deltaMs) / 1000
-	if (seconds === 0)
+	// 提前返回有两个理由：非有限的帧间隔（NaN / Infinity）不能流进 scrollBy，
+	// 而 `Math.max(0, NaN)` 仍是 NaN，光靠比较抓不住；顺带避免 `sign * 0` 产出 -0。
+	if (!Number.isFinite(deltaMs) || deltaMs <= 0)
+		return 0
+	if (!Number.isFinite(maxPixelsPerSecond) || maxPixelsPerSecond <= 0)
 		return 0
 	const magnitude = Math.abs(axisValue)
 	if (!Number.isFinite(magnitude) || magnitude <= deadZone)
 		return 0
 	const travel = Math.min(1, (magnitude - deadZone) / (1 - deadZone))
-	const speed = Math.min(travel * maxPixelsPerSecond, maxPixelsPerSecond)
-	return Math.sign(axisValue) * speed * seconds
+	// `travel` 已被夹在 0..1，`travel * max` 天然不超过 `max`，
+	// 再套一层 Math.min 只会掩盖「上限传了负数」这种配置错误（它会翻成反向滚动）。
+	return Math.sign(axisValue) * travel * maxPixelsPerSecond * (deltaMs / 1000)
 }
 
 /**

@@ -3,9 +3,12 @@
 // 手柄是没法在 CI 里插上真设备的输入源，所以这里的每个数字都必须钉死：
 //   按钮   —— 标准映射 0/1/4/5/9 与方向键 12–15，且只在按下边沿触发；
 //   方向   —— 进入阈值 0.55、释放滞回 0.35、只取幅度更大的轴、方向键优先于左摇杆；
+//              方向键 ↔ 左摇杆的交接（来源变化）按一次新的按下处理，立刻触发；
 //   节流   —— 首次立刻，之后 350ms 起每 120ms 重复；换向立刻重置计时；
-//   滚动   —— 0.25 死区、负轴向上（scroll-up）、线性映射、900px/s 封顶。
-// 另外钉住纯度：同输入重复调用结果一致，且不改写入参（否则下游无法用状态回灌）。
+//   滚动   —— 0.25 死区、负轴向上（scroll-up）、线性映射、900px/s 封顶，
+//              非有限的帧间隔与上限一律 0。
+// 另外钉住纯度：穿插其它调用后结果不变（模块内没有隐藏的「上一帧」）、
+// 不改写入参（否则下游无法用状态回灌）、以及多按键同帧时的产出顺序。
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
@@ -52,6 +55,18 @@ describe('标准映射：按钮 → 语义动作', () => {
 		for (const [index, expected] of [[12, 'up'], [13, 'down'], [14, 'left'], [15, 'right']])
 			assert.deepEqual(actions(frame({ pressed: [index] })), [expected])
 	})
+
+	it('多个映射按钮同帧按下：按按钮号升序产出（顺序是下游可依赖的契约）', () => {
+		assert.deepEqual(actions(frame({ pressed: [1, 4] })), ['back', 'previous-region'])
+		assert.deepEqual(actions(frame({ pressed: [9, 0] })), ['confirm', 'menu'])
+		assert.deepEqual(actions(frame({ pressed: [5, 1, 9, 4, 0] })), [
+			'confirm',
+			'back',
+			'previous-region',
+			'next-region',
+			'menu',
+		])
+	})
 })
 
 describe('按键只触发按下边沿', () => {
@@ -77,6 +92,20 @@ describe('按键只触发按下边沿', () => {
 	it('初始状态里没有上一帧按键时按下即为边沿', () => {
 		// 上一帧的 buttons 为空数组，缺下标一律视作未按下
 		assert.deepEqual(actions(frame({ pressed: [9], timestamp: 5 })), ['menu'])
+	})
+
+	it('长度不齐的 buttons 数组按各自分量判定边沿', () => {
+		// 上一帧只报告到下标 1，本帧报告到下标 2：多出来的下标 2 视为新按下
+		const previous = { ...createInputState(), buttons: [false, false] }
+		assert.deepEqual(actions(frame({ pressed: [2], timestamp: 0 }), previous), [])
+
+		const current = { buttons: [false, true], axes: [], timestamp: 0 }
+		assert.deepEqual(normalizeGamepadFrame(current, { ...createInputState(), buttons: [false] }).actions, ['back'])
+
+		// 本帧比上一帧短：缺失下标视为已松开，不产生边沿
+		const shrunk = { buttons: [true], axes: [], timestamp: 0 }
+		assert.deepEqual(normalizeGamepadFrame(shrunk, { ...createInputState(), buttons: [true, true] }).actions, [])
+		assert.deepEqual(normalizeGamepadFrame(shrunk, { ...createInputState(), buttons: [] }).actions, ['confirm'])
 	})
 })
 
@@ -164,12 +193,51 @@ describe('方向键优先于左摇杆', () => {
 		assert.deepEqual(actions(frame({ pressed: [14, 12] })), ['up'])
 	})
 
-	it('方向键松开后左摇杆接管（属于新方向，立刻触发）', () => {
-		let state = normalizeGamepadFrame(frame({ pressed: [12], timestamp: 0 }), createInputState()).state
-		state = normalizeGamepadFrame(frame({ axes: [0, -0.9], timestamp: 100 }), state).state
+	it('方向键松开、摇杆已经偏在同一侧：交接帧立刻产出方向动作并重置计时', () => {
+		const held = normalizeGamepadFrame(frame({ pressed: [12], timestamp: 0 }), createInputState()).state
+		assert.deepEqual([held.direction, held.source], ['up', 'd-pad'])
 
-		assert.equal(state.direction, 'up')
-		assert.deepEqual(actions(frame({ axes: [0, -0.9], timestamp: 120 }), state), [])
+		const handoff = normalizeGamepadFrame(frame({ axes: [0, -0.9], timestamp: 100 }), held)
+		assert.deepEqual(handoff.actions, ['up'])
+		assert.deepEqual([handoff.state.direction, handoff.state.source], ['up', 'stick'])
+		assert.equal(handoff.state.activeSince, 100)
+
+		// 计时从交接帧重新开始：120ms 时不该吐出上一次的「重复」
+		assert.deepEqual(actions(frame({ axes: [0, -0.9], timestamp: 120 }), handoff.state), [])
+	})
+
+	it('摇杆保持某方向时补按同向方向键：这次按下不被吞掉', () => {
+		const stick = normalizeGamepadFrame(frame({ axes: [0.9], timestamp: 0 }), createInputState()).state
+		assert.deepEqual([stick.direction, stick.source], ['right', 'stick'])
+
+		const dpad = normalizeGamepadFrame(frame({ pressed: [15], axes: [0.9], timestamp: 40 }), stick)
+		assert.deepEqual(dpad.actions, ['right'])
+		assert.deepEqual([dpad.state.direction, dpad.state.source], ['right', 'd-pad'])
+		assert.equal(dpad.state.activeSince, 40)
+
+		// 计时按方向键重新起算：40+349 不重复，40+350 重复
+		assert.deepEqual(actions(frame({ pressed: [15], axes: [0.9], timestamp: 389 }), dpad.state), [])
+		assert.deepEqual(actions(frame({ pressed: [15], axes: [0.9], timestamp: 390 }), dpad.state), ['right'])
+	})
+
+	it('方向键长按后松开、摇杆已偏同向：交接帧立刻触发而不是补一个时机不可预测的重复', () => {
+		// 0→950ms 一直按住方向键右（期间在 350/470/590 各重复过一次）
+		let state = createInputState()
+		for (const timestamp of [0, 350, 470, 590, 950])
+			state = normalizeGamepadFrame(frame({ pressed: [15], timestamp }), state).state
+		assert.equal(state.lastRepeatAt, 950)
+
+		const handoff = normalizeGamepadFrame(frame({ axes: [0.9], timestamp: 1150 }), state)
+		assert.deepEqual(handoff.actions, ['right'])
+		assert.deepEqual([handoff.state.direction, handoff.state.source], ['right', 'stick'])
+		// 计时归零到交接帧，而不是继承方向键那 1150ms
+		assert.deepEqual([handoff.state.activeSince, handoff.state.lastRepeatAt], [1150, 1150])
+	})
+
+	it('方向键按住不放、摇杆同侧偏着：不会每帧重复（按住即静默）', () => {
+		const state = normalizeGamepadFrame(frame({ pressed: [15], axes: [0.9], timestamp: 0 }), createInputState()).state
+		assert.deepEqual(actions(frame({ pressed: [15], axes: [0.9], timestamp: 100 }), state), [])
+		assert.deepEqual(actions(frame({ pressed: [15], axes: [0.9], timestamp: 200 }), state), [])
 	})
 })
 
@@ -314,6 +382,17 @@ describe('getScrollDelta：本帧像素', () => {
 		assert.equal(getScrollDelta(Number.NaN, 16), 0)
 		assert.equal(getScrollDelta(Number.POSITIVE_INFINITY, 16), 0)
 	})
+
+	it('帧间隔或上限非法时返回 0，绝不把 NaN / Infinity / 反向量交给 scrollBy', () => {
+		// Math.max(0, NaN) 仍是 NaN，只靠大小比较抓不住，必须显式判有限性
+		assert.equal(getScrollDelta(0.9, Number.NaN), 0)
+		assert.equal(getScrollDelta(0.9, Number.POSITIVE_INFINITY), 0)
+		assert.equal(getScrollDelta(0.9, Number.NEGATIVE_INFINITY), 0)
+		// 上限传负数曾经会把滚动方向整个翻过来
+		assert.equal(getScrollDelta(0.9, 16, -300), 0)
+		assert.equal(getScrollDelta(-0.9, 16, 0), 0)
+		assert.equal(getScrollDelta(0.9, 16, Number.NaN), 0)
+	})
 })
 
 describe('isStandardGamepad', () => {
@@ -337,13 +416,20 @@ describe('isStandardGamepad', () => {
 })
 
 describe('纯度', () => {
-	it('同输入重复调用得到完全相同的动作与状态', () => {
+	it('穿插其它调用后同输入结果不变（模块里没有藏着「上一帧」）', () => {
 		const input = frame({ pressed: [0], axes: [0.9, 0, 0, -0.9], timestamp: 1000 })
 		const previous = normalizeGamepadFrame(frame({ axes: [0.9], timestamp: 800 }), createInputState()).state
+		const expected = normalizeGamepadFrame(input, previous)
 
-		const first = normalizeGamepadFrame(input, previous)
-		const second = normalizeGamepadFrame(input, previous)
-		assert.deepEqual(first, second)
+		// 若模块内持有模块级变量（上一帧 / 上次时间戳），这几次穿插就会污染结果
+		for (const noise of [
+			frame({ pressed: [9], axes: [0, -0.9], timestamp: 1001 }),
+			frame({ pressed: [1], timestamp: 1002 }),
+			frame({ pressed: [0], axes: [-0.9, 0], timestamp: 5000 }),
+		])
+			normalizeGamepadFrame(noise, createInputState())
+
+		assert.deepEqual(normalizeGamepadFrame(input, previous), expected)
 	})
 
 	it('不改写入参：frame 与 previous 保持原样', () => {
@@ -362,8 +448,18 @@ describe('纯度', () => {
 		const a = createInputState()
 		const b = createInputState()
 
-		assert.deepEqual(a, { direction: null, activeSince: 0, lastRepeatAt: 0, buttons: [] })
+		assert.deepEqual(a, { direction: null, source: null, activeSince: 0, lastRepeatAt: 0, buttons: [] })
 		assert.deepEqual(a, b)
 		assert.notEqual(a, b)
+	})
+
+	it('状态记下了方向的来源（d-pad / stick），供下游区分交接', () => {
+		const dpad = normalizeGamepadFrame(frame({ pressed: [14], timestamp: 0 }), createInputState()).state
+		const stick = normalizeGamepadFrame(frame({ axes: [-0.9], timestamp: 10 }), createInputState()).state
+		const idle = normalizeGamepadFrame(frame({ timestamp: 20 }), createInputState()).state
+
+		assert.deepEqual([dpad.direction, dpad.source], ['left', 'd-pad'])
+		assert.deepEqual([stick.direction, stick.source], ['left', 'stick'])
+		assert.deepEqual([idle.direction, idle.source], [null, null])
 	})
 })
