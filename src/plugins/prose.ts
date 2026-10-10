@@ -1,29 +1,24 @@
 /**
- * prose 层增强：把 Nuxt 侧 `app/components/content/Prose*.vue` 的产物补回 Astro。
+ * prose 层增强（rehype）：给 markdown **生成**的 `p` / `a` / `pre` / `code` /
+ * `table` 元素补上 prose CSS、客户端脚本与门禁共同依赖的 DOM 形状：
  *
- * ═══ 为什么需要这个插件 ═══
- * Nuxt Content 按约定自动把 markdown 产出的 `p` / `a` / `pre` / `code` / `table` /
- * `h1..h6` 映射到 `ProseP` / `ProseA` / `ProsePre` / `ProseCode` / `ProseTable` /
- * `ProseH1..H6`。这 6 个组件此前**从未移植**，于是每个文章页都在裸奔：
- *
- *   - `pre` 少了 `<figure class="z-codeblock">` 外壳 → 没有语言标签、没有
- *     「自动换行 / 复制」按钮、没有长代码块折叠（22 个页面受影响）
- *   - `a` 少了 `z-link` 类与域名图标（40 个页面）
- *   - `p` 少了 `prose-paragraph` 类与「引用整段到评论区」按钮（61 个页面）
- *   - `table` 少了 `<figure class="md-table">` 外壳与换行切换（17 个页面）
- *   - `h1..h6` 少了 `<a href="#id">` 包裹 → `article.css` 里
- *     `&.md-tech > h2 > a::before` 一类规则全部失配
+ *   - `pre` → `<figure class="z-codeblock">` 外壳：语言标签、
+ *     「自动换行 / 复制」按钮、长代码块折叠
+ *   - `a` → `z-link` 类与域名图标、`data-tip` 浮层文案
+ *   - `p` → `prose-paragraph` 类与「引用整段到评论区」按钮（显隐由客户端定）
+ *   - `table` → `<figure class="md-table">` 外壳与换行切换
+ *   - 行内 `code` → `language-*` / `copyable` / 复制按钮 + 构建期着色
+ *   - `h1..h6` 的 `<a href="#id">` 包裹留到客户端（id 在本插件之后才写入）
  *
  * ═══ 为什么用 rehype 而不是 MDX 组件映射 ═══
  * 这些是 markdown **生成**的元素，不是 MDX 里手写的组件名，
  * 走 `components` 表覆盖不可靠。rehype 阶段是它们唯一稳定的存在形式。
  *
- * ═══ 结构对齐 ═══
- * Nuxt 的 shiki 输出把 token 直接放进 `<pre class="shiki">`；
- * Astro 输出的是 `<pre class="astro-code"><code><span class="line">`。
- * `main.css` 里既有的 `.shiki > .line` 规则要求 `.line` 是 `pre` 的**直接子元素**，
- * 所以这里把 `<code>` 拆掉，让 DOM 结构与 Nuxt 完全一致——
- * 这样 `main.css` 那段逐字节相同的 CSS 才能原样生效。
+ * ═══ 结构合同 ═══
+ * `main.css` 里 `.shiki > .line` 一类规则要求 `.line` 是 `pre` 的**直接子元素**，
+ * 所以这里必须把 Astro shiki 产出的 `<code>` 包裹拆掉；类名与嵌套形状是线上一致
+ * 的内容合同（CSS、客户端脚本、门禁都按它匹配），勿单方面改动——背景见
+ * docs/plan/analysis/engineering-inventory.md §4。
  *
  * 本插件的 rehype 阶段跑在 Astro 内建 shiki **之后**（证据：追加的
  * `shiki scrollcheck-x` 排在 `one-dark-pro` 之后，且拆掉的 `<code>`
@@ -67,15 +62,12 @@ function classList(node: HastNode): string[] {
  *
  * ⚠️ MDX 手写的元素（`mdxJsxTextElement` / `mdxJsxFlowElement`）**没有**
  * `properties`，属性在 `attributes` 数组里，而且**写 `properties` 完全无效**——
- * MDX 运行时只认 `attributes`。`getAttr` 早就同时读了两处（它是为
- * `<code lang="js" copy={true}>` 加的），但 `classList` / `addClass` 只读
- * `properties`，于是**任何对 MDX 节点加类的操作都是无声的空操作**。
+ * MDX 运行时只认 `attributes`。因此加类 / 设属性必须走 `setAttr`，
+ * 直接操作 `properties` 对 MDX 节点是无声的空操作。
  *
  * ⚠️⚠️ 新增的属性对象**必须带 `type: 'mdxJsxAttribute'`**。
- * 第一版 push 的是裸 `{ name, value }`，结果 `icon` 属性成功被删掉
- * （那是 splice，不新建对象），而 `class="z-link"` 加了却**没出现在产物里**——
- * MDX 的 hast→estree 只认带 `type` 的属性节点，裸对象被静默丢弃。
- * 症状极有欺骗性：图标渲染了、`icon` 也清掉了，唯独类名没���，
+ * MDX 的 hast→estree 只认带 `type` 的属性节点，裸 `{ name, value }` 被**静默丢弃**。
+ * 症状极有欺骗性：删属性（splice，不新建对象）生效、加属性不生效，
  * 看起来像「`addClass` 没被调用」而不是「属性对象形状不对」。
  */
 interface MdxAttr {
@@ -143,23 +135,20 @@ function addClass(node: HastNode, ...names: string[]) {
  * 取标签名。
  *
  * ⚠️ MDX 手写的元素**没有** `tagName`——标签名在 `name` 上（`mdxJsxTextElement`
- * 原样透传给 MDX 运行时，hast 那一侧什么都不做）。早先的遍历只读 `tagName`，
- * 于是正文里全部 4 处 `` `x`{lang="yy"} ``（codemod 转成的
- * `<code lang="yy">`）整条被跳过：既没有 `language-yy`，也没有复制按钮，
- * 只能靠 src/lib/prose-enhance.ts 在客户端兜。
+ * 原样透传给 MDX 运行时，hast 那一侧什么都不做）。只读 `tagName` 会整条跳过
+ * 正文里以 JSX 形态出现的行内代码与链接。
  *
  * ## 额外认哪些名字
  *
- * `code` 与 `a` 两个，**都是 Nuxt 侧 markdown 会映射到 Prose* 的元素**
- * （`ProseCode` / `ProseA`），而这两者在 MDX 里恰好会被 codemod 转成 JSX：
- * 语料里的 `` `x`{lang="js"} `` 与 `[a](#x){icon="…"}`。
- * 早先只认 `code`，于是 MDX 的 `<a>` 整条绕过 `buildLink`，实测
- * `example.mdx:124` 那个链接缺 `z-link` 类、缺图标，
- * 且 `icon` 属性**原样漏进 DOM**（`icon` 不是合法 HTML 属性）。
+ * 只认 `code` 与 `a`：这两个在 prose 合同里有各自的产物形状（行内代码着色/
+ * 复制按钮、链接的 z-link+图标），而语料里的 `` `x`{lang="yy"} `` 与
+ * `[a](#x){icon="…"}` 在 MDX 里恰好会被写成 JSX 元素，绕开它们就等于
+ * `buildLink` / `buildInlineCode` 对这批节点静默失效（类名缺失、
+ * `icon` 这类非 HTML 属性原样漏进 DOM）。
  *
- * 其余 MDX 元素（Tab / div / span / img / meta-*）**仍然不认**：
- * Nuxt 那边只有 markdown **生成**的元素才映射到 Prose*，手写组件不映射。
- * 判据是「这个标签在 Nuxt 侧有没有对应的 Prose* 组件」，不是「它是不是小写」。
+ * 其余 MDX 元素（Tab / div / span / img / meta-*）**仍然不认**：只有
+ * markdown 生成的元素参与 prose 增强，手写组件不参与。
+ * 判据是「这个标签有没有 prose 合同」，不是「它是不是小写」。
  */
 function tagOf(node: HastNode): string | undefined {
 	if (node.tagName)
@@ -173,14 +162,13 @@ function tagOf(node: HastNode): string | undefined {
 /**
  * hast 的属性键名有两种约定：有的地方写 `data-language`，
  * 也有地方经 hast 的属性名归一化变成 `dataLanguage` 后再序列化回 `data-language`。
- * 三种拼法都试一遍（第一次移植就栽在这里：语言标签全显示成 text，
- * 而 `<pre data-language="bash">` 明明在输出里）。
+ * 三种拼法都要试——只读一种会让语言标签全显示成 text，而
+ * `<pre data-language="bash">` 明明在输出里。
  *
  * ⚠️ 还有第三种形态：本插件运行时，MDX 里手写的 `<code lang="js" copy={true}>`
- * 还是 `mdxJsxTextElement`，属性放在 `attributes` 数组里而不是 `properties`。
- * 早先只读 `properties`，于是行内代码的 `lang` / `copy` 一个都取不到——
- * 静态产物里是干净的 `<code lang="js">const a = 1</code>`，既没有 `language-js`，
- * 也没有复制按钮，只能靠 src/lib/prose-enhance.ts 在客户端兜。
+ * 还是 `mdxJsxTextElement`，属性放在 `attributes` 数组里而不是 `properties`，
+ * 两处都要读——只读 `properties` 时行内代码的 `lang` / `copy` 一个都取不到，
+ * 产物里既没有 `language-js` 也没有复制按钮，且不会报错。
  */
 function getAttr(node: HastNode, name: string): string | undefined {
 	const props = node.properties
@@ -250,7 +238,8 @@ interface CodeMeta {
 }
 
 /**
- * 解析 Nuxt Content 的围栏 info string：`lang [文件名] icon=xx:yy wrap expand`。
+ * 解析围栏 info string：`lang [文件名] icon=xx:yy wrap expand`
+ * （语料沿用内容层的围栏语法，这是内容合同的一部分）。
  */
 function parseFenceInfo(info: string): CodeMeta {
 	const trimmed = info.trim()
@@ -385,13 +374,13 @@ function readFenceMetas(file: unknown): CodeMeta[] {
 	}
 }
 
-/* ══════════════════════════ 2. 补回 Prose* 的标记 ══════════════════════════ */
+/* ══════════════════════════ 2. 补 prose 结构标记 ══════════════════════════ */
 
 /**
  * 代码块行为参数。
  *
- * ⚠️ 不要在这里写死数字：从 `app/app.config.ts` 的 `component.codeblock` 读。
- * 之前硬编码的 12 / 6 / 2 / 4 与实际配置（32 / 16 / 4 / 3）全部不符，
+ * ⚠️ 不要在这里写死数字：从 `src/lib/app-config.ts` 的 `component.codeblock` 读。
+ * 曾经硬编码的一组数字与实际配置全部不符，
  * 会让几乎所有代码块都不折叠、折叠高度也不对。
  */
 export const CODEBLOCK = appConfig.component.codeblock
@@ -421,16 +410,13 @@ function preText(pre: HastNode): string {
 function buildCodeFigure(pre: HastNode, metas: CodeMeta[]): HastNode {
 	/*
 	 * Astro 的 shiki 对**没有标语言**的围栏会写 `data-language="plaintext"`，
-	 * 而 Nuxt Content 那边是 `text`（见 `[...slug].vue` 的 excerpt→content 链路，
-	 * 以及 `ProsePre.vue` 收到的 `language`）。于是：
+	 * 而本仓库的图标映射、图注文本与围栏 meta 配对用的约定值是 `text`。不归一化：
 	 *
 	 *   - 代码块图标的语言映射走错分支；
 	 *   - `parseFenceInfo` 拿 `plaintext` 去配对 meta，永远配不上；
-	 *   - 最直接的是**产物文本就不一样**：线上代码块图注是 `text`，
-	 *     Astro 是 `plaintext`。实测 `/2024/08/docker-deploy-outline` 整页差 +26px
-	 *     就来自这一批代码块（探针按文本配对时对不上，一次报出 9 对元素）。
+	 *   - 产物图注文本变成 `plaintext`，与线上内容合同不符，按文本配对的探针也会失配。
 	 *
-	 * `?? 'text'` 那个兜底因此从未生效——属性一直有值，只是值不对。
+	 * 光靠 `?? 'text'` 的兜底不够——属性一直有值，只是值不对，必须显式归一化。
 	 */
 	const rawLang = getAttr(pre, 'data-language')
 	const lang = !rawLang || rawLang === 'plaintext' ? 'text' : rawLang
@@ -440,7 +426,7 @@ function buildCodeFigure(pre: HastNode, metas: CodeMeta[]): HastNode {
 	const hasWrapMeta = meta?.wrap === true
 	const expandable = meta?.expand === true
 
-	/* 拆掉 Astro 的 <code> 包裹，让 .line 直接挂在 pre 下，与 Nuxt 结构一致。 */
+	/* 拆掉 Astro 的 <code> 包裹，让 .line 直接挂在 pre 下——main.css 的 `.shiki > .line` 要求这一形状。 */
 	const code = pre.children?.find(c => c.tagName === 'code')
 	if (code?.children)
 		pre.children = code.children
@@ -449,18 +435,9 @@ function buildCodeFigure(pre: HastNode, metas: CodeMeta[]): HastNode {
 	const rows = source.split('\n').length
 	const collapsible = !expandable && rows > CODEBLOCK.triggerRows
 	/*
-	 * Nuxt 侧计的是**围栏原文**，即闭合围栏前那个换行也算进去：
-	 * Nuxt Content 把 `node.value` 交给 ProsePre，而 remark 的 mdast `code.value`
-	 * 已经把闭合围栏前的换行吃掉了，于是 `props.code` = 这里读到的 `source` + '\n'
-	 * （ProsePre.vue:57 还要 `props.code.trimEnd()` 才能喂给 shiki，也印证了那个换行）。
-	 *
-	 * 三个数字全部按 Nuxt 的口径算，实测 12 个折叠代码块里 11 个逐位相同
-	 * （44/996、219/5590、33/423、86/2919 …）。剩下 1 个
-	 * `2025/10/clarity-resource-list` 对不上是**内容**不同：
-	 * SCSS→CSS 迁移把围栏里的 `<style lang="scss" scoped>` 改成了 `<style scoped>`，
-	 * Nuxt 基线量的还是旧内容（3199 + 1 = 3200），不是这里的公式错。
-	 * 顺带一提 Astro 这个值更「诚实」——它量的是真正渲染出来的字符数——
-	 * 但要求是对齐 Nuxt，所以补回那个换行。
+	 * 图注里的行数 / 字符数 / 字节数按「围栏原文」口径算：闭合围栏前那个换行
+	 * 也算进去，所以补 `${source}\n`。这个口径与线上图注数字一致（内容合同，
+	 * 背景见 engineering-inventory §4），几何门禁按图注文本配对——改口径会连锁红。
 	 */
 	const untrimmed = `${source}\n`
 
@@ -468,13 +445,10 @@ function buildCodeFigure(pre: HastNode, metas: CodeMeta[]): HastNode {
 	/*
 	 * `wrap` 类必须真的挂到 pre 上。
 	 *
-	 * Nuxt 侧 ProsePre.vue:96 是 `:class="[props.class, { wrap: isWrap }]"`，
-	 * 内容里写 ```` ```mdc wrap ```` 时 `pre.wrap` 生效，
-	 * prose.css 的 `.z-codeblock pre.wrap { white-space: pre-wrap }` 让长行折行。
-	 *
-	 * 这里原本只把 `hasWrapMeta` 拿去拼按钮文字（`横向滚动` / `自动换行`），
-	 * **从没给 pre 加过 wrap 类**——按钮显示得对，行为却没跟上：
-	 * 实测线上 `white-space: pre-wrap`、Astro 侧 `pre`，长代码行在两边表现不同。
+	 * 内容里写 ```` ```mdc wrap ```` 时，prose.css 的
+	 * `.z-codeblock pre.wrap { white-space: pre-wrap }` 才能让长行折行。
+	 * 只把 `hasWrapMeta` 拿去拼按钮文字（`横向滚动` / `自动换行`）是不够的——
+	 * 按钮显示得对、行为没跟上，且没有任何报错。
 	 */
 	if (hasWrapMeta)
 		addClass(pre, 'wrap')
@@ -509,18 +483,18 @@ function buildCodeFigure(pre: HastNode, metas: CodeMeta[]): HastNode {
 
 	if (collapsible) {
 		/*
-		 * 类名与 Nuxt 的 SSR 产物逐字同序：`z-codeblock collapsed collapsible`
-		 * （.output/public 实测）。
+		 * 类名固定为逐字同序的 `z-codeblock collapsed collapsible`
+		 * （CSS、门禁与客户端脚本都按这一形状匹配）。
 		 *
 		 * ⚠️ `collapsed` 必须在**构建期**就写上，不能只靠客户端
-		 * `prose-enhance.ts:134` 的 `initCodeCollapse()` 补。那样做的话
+		 * `prose-enhance.ts` 的 `initCodeCollapse()` 补。那样做的话
 		 * SSR 产物是「展开」的，首屏要等 JS 跑完才折叠（闪一下全量代码），
-		 * 无 JS 时永远展开——而 Nuxt 的 SSR 就是折叠的。
+		 * 无 JS 时永远展开——线上的初始形态就是折叠的。
 		 *
 		 * ⚠️ 代价是 `initCodeCollapse()` 开头 `if (contains('collapsed')) continue`
 		 * 会**整块跳过**，所以构建期必须把它的另外两个副作用一起做掉：
-		 *   - `aria-label` 用 Nuxt 的 `展开代码块`（ProsePre.vue:103 同款三元）
-		 *   - 箭头图标带 `is-collapsed`，否则 `prose.css:247` 的
+		 *   - `aria-label` 用 `展开代码块`
+		 *   - 箭头图标带 `is-collapsed`，否则 prose.css 的
 		 *     `rotate(180deg)` 永远不生效，箭头方向反了。
 		 * 这三处是**一个整体**，动其中一处必须同步另两处。
 		 */
@@ -529,29 +503,23 @@ function buildCodeFigure(pre: HastNode, metas: CodeMeta[]): HastNode {
 			el('button', { 'type': 'button', 'class': 'toggle-btn', 'aria-label': '展开代码块', 'data-cb-action': 'collapse' }, [
 				iconElement('tabler:chevrons-up', 'toggle-icon is-collapsed'),
 				/*
-				 * 文案必须包一层 `<span>`。
+				 * 文案必须包一层 `<span>`，让按钮有**两个元素子节点**（图标 + 文字）。
 				 *
-				 * `main.css:71` 的 `button > .iconify:only-child { display: block }`
-				 * 在 Nuxt 侧**逐字存在**，两边都命中；差别只在按钮的 DOM 形状：
-				 *   - Nuxt：`<span class="iconify …">`（@nuxt/icon 的 Icon 渲染成 span）
-				 *          + `<span>文案</span>` → **两个**元素子节点，
-				 *            `:only-child` 不成立，图标保持 inline-block，与文字同一行
-				 *   - 原先这里：裸 `<svg>` + 裸文本节点 → 文本节点不算元素子节点，
-				 *            `:only-child` **成立** → display:block → 图标独占一行，
-				 *            每个折叠块凭空多一行（实测 16.31px，一个块 +16、两个块 +33）
+				 * `main.css` 的 `button > .iconify:only-child { display: block }`：
+				 * 裸 `<svg>` + 裸文本节点时，文本不算元素子节点，`:only-child`
+				 * **成立** → 图标 display:block 独占一行，每个折叠块凭空多一行
+				 * （实测 16.31px，一个块 +16、两个块 +33）。两个元素子节点时
+				 * `:only-child` 不命中，图标回到 `:where(.iconify)` 的
+				 * inline-block，与文字同一行。
 				 *
-				 * 包成两个元素子节点后 `:only-child` 不再命中，图标回到
-				 * `main.css:87` `:where(.iconify)` 的 inline-block，与 Nuxt 同高。
+				 * ⚠️ 千万别把 main.css 那条改成 `svg { display: block }` /
+				 * `> * { display: block }` 之类的写法来「压住」`:only-child`：
+				 * `:where(.iconify)` 是**零特异性**，任何裸标签或通配选择器都能
+				 * 盖掉它的 inline-block，那只会把 16.31px 换成另一种错法
+				 * （Tip.astro 那个图标被永久清空的坑就是同一族）。
 				 *
-				 * ⚠️ 千万别把这条改成 `svg { display: block }` / `> * { display: block }`
-				 * 之类的写法来「压住」`:only-child`：`main.css:87` 的 `:where()` 是
-				 * **零特异性**，任何裸标签或通配选择器都能盖掉 `.iconify` 的
-				 * inline-block，那只会把 16.31px 换成另一种错法（Tip.astro 那个
-				 * 图标被永久清空的坑就是同一族）。
-				 *
-				 * 前置空格一并去掉：Vue 模板的 whitespace:condense 会吃掉 Icon 与
-				 * `<span>` 之间的纯空白文本节点，Nuxt 产物里本来就没有这个空格
-				 * （`<span>35 lines, …</span>`），间距由 `.toggle-icon` 的
+				 * 前置空格一并去掉：产物里 toggle 按钮的形状是「图标 + 文字 span」，
+				 * 中间没有空白文本节点；间距由 `.toggle-icon` 的
 				 * `margin-inline-end: 0.2em` 负责。
 				 */
 				el('span', {}, [txt(`${rows} lines, ${untrimmed.length} chars, ${formatBytes(new TextEncoder().encode(untrimmed).length)}`)]),
@@ -566,22 +534,21 @@ function buildLink(node: HastNode): HastNode | undefined {
 	const href = getAttr(node, 'href') ?? ''
 	if (!href)
 		return undefined
-	// Nuxt 的 ProseA 对**所有**正文链接都加 z-link，含 `#锚点` 内部跳转
-	// （example 页 Nuxt 30 个 / 早期实现 16 个，差的就是这批）。
+	// **所有**正文链接都加 z-link，含 `#锚点` 内部跳转——这是 prose.css
+	// 与 check-anchor-classes 门禁依赖的产物合同。
 	addClass(node, 'z-link')
 	if (isExtLink(href))
 		setAttr(node, 'target', '_blank')
 	if (isExtLink(href))
 		setAttr(node, 'rel', 'nofollow noopener noreferrer')
-	// `v-tip` 的文案（ProseA.vue:11）：外链给域名，内链给解码后的 href。
-	// 内容在构建期就算好，客户端只负责显隐——和 Nuxt 唯一的差别是
-	// 浮层由 src/lib/prose-enhance.ts 用 .tippy-box 复刻，而不是 vue-tippy。
+	// 浮层文案：外链给域名，内链给解码后的 href。内容在构建期就算好写进
+	// `data-tip`，客户端只负责显隐（src/lib/prose-enhance.ts，浮层壳子是
+	// `.tippy-box` 复刻，不依赖任何 tooltip 库）。
 	const tip = isExtLink(href) ? getDomain(href) : safelyDecodeUriComponent(href)
 	if (tip)
 		setAttr(node, 'data-tip', tip)
-	// `icon` 是 MDC 给 ProseA 的 prop（`[a](#x){icon="tabler:color-swatch"}`），
+	// `icon` 是内容语法给链接的 prop（`[a](#x){icon="tabler:color-swatch"}`），
 	// 不是合法 HTML 属性——**必须从输出里删掉**，否则它会原样出现在 DOM 上。
-	// Nuxt 侧 `const icon = computed(() => props.icon ?? getDomainIcon(props.href))`：
 	// 显式 icon **覆盖**域名图标，且两者都用 `domain-icon` 类渲染。
 	const explicitIcon = getAttr(node, 'icon')
 	if (explicitIcon !== undefined)
@@ -599,14 +566,11 @@ function buildLink(node: HastNode): HastNode | undefined {
 /**
  * 表格的换行切换。
  *
- * Nuxt 侧是 `<Tooltip class="md-table" tag="figure" interactive :delay="500">`，
- * 按钮在 **tooltip 内容**里（ProseTable.vue:6-15），也就是静态 HTML 里根本没有它，
- * 首次构建期产物实测：`<figure class="md-table" data-v-tippy><table class="scrollcheck-x scroll">`。
- * 这里把浮层壳子直接产出来，类名沿用 `.tippy-box` / `.tippy-content`，
- * 让 src/styles/main.css:150 既有的 tippy 样式继续生效
+ * 浮层壳子在构建期直接产出，类名沿用 `.tippy-box` / `.tippy-content`，
+ * 让 main.css 既有的 tippy 样式继续生效
  * （同 partial/Dropdown.astro、post/Comment.astro 的做法）。
  *
- * 显隐与 `:delay="500"` 全部交给 CSS 的 transition-delay，不用 JS。
+ * 显隐与 500ms 延迟全部交给 CSS 的 transition-delay，不用 JS。
  * 按钮初始是 `opacity: 0` 而不是 `display: none` / `visibility: hidden`：
  * 前者会让 Playwright 的可见性检查失败（scripts/interaction-check.mjs 直接
  * `click('[data-md-table-action]')`，没有 hover 就没有 500ms），后者也一样；
@@ -615,7 +579,7 @@ function buildLink(node: HastNode): HastNode | undefined {
 function buildTable(node: HastNode): HastNode {
 	addClass(node, 'scrollcheck-x', 'scroll')
 	// 初始 `scroll` 为真（= 横向滚动），按钮给的是反向操作「自动换行」，
-	// 图标同理：scroll ? text-wrap : text-wrap-disabled（ProseTable.vue:11-12）。
+	// 图标同理：scroll ? text-wrap : text-wrap-disabled。
 	const button = el(
 		'button',
 		{ 'type': 'button', 'class': 'md-table-toggle', 'data-md-table-action': 'toggle', 'aria-label': '切换表格换行' },
@@ -632,22 +596,18 @@ function buildTable(node: HastNode): HastNode {
 }
 
 /**
- * 行内代码着色：对应 Nuxt ProseCode.vue:13-21 的
- * `shiki.mountInline(code, props.code, { language, transformerOptions: ['ignoreColorizedBrackets'] })`。
+ * 行内代码着色（构建期）。
  *
  * ═══ 为什么走构建期而不是客户端 ═══
- * Nuxt 之所以在 `onMounted` 里跑，是因为它的 shiki 在浏览器里（@bikariya/shiki）。
- * Astro 侧的行内代码**只有 4 处**（`lang` 分别是 js / sh / yaml×2），
- * 为此把一个 shiki 高亮器塞进客户端包完全不划算；而构建期已经因为
- * `astro.config.mjs` 的 `shikiConfig` 引入过 shiki 了，只是它只处理围栏代码块。
+ * 站点里带 `lang` 的行内代码很少，为此把一个 shiki 高亮器塞进客户端包完全不
+ * 划算；而构建期已经因为 `astro.config.mjs` 的 `shikiConfig` 引入过 shiki 了，
+ * 只是它只处理围栏代码块。
  * 于是这里复用同一套主题（catppuccin-latte + one-dark-pro）与
  * `defaultColor: false`，token 拿到 `--shiki-light` / `--shiki-dark`，
- * 正好命中 prose.css / main.css 里既有的 `.shiki > span[style]` 规则。
- * 附带好处：Astro 侧明暗切换是纯 CSS 变量，行内代码也跟着切，
- * 而 Nuxt 那份内联 `color:` 在挂载后就定死了。
+ * 正好命中 prose.css / main.css 里既有的 `.shiki > span[style]` 规则；
+ * 明暗切换是纯 CSS 变量，行内代码也跟着切。
  *
- * 代价：多一个 shiki 高亮器实例（约 1~2s，只建一次），以及 `shiki`
- * 成了 astro-site 的**未声明依赖**（它只装在根 node_modules 里，靠向上查找解析）。
+ * 代价：多一个 shiki 高亮器实例（约 1~2s，只建一次）。
  */
 const INLINE_THEMES = { light: 'catppuccin-latte', dark: 'one-dark-pro' }
 
@@ -656,8 +616,8 @@ const INLINE_THEMES = { light: 'catppuccin-latte', dark: 'one-dark-pro' }
  *
  * ⚠️ 这里存的是「promise」而不是结果：并发构建时多个页面会同时 await
  * 同一个 promise，谁先到谁先跑，不存在「后到的页面把前一个的结果冲掉」
- * 那类问题（插件顶部记的第二个坑是模块级**队列**被插队冲掉，性质不同）。
- * 整个站点只有 4 处行内代码，语言按需 `loadLanguage`，不做硬编码白名单。
+ * 那类问题（模块级**队列**会被并行构建插队冲掉，性质不同，见 readFenceMetas）。
+ * 行内代码着色点很少，语言按需 `loadLanguage`，不做硬编码白名单。
  */
 let inlineHighlighter: Promise<Highlighter> | undefined
 
@@ -673,8 +633,8 @@ async function highlightInline(highlighter: Highlighter, code: string, lang: str
 			await highlighter.loadLanguage(lang as BundledLanguage)
 		return highlighter.codeToHast(code, {
 			lang: lang as BundledLanguage,
-			// 对齐 useShiki.ts:113-121 的 mountInline：structure: 'inline'
-			// 产出的就是一串 <span style="--shiki-light:…;--shiki-dark:…">，
+			// structure: 'inline' 产出的就是一串
+			// <span style="--shiki-light:…;--shiki-dark:…">，
 			// 没有 <pre> / <code> / .line 外壳，可以直接当 code 的 children。
 			structure: 'inline',
 			themes: INLINE_THEMES,
@@ -710,19 +670,17 @@ async function highlightInlineCode(tree: HastNode) {
 		if (!tokens)
 			continue
 		node.children = tokens
-		// Nuxt 的 mountInline 第一步就是 `target.classList.add('shiki')`
-		// （useShiki.ts:114），靠的就是这个类去接 .shiki 的双主题映射。
+		// `shiki` 类是双主题 CSS 变量映射（.shiki > span[style]）的挂载点，缺了它
+		// token 颜色不随明暗切换。
 		addClass(node, 'shiki')
 	}
 }
 
 /**
- * 行内代码：对应 Nuxt 的 ProseCode。
+ * 行内代码：补 `copy` 行为与结构类。
  *
- * Nuxt Content 把 markdown 的 `p` / `a` / `pre` / `code` / `table` 映射到
- * Prose* 组件，其中 ProseCode 额外支持 `copy` 属性（正文里写
- * `` `pnpm dev`{lang="sh" copy} ``，codemod 转成 MDX 的
- * `<code lang="sh" copy={true}>`），渲染成：
+ * 语料里写 `` `pnpm dev`{lang="sh" copy} ``，在 MDX 里是
+ * `<code lang="sh" copy={true}>`，产物形状（CSS 与 interaction-check 都按它匹配）：
  *
  *   <code class="copyable language-sh shiki">…<span icon/><button class="copy-button"/></code>
  *
@@ -751,7 +709,7 @@ function buildInlineCode(node: HastNode): HastNode | undefined {
 }
 
 /**
- * 把「每项都只包一层 `<p>`」的列表改成紧凑列表（Nuxt Content 的行为）。
+ * 把「每项都只包一层 `<p>`」的列表改成紧凑列表。
  *
  * ## 为什么需要
  *
@@ -763,14 +721,12 @@ function buildInlineCode(node: HastNode): HastNode | undefined {
  *     - 一个域名，建议为顶级域名
  *
  * 于是 Astro 产出 `<li><p class="prose-paragraph">…</p></li>`，而
- * **线上 Nuxt 产出的是 `<li>…</li>`，没有 `<p>`**（2026-10-02 实测
- * `.output/public/2024/08/docker-deploy-outline/index.html` 与线上产物一致）。
+ * **线上产物合同是 `<li>…</li>`，列表项里没有 `<p>`**。
  *
  * 后果有两处，都不止是排版：
- *   1. 多出来的 `<p>` 带自己的上下外边距，每个 `<li>` 都变高
- *      —— 实测该页 3 个 `<ul>` 分别高 4 / 13 / 9px，合计 **+26px**；
- *   2. `prose.ts` 会给每个 `.prose-paragraph` 插入「引用整段到评论区」按钮，
- *      于是**列表项里也冒出了引用按钮**，而 Nuxt 侧列表项里没有。
+ *   1. 多出来的 `<p>` 带自己的上下外边距，每个 `<li>` 都变高（几何门禁会红）；
+ *   2. 本插件会给每个 `.prose-paragraph` 插入「引用整段到评论区」按钮，
+ *      于是**列表项里也冒出了引用按钮**，而产物合同里列表项没有。
  *
  * ## 判据
  *
@@ -838,19 +794,13 @@ export function rehypeProseChrome() {
 					// 引用按钮依赖评论组件（#twikoo）运行时才出现，
 					// 无法在构建期判定，故统一输出标记，由客户端脚本决定显隐。
 					//
-					// ⚠️ 图标名：Nuxt 的 ProseP.vue:52 写的是 `tabler:message-circle-quote`，
-					// 但**这个图标不存在**——`@iconify-json/tabler@1.2.41` 里既没有它
-					// 也没有 `message-quote`／`speech*`，Iconify API 对
-					// `tabler/message-circle-quote.svg` 直接 404。也就是说 Nuxt 那颗
-					// 「对话气泡」从来就没画出来过（按钮还是 `v-if` 客户端才创建的，
-					// SSR 产物里连按钮都没有，见 .output/public）。
-					//
-					// 这里取同一家族里真实存在、最接近的那个：`tabler:message-circle-2`
-					// （圆形 + 左下尾巴的对话气泡，`m3 20l1.3-3.9A9 8 0 1 1 7.7 19z`）。
-					// 早先这里写的是 `tabler:quote`（一个引号号），与 Nuxt 的意图
-					// 「对话气泡」对不上；又因为客户端兜底那条路写的是 Nuxt 的名字，
-					// 两条路各画各的，产物里同时出现两种字形。现在字形只有一处来源：
-					// 构建期出内联 SVG，客户端兜底直接克隆构建期那颗按钮的图标。
+					// ⚠️ 图标名：`tabler:message-circle-quote` 在 `@iconify-json/tabler`
+					// 里**不存在**（Iconify API 直接 404），别照任何旧文档用它；
+					// 这里取同一家族里真实存在、最接近意图（对话气泡）的那个：
+					// `tabler:message-circle-2`。字形只允许一处来源：构建期出内联 SVG，
+					// 客户端兜底直接克隆这颗按钮的图标（prose-enhance.ts 的
+					// fallbackQuoteIcon），不要在客户端脚本另写图标名——两条路各画
+					// 各的，产物里会同时出现两种字形。
 					node.children = [
 						...(node.children ?? []),
 						el(
@@ -864,8 +814,8 @@ export function rehypeProseChrome() {
 					return buildTable(node)
 				default:
 					// 标题锚点留到客户端：Astro 的 heading id 由它自己的 rehype 阶段
-					// 生成，在本插件**之后**才写入（实测 63 篇里 25 个标题在本插件
-					// 运行时还没有 id）。见 src/lib/prose-enhance.ts。
+					// 生成，在本插件**之后**才写入——构建期有大量标题在运行时还没有
+					// id，构建期包锚点会漏掉它们。见 src/lib/prose-enhance.ts。
 					return undefined
 			}
 		})

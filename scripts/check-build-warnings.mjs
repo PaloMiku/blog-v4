@@ -63,26 +63,30 @@ const ROOT = REPO_ROOT
 const DEFAULT_LOG = join(ROOT, '.astro-compare', 'acceptance-build.log')
 
 // -- warning allowlist --------------------------------------------------------
-// 每一条都必须写清理由。光秃秃一张白名单正是「真回归被挥手放行」的方式，
-// 所以往这里加一条 pattern 是一个决定，不是一次清理。
+// 每一条必须写齐三样：原因、影响范围、复核日期。到期未复核的条目按
+// 「决定过期」处理——重新实测后再决定放行或修复。光秃秃一张白名单正是
+// 「真回归被挥手放行」的方式，所以往这里加一条 pattern 是一个决定，不是一次清理。
 const allow = [
 	{
 		pattern: 'MODULE_LEVEL_DIRECTIVE',
-		reason: 'MDX head 注入带来的 Rollup 噪音。已验证无害：MDX 的 head export 确实生效'
-			+ '（docs/astro-phase1-findings.md E 节，死代码/清洁度清单）。它不是正确性信号。',
+		reason: 'MDX head 注入带来的 Rollup 噪音，非正确性信号：已验证 head export 确实生效'
+			+ '（docs/astro-phase1-findings.md E 节）。',
+		impact: '只影响含 frontmatter head 的 MDX 编译日志行；产物无丢失。',
+		recheck: '2027-04',
 	},
 	{
 		pattern: 'chunks are larger than 500 kB',
-		reason: 'Mermaid + cytoscape 是重量级图库，但它们在 dynamic import 后面，'
-			+ '只有真的含图的页面才付这份代价；这里的 chunk 体积告警不等于单页负载回归'
-			+ '（每页 JS+CSS 的实测数字见 docs/astro-phase1-findings.md）。',
+		reason: '告警指向按需动态块，不是任何页面的首屏成本。EC-002 页面级实测（2026-10-10，68 页）：'
+			+ 'chunk-FOHPRMQF 647KB / cytoscape 425KB（mermaid 依赖链）与 abcjs 497KB 只被 '
+			+ '/previews/example 一页引用（data-mermaid / data-abcjs-container 仅出现于该页）；'
+			+ '其余页面静态 JS 合计 13～16KB、CSS 68KB。Mermaid/MusicScore 已是动态 import。',
+		impact: '单页（previews 演示页）运行时多加载图库块；正式文章页不受影响。',
+		recheck: '2027-01',
 	},
-	{
-		pattern: 'conflicts with higher priority route',
-		reason: '预期之内：站点同时有专门的 /link 路由和兜底的 /[...slug]，兜底也匹配 /link，'
-			+ 'Astro 每次构建都会说一遍。专门的那条优先，渲染出来的页面是对的'
-			+ '（compare-urls 在 67 个页面上过；compare-titles 已随 Nuxt 基线退役）。',
-	},
+	// 曾经这里有一条 'conflicts with higher priority route'（/link 双重匹配）。
+	// EC-002 已修复：[...slug].astro 的 getStaticPaths 排除专用路由独占的条目 id，
+	// 构建不再产生该告警。**不要**把它加回来——修复后若它再现，说明新写了
+	// 一条与内容条目同路径的专用页面却没登记 RESERVED，这正是该门禁要抓的错。
 ]
 
 // -- warning detectors --------------------------------------------------------

@@ -255,6 +255,8 @@ console.log('  判别办法：比对冻结基线同页（baseline/nuxt/），基
  * 各因此手工重钉过一次，而选择器与 cid 逐字未变。文件名只留作定位信息。
  */
 const KNOWN = new Set([
+	// 治理要求（EC-007 补）：每条都有 (a)/(b) 判定理由；复核日期 2026-12——
+	// 届时 cid 若变化（说明组件样式改过），必须按文件头部规则重新判 (a)/(b) 再钉。
 	// (b) 类：主体在本内容集里从不渲染。`.content` 只出现在 Blog 的 cid 上，
 	//     PostFooter 自己的 cid 上一个元素都没有 ⇒ :global() 反而会把选择器放宽。
 	'.content[data-astro-cid-2z6spp2e]',

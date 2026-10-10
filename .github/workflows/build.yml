@@ -15,9 +15,12 @@
 # 门禁名单不在这个文件里，所以这里也就不再复述成员——复述就是第二份真相，
 # 而第二份真相已经错过好几次（见 CLAUDE.md 坑位 37）。
 #
-# 读未入库的 Nuxt 冻结基线（`baseline/nuxt/`）的门禁在 CI 上会自己跳过，在汇总里
-# 单列成 `skipped`，不计入通过——这是有意的：基线不在 checkout 里，硬跑只会得到
-# 一个假绿。哪些门禁读它由代码自己交代，这里不复述名单（复述即第二份真相）。
+# 这里跑的是 accept.mjs 的 release 档（默认档，发布必需检查）。
+# 深度维护审计（maintenance 档）与基线/线上对拍（parity 档）不在这条流水线里：
+# 它们由本地显式点名（pnpm accept:maintenance / pnpm accept:parity），
+# 基线不在 checkout 里，对拍在 CI 上结构性不可运行——「不可运行」不该长得像「通过」，
+# 所以干脆不混进发布判定。哪些门禁在哪一档由 scripts/accept.mjs 自己交代，
+# 这里不复述名单（复述即第二份真相）。
 
 name: Build and Deploy
 

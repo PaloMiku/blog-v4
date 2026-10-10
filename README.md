@@ -153,7 +153,7 @@ pnpm preview # 本地预览产物
 ### 部署指南
 
 本仓库的部署：GitHub Actions（`.github/workflows/build.yml`，push main 触发）跑
-typecheck + build + `node scripts/accept.mjs --skip-build`（默认档全部门禁），随后把 `dist/`
+typecheck + build + `node scripts/accept.mjs --skip-build`（release 档全部门禁），随后把 `dist/`
 推送到 `PaloMiku/blog-public`（GitHub Pages），站点经 EdgeOne CDN 对外服务。构建命令
 `pnpm build`，输出目录 `dist`。
 
@@ -168,12 +168,14 @@ typecheck + build + `node scripts/accept.mjs --skip-build`（默认档全部门�
 - 订阅源需要绝对地址：自托管时把 `src/config/site-meta.ts` 的站点地址设为实际访问地址，
   协议、主机保持一致。
 - `pnpm accept` 是唯一验收入口（`scripts/accept.mjs`），也是门禁名单的**唯一事实源**：
-  一次构建加默认档门禁，零外网、只连 localhost，约 50 s。CI 跑的是同一条命令。
-  门禁因内存不足、基线缺失或网络不可达而**自己跳过**时，汇总里单列成 `skipped`、
-  不计入通过——「全绿」不包括它们。
-- `pnpm accept:full` 在默认档之上加 `preview-guard-selftest` 与打线上站的
-  `live:*` 门禁，**约 20–25 分钟**（大头是 `live:ui-parity`，63 页 × 两侧）。
-  切换上线前与发布前各跑一次；日常改动不必跑。
+  默认跑 release 档（15 道发布必需门禁），一次构建加门禁，零外网、只连 localhost。
+  CI 跑的是同一条命令。门禁因内存不足或网络不可达而**自己跳过**时，汇总里单列成
+  `skipped`、不计入通过——「全绿」不包括它们。
+- `pnpm accept:maintenance` = release 档全量 + 深度维护审计（CSS 域、豁免台账、CDN
+  合同、Windows 专属自测等 16 道）。发布前深度检查跑它。
+- `pnpm accept:parity` = 迁移对拍档（`compare-urls` / `live:sitemap` / `live:ui-parity`），
+  **约 20–25 分钟**（大头是 `live:ui-parity`，68 页 × 两侧）。切换上线前与发布前各跑
+  一次；日常改动不必跑。基线不在 checkout 里时显示 `NOT-RUN`（不可运行），不计通过。
 - 运行、部署项目时 Node.js 版本需遵照 `package.json` 的 engines 限制。
 
 ## 贡献

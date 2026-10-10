@@ -54,22 +54,34 @@ export const PREVIEW_PATHS = ['/preview', '/previews/example', '/previews/bangum
  * 底层原因一起抛出来。宁可慢，也不要让一次抖动废掉一整趟。
  */
 export async function sitemapPaths(remote = 'https://blog.sotkg.com', { retries = 3, timeoutMs = 15000 } = {}) {
-	const url = `${remote}/sitemap.xml`
+	// 线上 sitemap 形状随托管产物变：2026-10-03 起线上是 Astro（sitemap-index.xml+分片），
+	// Nuxt 时代的 /sitemap.xml 已 404。两种形状都认，index 形态递归取分片。
+	const bases = [`${remote}/sitemap-index.xml`, `${remote}/sitemap.xml`]
+	const locs = t => [...t.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => new URL(m[1]).pathname)
 	let last
-	for (let i = 1; i <= retries; i++) {
-		try {
-			const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
-			if (!res.ok)
-				throw new Error(`HTTP ${res.status} ${res.statusText}`)
-			return [...(await res.text()).matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => new URL(m[1]).pathname)
-		}
-		catch (e) {
-			last = e
-			if (i < retries)
-				await new Promise(r => setTimeout(r, 800 * i))
+	for (const url of bases) {
+		for (let i = 1; i <= retries; i++) {
+			try {
+				const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+				if (!res.ok)
+					throw new Error(`HTTP ${res.status} ${res.statusText}`)
+				const text = await res.text()
+				const paths = locs(text)
+				if (paths.length === 0)
+					throw new Error('200 但解析不出任何 <loc>')
+				if (!url.endsWith('sitemap-index.xml'))
+					return paths
+				const shards = await Promise.all(paths.map(async p => locs(await (await fetch(`${remote}${p}`, { signal: AbortSignal.timeout(timeoutMs) })).text())))
+				return shards.flat()
+			}
+			catch (e) {
+				last = e
+				if (i < retries)
+					await new Promise(r => setTimeout(r, 800 * i))
+			}
 		}
 	}
-	throw new Error(`取 sitemap 失败（已重试 ${retries} 次，每次超时 ${timeoutMs}ms）：${url}\n       最后一次的原因：${last?.cause?.message || last?.message || last}`)
+	throw new Error(`取 sitemap 失败（两种形状 × 重试 ${retries} 次）：${bases.join(' / ')}\n       最后一次的原因：${last?.cause?.message || last?.message || last}`)
 }
 
 /** 受测全集 = sitemap + previews，按字典序去重。 */

@@ -1,19 +1,15 @@
 ---
 /**
- * Collection 组件（Astro 版）—— 文章所属合集的折叠列表。
+ * Collection 组件 —— 文章所属合集的折叠列表。
  *
- * 数据来源：Nuxt 侧是
- *   queryCollection('content').where('collection', '=', key).order('date', 'ASC')
- * Astro 内容层没有 SQL，等价实现见 `src/lib/content.ts` 的 `getByCollection()`。
+ * 数据来源：`src/lib/content.ts` 的 `getByCollection()`（按 collection 过滤 + 日期升序）。
  *
- * 合集显示设置来自 `app/collections.ts`（Nuxt 侧），Astro 侧暂从
- * `blogConfig` 读不到，需保留一份等价配置——见下方的 COLLECTION_SETTINGS。
- * 未登记的 key 仍会正常展示，标题回退为 key 本身（与原实现一致）。
+ * 合集显示设置就住在下方的 COLLECTION_SETTINGS——这是全站唯一一处；
+ * 未登记的 key 仍会正常展示，标题回退为 key 本身。
  *
- * 日期原版是 `<UtilDate class="date" :date>`（不传 format，走 NuxtTime 默认形态：
- * 「4月1日」/「25年5月19日」）。此前这里手写
- * `toLocaleDateString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit' })`，
- * 既多出年份又少了 `<time>`，现收敛到 `util/Date.astro`。
+ * 日期一律走 `util/Date.astro` 的默认形态（「4月1日」/「25年5月19日」），
+ * 不要退回手写 `toLocaleDateString`：那会多出年份、丢掉 `<time>` 元素，
+ * 破坏产物日期形状合同。
  */
 import Icon from '../Icon.astro'
 import UtilDate from '../util/Date.astro'
@@ -26,7 +22,7 @@ interface CollectionSetting {
 	color?: string
 }
 
-/** 对应 `app/collections.ts`，该文件属于 Nuxt 侧，暂在此镜像 */
+/** 合集显示设置：全站唯一定义处（标题/描述/图标/主题色），新合集在这里登记 */
 const COLLECTION_SETTINGS: Record<string, CollectionSetting> = {
 	'galgame-notes': {
 		title: 'Galgame',

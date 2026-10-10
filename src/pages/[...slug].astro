@@ -9,44 +9,34 @@ import PostHeader from '../components/post/PostHeader.astro'
 import PostSurround from '../components/post/PostSurround.astro'
 import Toc from '../components/widget/Toc.astro'
 import { contentComponents } from '../lib/content-components'
-										import blogConfig from '../config/blog'
+import blogConfig from '../config/blog'
+import { compat } from '../config/compat'
 
 // 对应 Nuxt 侧的 app/pages/[...slug].vue + content:file:afterParse 的 path 改写。
 // 条目 id 已由 content.config.ts 的 generateId 处理（permalink 优先，其次去 /posts 前缀）。
+//
+// RESERVED：由 `src/pages/` 下的专用静态路由独占的内容条目 id。
+// `link.mdx` 的正文由 `link.astro` 合并渲染（友链列表 + 申请要求同一页），
+// 若兜底路由继续为它声明 `/link`，两条路由指向同一输出文件，
+// Astro 每次构建都会打一条 route conflict 告警（EC-002 前靠白名单放行）。
+// 注意：getStaticPaths 会被提升到组件作用域之外，集合必须写在这里函数体内。
+// 新增专用路由且其路径恰好命中内容条目 id 时，在这里加一项。
 export async function getStaticPaths() {
+	const reserved = new Set(['link'])
 	const entries = await getCollection('content')
-	return entries.map(entry => ({
-		params: { slug: entry.id },
-		props: { entry },
-	}))
+	return entries
+		.filter(entry => !reserved.has(entry.id))
+		.map(entry => ({
+			params: { slug: entry.id },
+			props: { entry },
+		}))
 }
 
 const { entry } = Astro.props
 const { Content, headings } = await render(entry)
 
-/**
- * 对齐线上：Nuxt 侧的「所属系列」区块**从来没有渲染过**，这里照同样口径处理。
- *
- * 证据（全站 63 页产物级核对，非推断）：
- *   - `content/posts` 下只有 4 篇文章带 `collection:` frontmatter
- *     （clannad-zh-linux / gal-up / koichoco-psp / maitetsu-video-fix）
- *   - Nuxt 产物里 `post-collection` 出现 **0** 次；Astro 产物里出现 **4** 次
- *   - 线上 https://blog.sotkg.com 同页同样没有这个区块
- *
- * 根因是 Nuxt 侧的一个静默失效（不是迁移引入的）：
- *   `app/components/post/Collection.vue` 的 `collectionKey` 来自 `useArticle()`，
- *   而 `useArticle()` 用的是 `useNuxtData(dataKey).data` —— 读的是 **payload 缓存**，
- *   不是可等待的 promise。于是 Collection 自己的 `useAsyncData` 执行 handler 时
- *   `post.value` 仍是 `undefined`，查询退化成 `Promise.resolve([])`，
- *   空数组被写进 payload，客户端水合时不会重跑，`v-if` 永远为假。
- *
- * Astro 侧 `getByCollection()` 是构建期直接查，能拿到数据，于是「顺手修好」了它——
- * 结果反而多出一个线上从来没有的 249px 区块。切流要求视觉一致，故显式关掉。
- *
- * 若要两边都修（推荐做法）：把 Nuxt 侧改成可等待的数据源后重新部署生产，
- * 然后把下面这个常量改成 false 即可，Collection 组件本身不需要动。
- */
-const PARITY_HIDE_COLLECTION = true
+// 对齐线上：「所属系列」区块由 compat.hideCollectionBlock 统一压制，
+// 保留原因/证据/退出条件/复核日期见 src/config/compat.ts。
 
 // 对应 Nuxt 的 useWidgets()：frontmatter 的 aside 决定侧栏挂哪些组件。
 // `meta-aside-*` 由 rehype-meta-slots 提取成 metaSlots，消费侧需去掉 `meta-` 前缀。
@@ -153,7 +143,7 @@ const jsonLd: Record<string, unknown>[] = [
 		<Content components={contentComponents} />
 	</article>
 
-	{!PARITY_HIDE_COLLECTION && <Collection currentId={entry.id} collectionKey={entry.data.collection} />}
+	{!compat.hideCollectionBlock && <Collection currentId={entry.id} collectionKey={entry.data.collection} />}
 	{!entry.data.hideInfo
 		&& <PostFooter
 			title={entry.data.title}

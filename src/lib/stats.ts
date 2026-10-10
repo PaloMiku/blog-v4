@@ -42,8 +42,9 @@ export interface StatsOptions {
  *   %  匹配任意长度字符
  *   _  匹配单个字符
  * 其余字符按字面量匹配（转义正则元字符）。
+ * （导出仅为 EC-005 直测 SQL LIKE 语义，见 tests/stats-like.test.mjs；行为不变。）
  */
-function likeToRegExp(pattern: string): RegExp {
+export function likeToRegExp(pattern: string): RegExp {
 	let out = ''
 	for (const ch of pattern) {
 		if (ch === '%')
@@ -57,7 +58,7 @@ function likeToRegExp(pattern: string): RegExp {
 }
 
 /** 条目的 stem：内容根相对路径去掉扩展名，与 Nuxt Content 的 `stem` 语义一致。 */
-function toStem(filePath: string | undefined, id: string): string {
+export function toStem(filePath: string | undefined, id: string): string {
 	if (!filePath)
 		return id
 	const m = filePath.match(/content[\\/](.+?)\.[^./]+$/)
@@ -142,7 +143,11 @@ async function computeStats(includePaths: readonly string[]): Promise<BlogStats>
 				console.warn(`文章日期格式错误: "${rawDate}" (${post.id})`)
 			}
 		}
-		else {
+		else if (post.data.isPost) {
+			// 只有文章缺日期才是异常。about/drive/games 等非文章条目本来就没有
+			// date，对它们告警只是给构建日志制造无效噪音——它们照常计入总字数：
+			// includePaths 为空时统计所有内容条目，与 Nuxt 侧不带 orWhere 的
+			// SQL 语义一致，这是产品行为不是疏漏。
 			console.warn(`文章日期为空 (${post.id})`)
 		}
 

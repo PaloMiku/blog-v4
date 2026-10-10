@@ -1,5 +1,7 @@
 /**
- * 切流前的硬门禁：生产站（Nuxt）sitemap 与本地 Astro sitemap 的 URL 集合必须逐条相等。
+ * 线上 URL 集合漂移门禁：线上站 sitemap 与本地构建 sitemap 的 URL 集合必须逐条相等。
+ * 2026-10-03 前它是「切流前对比 Nuxt」的硬门禁；现在线上已是 Astro 产物，
+ * 它的含义变成「这次构建没有让 URL 集合意外漂移」——外部事实源仍是线上 sitemap。
  *
  * 为什么单独一道门禁而不是并进 check-generated-urls：
  * check-generated-urls 只看本地产物自洽，它**永远发现不了**「Astro 生成的 URL 跟
@@ -81,19 +83,53 @@ function readLocalSitemap() {
 const localXml = readLocalSitemap()
 const localLocs = parseLocs(localXml)
 
-const res = await fetch(`${REMOTE.replace(/\/+$/, '')}/sitemap.xml`, { signal: AbortSignal.timeout(30000) })
-if (!res.ok) {
-	console.error(`FAIL: ${REMOTE}/sitemap.xml -> HTTP ${res.status}`)
-	process.exitCode = 1
+// 线上 sitemap 的形状随托管产物变：Nuxt 时代直接给 /sitemap.xml；
+// 2026-10-03 起线上就是 Astro 产物（/sitemap-index.xml + 分片）。
+// 两种形状都要认——这道门禁现在的含义是「新产物与线上没有 URL 漂移」，
+// 而不是「模仿旧站」。
+const base = REMOTE.replace(/\/+$/, '')
+let remoteLocs = null
+for (const p of ['/sitemap-index.xml', '/sitemap.xml']) {
+	const res = await fetch(`${base}${p}`, { signal: AbortSignal.timeout(30000) })
+	if (!res.ok)
+		continue
+	const xml = await res.text()
+	const locs = parseLocs(xml)
+	if (locs.length === 0) {
+		console.error(`FAIL: ${base}${p} 返回 200 但解析不出任何 <loc>——空解析不放行`)
+		process.exit(1)
+	}
+	// index 形态：locs 指向分片，递归取回合并
+	const looksLikeIndex = p === '/sitemap-index.xml'
+	if (!looksLikeIndex) {
+		remoteLocs = locs
+		break
+	}
+	const shardPaths = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => new URL(m[1]).pathname)
+	const parts = []
+	for (const sp of shardPaths) {
+		const sr = await fetch(`${base}${sp}`, { signal: AbortSignal.timeout(30000) })
+		if (!sr.ok) {
+			console.error(`FAIL: ${base}${sp} -> HTTP ${sr.status}（index 已取到但分片缺失，不能当一致）`)
+			process.exit(1)
+		}
+		parts.push(...parseLocs(await sr.text()))
+	}
+	remoteLocs = parts
+	break
 }
-const remoteLocs = parseLocs(await res.text())
+if (remoteLocs === null) {
+	// 两种形状都拿不到 = 没有外部事实源，判「不可运行」，不是「一致」。
+	console.log(`SKIP: 线上 ${base} 既没有 sitemap-index.xml 也没有 sitemap.xml —— 无外部事实源，不可运行`)
+	process.exit(0)
+}
 
 const localSet = new Set(localLocs)
 const remoteSet = new Set(remoteLocs)
 const onlyLocal = [...localSet].filter(u => !remoteSet.has(u))
 const onlyRemote = [...remoteSet].filter(u => !localSet.has(u))
 
-console.log(`remote (Nuxt) : ${remoteSet.size}`)
+console.log(`remote (live) : ${remoteSet.size}`)
 console.log(`local  (Astro): ${localSet.size}`)
 
 // 单一出口：PASS / FAIL 分支互斥。

@@ -173,9 +173,6 @@ catalogs:
     '@mdx-js/mdx':
       specifier: ^3.1.1
       version: 3.1.1
-    '@shikijs/colorized-brackets':
-      specifier: ^4.4.3
-      version: 4.4.3
     '@shikijs/transformers':
       specifier: ^4.4.3
       version: 4.4.3
@@ -235,9 +232,6 @@ catalogs:
     eslint:
       specifier: ^10.10.0
       version: 10.10.0
-    p-limit:
-      specifier: ^7.3.2
-      version: 7.3.2
     strip-ansi:
       specifier: ^7.2.0
       version: 7.2.0
@@ -353,9 +347,6 @@ importers:
       '@mdx-js/mdx':
         specifier: catalog:content
         version: 3.1.1(supports-color@10.2.2)
-      '@shikijs/colorized-brackets':
-        specifier: catalog:content
-        version: 4.4.3
       '@shikijs/transformers':
         specifier: catalog:content
         version: 4.4.3
@@ -438,9 +429,6 @@ importers:
       eslint:
         specifier: catalog:quality
         version: 10.10.0(jiti@2.7.0)(supports-color@10.2.2)
-      p-limit:
-        specifier: catalog:quality
-        version: 7.3.2
       strip-ansi:
         specifier: catalog:quality
         version: 7.2.0
@@ -1679,10 +1667,6 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
-
-  '@shikijs/colorized-brackets@4.4.3':
-    resolution: {integrity: sha512-7+G9lY/EDD84MzO6jU2SkS/kmZmyshesuDTPXi/vioULBv5/cAsLM4vwRmb2Rsup89zj4jASOnoZQvDkj0/ZqA==}
-    engines: {node: '>=20'}
 
   '@shikijs/core@4.4.3':
     resolution: {integrity: sha512-QCR4q2ZO/ILJEuwiBMel4wdcTDb1JGwfjKTxPDF6x8ixOaluPrVqIn06C99AcRPhmYlBR56d/Fb+GN58GzExpg==}
@@ -5585,10 +5569,6 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
-
-  '@shikijs/colorized-brackets@4.4.3':
-    dependencies:
-      shiki: 4.4.3
 
   '@shikijs/core@4.4.3':
     dependencies:

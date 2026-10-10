@@ -16,12 +16,21 @@ import path from 'node:path'
  *    原则。旧 runner 与 CLAUDE.md 各存一份名单，已经漂移过好几次。
  *
  * 用法：
- *   node scripts/accept.mjs                     # 默认档 offline
- *   node scripts/accept.mjs --profile full      # 加重档（含打线上站，约 20-25 min）
- *   node scripts/accept.mjs --skip-build        # 复用现有 dist/，只跑门禁
- *   node scripts/accept.mjs --only check-dates  # 只跑某几道（调试用，逗号分隔）
- *   node scripts/accept.mjs --print-policies    # 只打印门禁的跳过策略矩阵，不跑门禁
- *   ACCEPT_FORCE_CI=1 node scripts/accept.mjs   # 本机按 CI 判定跑（验 CI 行为，见下）
+ *   node scripts/accept.mjs                        # 默认档 release（发布必需，15 道）
+ *   node scripts/accept.mjs --profile maintenance  # release + 深度维护审计（31 道）
+ *   node scripts/accept.mjs --profile parity       # 迁移对拍档（基线/线上比较，显式点名才跑）
+ *   node scripts/accept.mjs --skip-build           # 复用现有 dist/，只跑门禁
+ *   node scripts/accept.mjs --only check-dates     # 只跑某几道（调试用，逗号分隔）
+ *   node scripts/accept.mjs --print-policies       # 只打印门禁的跳过策略矩阵，不跑门禁
+ *   ACCEPT_FORCE_CI=1 node scripts/accept.mjs      # 本机按 CI 判定跑（验 CI 行为，见下）
+ *
+ * 分档原则（EC-003，分类依据见 docs/plan/analysis/engineering-inventory.md）：
+ *   release      —— 决定一次提交能否发布。快、稳、与当前 Astro 直接相关；CI 只跑这一档。
+ *   maintenance  —— 全量 DOM/CSS 域审计、豁免台账到期审计、CDN 合同、Windows 专属自测。
+ *                   包含 release 的全部内容，发布前深度检查跑它。
+ *   parity       —— 对 Nuxt 冻结基线或线上站的比较。基线缺失时显示「不可运行」（NOT-RUN），
+ *                   绝不显示为通过；它不参与发布判定，因为线上自 2026-10-03 起
+ *                   就是本站自己的产物，live 比较的含义是「新产物没有意外漂移」。
  *
  * 退出码：
  *   0  全绿
@@ -62,11 +71,12 @@ const BUILD_LOG = path.join(LOG_DIR, 'acceptance-build.log')
  *
  * `expected-in-ci` 要克制着用：它等价于「永久豁免」，
  * 所以每一条都必须写 `why`，且 CI 上仍然计入 `skipped`、
- * 在汇总里逐条点名，不是静默放行。
+ * 在汇总里逐条点名，不是静默放行。EC-003 起默认档不再需要它——
+ * 唯一结构性跳过的 compare-urls 已经移入 parity 档。
  */
 const SKIP_POLICIES = new Set(['never', 'env-dependent', 'expected-in-ci'])
 
-/** 门禁项要么是名字字符串，要么是 { name, skip, why }。默认 `never`。 */
+/** 门禁项要么是名字字符串，要么是 { name, script?, skip?, why }。默认 `never`。 */
 function gateName(g) {
 	return typeof g === 'string' ? g : g.name
 }
@@ -80,6 +90,11 @@ function gatePolicy(g) {
 	return p
 }
 
+/** 门禁 → 实际脚本文件。显式给 `script` 时用原名（含点号的自测脚本、parity 的比较器）。 */
+function gateScriptOf(g) {
+	return typeof g === 'object' && g.script ? g.script : `${gateName(g)}.mjs`
+}
+
 /**
  * 是否按 CI 判定。`ACCEPT_FORCE_CI=1` 让本机也能验 CI 行为——
  * CI 相关的判据如果只能到 CI 上才能验，就等于没有 CI 相关的判据。
@@ -89,16 +104,20 @@ const IS_CI = process.env.ACCEPT_FORCE_CI === '1'
 	|| process.env.CI === 'true'
 
 /**
- * 默认档门禁。全部只读 dist/ 与 src/，零外网、零浏览器（check-runtime-dom 例外：
- * 它起本地 preview + 无头 Chrome，但只连 localhost）。
+ * release 档（默认档）门禁：决定一次提交能否发布。全部只读 dist/ 与 src/，
+ * 零外网；唯一的浏览器门禁是 check-runtime-dom（只连 localhost）。
  *
  * 新增门禁时：把脚本放进 scripts/、在这里加一行、同一条命令跑一次红绿双向。
  * 「写了没接线」等于没写。
  *
- * 元素是字符串时 skip 策略取默认的 `never`。**只有三道门禁例外**——
+ * 元素是字符串时 skip 策略取默认的 `never`。**只有这道门禁有例外**——
  * 每一道都要能一句话说清「它为什么有正当的跳过理由」，否则不许标。
+ *
+ * 不在这里的都去哪了（EC-003 分层）：
+ *   - 宽域 DOM/CSS/台账审计、专项接线深检、外部 CDN 合同 → MAINTENANCE_GATES
+ *   - 对基线/线上的比较 → PARITY_GATES
  */
-const OFFLINE_GATES = [
+const RELEASE_GATES = [
 	// 结构与内容：产物里该有的东西在不在
 	'check-integration',
 	'check-layout',
@@ -106,71 +125,89 @@ const OFFLINE_GATES = [
 	'check-prose-layer',
 	'check-content-preservation',
 	'check-dates',
-	'check-assets',
-	'audit-deferred',
-	// 组件与标记
-	'check-component-fence',
-	'check-tab-panels',
 	'check-mdc-eval',
-	'check-icon-box',
-	'check-icon-swap',
-	'check-flip-gates',
-	'check-list-controls',
-	// 结构语义
-	'check-scope-anchors',
-	// 豁免台账治理（棘轮 / 到期）。放默认档：它只读台账与配置，不依赖 dist，
-	// 也不依赖构建是不是新的——一条豁免到期跟产物新旧无关。
-	'check-expirations',
 	'check-heading-ids',
 	'check-feeds',
-	'check-text-literal',
-	'check-aria-current',
-	// CSS
-	'audit-css-blocks',
-	'audit-dead-scope',
-	'check-dropped-css',
-	'check-affordances',
+	// 资产
+	'check-assets',
 	// 关键路径资产：条件资源（KaTeX）与产物必须一致 + 第三方阻塞样式表预算。
-	// 放这里是因为它治的正是 2026-10-07 实测到的那类缺陷——把 hasMath 强制成
-	// false 时，其余 31 道门禁全绿，是产物核对才发现公式页丢了 CSS。
+	// 留在这里是因为它治的正是 2026-10-07 实测到的那类缺陷——把 hasMath 强制成
+	// false 时，其余门禁全绿，是产物核对才发现公式页丢了 CSS。
 	'check-critical-assets',
-	// 依赖边界与外部合同
+	// 基础无障碍：导航态 aria-current 与路由一致，纯产物核对、无浏览器
+	'check-aria-current',
+	// 依赖边界
 	'check-self-contained',
-	{
-		name: 'check-twikoo-cdn',
-		skip: 'env-dependent',
-		why: '要连真实 CDN 比对 Twikoo 版本。本机断网可以跳，CI 上跳过即红——CDN 上的版本不对是真实风险，不该被一次网络抖动放过。',
-	},
-	{
-		name: 'compare-urls',
-		skip: 'expected-in-ci',
-		why: '比的是 baseline/nuxt/urls.txt，而根 .gitignore 里有 baseline/，CI 的 checkout 里没有它。结构性跳过，CI 上必然发生。',
-	},
-	// 运行时
+	// 自检：门禁名单本身
+	'check-ci-triggers',
+	// 唯一的运行时烟雾代表
 	{
 		name: 'check-runtime-dom',
 		skip: 'env-dependent',
 		why: '无头 Chrome 约 700MB，内存不足时自我保护。本机被别的进程占满可以跳；CI runner 是 16GB 规格，在那里跳过说明环境退化，不是环境使然。',
 	},
-	// 自检：门禁清单本身
-	'check-ci-triggers',
 ]
 
 /**
- * 加重档：需要打线上站或花很久的。默认档刻意不跑——20 分钟的重档谁也不会跑，
- *  那比它要防的失败更糟。只在切换 / 发布前显式点名。
+ * maintenance 档：随 `--profile maintenance` 追加在 release 之后跑。
+ * 全量 DOM/CSS 域审计、豁免台账治理、专项接线深检、CDN 合同、Windows 专属自测。
+ * 它们都有价值，只是不该决定「这一笔能不能发」。
  */
-const FULL_EXTRA = [
-	{ name: 'preview-guard-selftest', script: 'preview-guard.selftest.mjs', note: '验 preview 端口协商的守卫本身' },
-	{ name: 'live:sitemap', script: 'compare-remote-sitemap.mjs', note: '线上 sitemap vs 本地产物' },
-	{ name: 'live:ui-parity', script: 'compare-ui-parity.mjs', note: '逐页对比线上与本地产物（大头，约 20 min）' },
+const MAINTENANCE_GATES = [
+	// 源侧与专项接线深检
+	'audit-deferred',
+	'check-component-fence',
+	'check-tab-panels',
+	'check-icon-box',
+	'check-icon-swap',
+	'check-flip-gates',
+	'check-list-controls',
+	'check-text-literal',
+	'check-affordances',
+	// CSS 域审计
+	'check-scope-anchors',
+	'audit-css-blocks',
+	'audit-dead-scope',
+	'check-dropped-css',
+	// 豁免台账治理（棘轮 / 到期）：只读台账与配置，一条豁免到期跟产物新旧无关
+	'check-expirations',
+	// 外部合同：CDN 上的 Twikoo 版本。网络抖动不该拦发布，但发布前应确认。
+	{
+		name: 'check-twikoo-cdn',
+		skip: 'env-dependent',
+		why: '要连真实 CDN 比对 Twikoo 版本。断网时不可运行；maintenance 档在本地点名，跳过失明即可。',
+	},
+	// preview 端口协商守卫的自测（依赖 taskkill/Get-NetTCPConnection，Windows 专属）
+	{
+		name: 'preview-guard-selftest',
+		script: 'preview-guard.selftest.mjs',
+		skip: 'env-dependent',
+		why: 'Windows 专属（taskkill / Get-NetTCPConnection）。Linux/CI 上结构性不可运行。',
+	},
 ]
+
+/**
+ * parity 档：迁移对拍。只在显式 `--profile parity` 时跑（约 20+ 分钟，要网络）。
+ * 这一档里门禁「没跑成」显示为 NOT-RUN（不可运行），不计通过也不算违规——
+ * 基线本来就不在 checkout 里，硬凑一个绿才是骗人。
+ */
+const PARITY_GATES = [
+	{ name: 'compare-urls', why: '比 baseline/nuxt/urls.txt；基线未入库（gitignore，freeze 脚本已退役），缺失时不可运行' },
+	{ name: 'live:sitemap', script: 'compare-remote-sitemap.mjs', why: '线上 sitemap vs 本地产物' },
+	{ name: 'live:ui-parity', script: 'compare-ui-parity.mjs', why: '逐页对比线上与本地产物（大头，约 20 min）' },
+]
+
+const PROFILES = {
+	release: RELEASE_GATES,
+	maintenance: [...RELEASE_GATES, ...MAINTENANCE_GATES],
+	parity: PARITY_GATES,
+}
 
 /** 默认档没有独立步骤，靠 --build-log 拿到日志单独跑。 */
 const BUILD_WARNING_GATE = 'check-build-warnings'
 
 function parseArgs(argv) {
-	const opt = { profile: 'offline', skipBuild: false, only: null, printPolicies: false }
+	const opt = { profile: 'release', skipBuild: false, only: null, printPolicies: false }
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i]
 		if (a === '--profile')
@@ -186,9 +223,10 @@ function parseArgs(argv) {
 		else return { error: `未知参数 ${a}` }
 	}
 	// 错档直接拒，不静默回落——「悄悄用了一个更松的默认值」和「悄悄丢了一道门禁」
-	// 是同一种错。旧 runner 用 ValidateSet 拒，这里手写等价检查。
-	if (!['offline', 'full'].includes(opt.profile)) {
-		return { error: `-Profile ${opt.profile} 不是合法档位（合法值：offline / full）。这是参数错误，不是静默回落。` }
+	// 是同一种错。旧的 `offline`/`full` 档位名一并拒绝：改名是刻意的，
+	// 「full 到底 full 在哪」答不出来，而 release/maintenance/parity 一眼分明。
+	if (!Object.hasOwn(PROFILES, opt.profile)) {
+		return { error: `-Profile ${opt.profile} 不是合法档位（合法值：${Object.keys(PROFILES).join(' / ')}）。这是参数错误，不是静默回落。` }
 	}
 	return opt
 }
@@ -240,9 +278,10 @@ function runNode(script, args = []) {
 // 才是危险的那个方向。
 const SKIP_MARKERS = /^SKIP(?:PED)?\b/m
 
-function runGate(name) {
+function runGate(g) {
+	const name = gateName(g)
 	const t0 = process.hrtime.bigint()
-	const r = runNode(`${name}.mjs`)
+	const r = runNode(gateScriptOf(g))
 	const secs = Number(process.hrtime.bigint() - t0) / 1e9
 	const skipped = r.status === 0 && (r.missing || SKIP_MARKERS.test(r.text))
 	const note = r.missing
@@ -313,20 +352,25 @@ function section(title) {
  * 免得改完才发现 CI 会红。
  */
 function printPolicies() {
-	const all = [...OFFLINE_GATES, ...FULL_EXTRA.map(x => ({ name: x.name, skip: 'never' }))]
-	const rows = all.map((g) => {
+	const all = [
+		...RELEASE_GATES.map(g => ({ g, tier: 'release' })),
+		...MAINTENANCE_GATES.map(g => ({ g, tier: 'maintenance' })),
+		...PARITY_GATES.map(g => ({ g, tier: 'parity' })),
+	]
+	const rows = all.map(({ g, tier }) => {
 		const p = gatePolicy(g)
 		return {
 			门禁: gateName(g),
+			tier,
 			策略: p,
 			本机跳过: p === 'env-dependent' ? '绿' : p === 'expected-in-ci' ? '红' : '红',
 			CI跳过: p === 'expected-in-ci' ? '绿' : '红',
 			理由: typeof g === 'object' && g.why ? g.why : '',
 		}
 	})
-	console.log(`门禁 ${rows.length} 道；判定环境：${IS_CI ? 'CI' : '本机'}${process.env.ACCEPT_FORCE_CI === '1' && !process.env.GITHUB_ACTIONS ? '（ACCEPT_FORCE_CI=1 强制）' : ''}`)
+	console.log(`门禁 ${rows.length} 道（release ${RELEASE_GATES.length} / maintenance +${MAINTENANCE_GATES.length} / parity ${PARITY_GATES.length}）；判定环境：${IS_CI ? 'CI' : '本机'}${process.env.ACCEPT_FORCE_CI === '1' && !process.env.GITHUB_ACTIONS ? '（ACCEPT_FORCE_CI=1 强制）' : ''}`)
 	for (const r of rows) {
-		console.log(`\n  ${r.门禁}  [${r.策略}]  本机跳过→${r.本机跳过}  CI跳过→${r.CI跳过}`)
+		console.log(`\n  ${r.门禁}  [${r.tier}/${r.策略}]  本机跳过→${r.本机跳过}  CI跳过→${r.CI跳过}`)
 		if (r.理由)
 			console.log(`      ${r.理由}`)
 	}
@@ -367,7 +411,7 @@ function stepBuild(skip) {
 }
 
 // ── 主流程 ───────────────────────────────────────────────────────────────
-// 名单在文件顶部 export 出去，是为了让 check-ci-triggers.mjs 能直接 import 它们
+// 名单 export 出去，是为了让 check-ci-triggers.mjs 能直接 import 它们
 // 校验「名单里的脚本都真实存在」——CI 不再手抄名单，那份手抄清单已经漂过。
 // 所以本文件必须能被 import 而不执行任何东西。
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
@@ -393,9 +437,9 @@ function main() {
 	console.log(`验收 runner  档位=${opt.profile}${IS_CI ? '  [按 CI 判定跳过策略]' : ''}`)
 	stepBuild(opt.skipBuild)
 
-	let gates = [...OFFLINE_GATES]
-	if (opt.profile === 'full')
-		gates.push(...FULL_EXTRA.map(g => g.name))
+	// parity 档不重复跑发布检查：它只回答「与基线/线上一致吗」。
+	// 发布判定由 release 档负责，两个档各自能独立跑（EC-003 验收）。
+	let gates = PROFILES[opt.profile]
 	if (opt.only)
 		gates = gates.filter(g => opt.only.includes(gateName(g)))
 
@@ -405,48 +449,29 @@ function main() {
 	// runner 照样打出「ACCEPTED: all steps green」——**一道门禁都没跑，却报全绿**。
 	// 这正是这套判据要治的病，只不过这次发生在 runner 自己身上。
 	if (opt.only && !gates.length) {
-		const known = [...OFFLINE_GATES, ...FULL_EXTRA.map(x => x.name)].map(gateName)
+		const known = PROFILES[opt.profile].map(gateName)
 		console.error(`FAIL: --only ${opt.only.join(',')} 没有匹配到任何门禁。已排除。`)
 		console.error(`      档位 ${opt.profile} 里可用的门禁：${known.join(', ')}`)
 		process.exit(2)
 	}
 
-	section(`门禁（${gates.length} 道）`)
+	const isParity = opt.profile === 'parity'
+	section(`门禁（${gates.length} 道${isParity ? '，parity：跳过=不可运行，不计通过' : ''}）`)
 	let missing = 0
 	const violations = []
 	for (const g of gates) {
 		const name = gateName(g)
 		const policy = gatePolicy(g)
-		if (FULL_EXTRA.some(x => x.name === name)) {
-			const meta = FULL_EXTRA.find(x => x.name === name)
-			const t0 = process.hrtime.bigint()
-			const r = runNode(meta.script)
-			const secs = Number(process.hrtime.bigint() - t0) / 1e9
-			const skipped = r.status === 0 && (r.missing || SKIP_MARKERS.test(r.text))
-			record(name, r.status, secs, skipped ? firstSkipLine(r.text) : lastResultLine(r.text), skipped)
-			if (skipped) {
-				// 加重档的门禁默认 never：它们要么打真实网络要么跑很久，没有正当跳过理由
-				const v = skipViolation(name, 'never')
-				if (v)
-					violations.push(v)
-			}
-			console.log(`  ${r.status !== 0 ? 'FAIL' : skipped ? 'SKIP' : 'OK  '}  ${name.padEnd(24)} ${secs.toFixed(1)}s  ${results.at(-1).note}`)
-			if (r.status !== 0)
-				dumpFailure(name, r.out)
-			if (r.missing)
-				missing++
-			continue
-		}
-		const r = runGate(name)
+		const r = runGate(g)
 		if (r.missing)
 			missing++
-		const badge = r.status !== 0 ? 'FAIL' : r.skipped ? 'SKIP' : 'OK  '
-		if (r.skipped) {
+		const badge = r.status !== 0 ? 'FAIL' : r.skipped ? (isParity ? 'N/A ' : 'SKIP') : 'OK  '
+		if (r.skipped && !isParity) {
 			const v = skipViolation(name, policy)
 			if (v)
 				violations.push(v)
 		}
-		console.log(`  ${badge}  ${name.padEnd(24)} ${(results.at(-1).seconds).toFixed(1)}s  ${results.at(-1).note}`)
+		console.log(`  ${badge}  ${name.padEnd(26)} ${(results.at(-1).seconds).toFixed(1)}s  ${results.at(-1).note}`)
 		if (r.status !== 0)
 			dumpFailure(name, r.out)
 	}
@@ -455,7 +480,8 @@ function main() {
 	// --skip-build 时仍然跑，只要那份日志还在——CI 正是这么用的：它自己 build，
 	// 把日志 tee 到同一个路径，然后 `--skip-build` 复用产物。这样「零告警构建」
 	// 在 CI 里也自动获得覆盖，而不用再手写一遍门禁列表。
-	if (!opt.only || opt.only.includes(BUILD_WARNING_GATE)) {
+	// parity 档不跑它：它属于发布判定，parity 只回答一致性。
+	if (!isParity && (!opt.only || opt.only.includes(BUILD_WARNING_GATE))) {
 		section('构建告警（读构建日志）')
 		if (opt.skipBuild && !fs.existsSync(BUILD_LOG)) {
 			record(`${BUILD_WARNING_GATE} (skipped)`, 0, 0, '没有构建日志可读', true)
@@ -466,25 +492,28 @@ function main() {
 			const r = runNode(`${BUILD_WARNING_GATE}.mjs`, ['--log', BUILD_LOG])
 			const secs = Number(process.hrtime.bigint() - t0) / 1e9
 			record(BUILD_WARNING_GATE, r.status, secs, lastResultLine(r.text), r.status === 0 && SKIP_MARKERS.test(r.text))
-			console.log(`  ${r.status !== 0 ? 'FAIL' : 'OK  '}  ${BUILD_WARNING_GATE.padEnd(24)} ${secs.toFixed(1)}s  ${lastResultLine(r.text)}`)
+			console.log(`  ${r.status !== 0 ? 'FAIL' : 'OK  '}  ${BUILD_WARNING_GATE.padEnd(26)} ${secs.toFixed(1)}s  ${lastResultLine(r.text)}`)
 		}
 	}
 
 	// ── 汇总 ─────────────────────────────────────────────────────────────────
 	section('汇总')
 	for (const r of results) {
-		const badge = r.exit !== 0 ? 'FAIL' : r.skipped ? 'SKIP' : 'OK  '
+		const badge = r.exit !== 0 ? 'FAIL' : r.skipped ? (isParity ? 'NOT-RUN' : 'SKIP') : 'OK  '
 		console.log(`  ${badge}  ${r.step.padEnd(26)} ${r.seconds.toFixed(1).padStart(6)}s  ${r.note}`)
 	}
 	const failed = results.filter(r => r.exit !== 0)
 	const skipped = results.filter(r => r.skipped)
 	const ran = results.filter(r => !r.skipped)
-	const total = results.length
 	const passed = ran.filter(r => r.exit === 0).length
 	// 违规跳过：门禁没跑，且按它的 skip 策略，这次不该跑得起。绿灯必须红。
 	const allowedSkipped = skipped.length - violations.length
-	console.log(`\ntotal: ${total}   passed: ${passed}   failed: ${failed.length}   skipped: ${skipped.length}   (合规跳过 ${allowedSkipped} / 违规跳过 ${violations.length})`)
-	if (skipped.length) {
+	console.log(`\ntotal: ${results.length}   passed: ${passed}   failed: ${failed.length}   skipped: ${skipped.length}   (合规跳过 ${allowedSkipped} / 违规跳过 ${violations.length})`)
+	if (isParity && skipped.length) {
+		console.log(`\n注意：${skipped.length} 项 parity 检查**不可运行**（基线缺失 / 网络不可达）。`)
+		console.log('      它们显示为 NOT-RUN，不计入通过——「不可运行」不是「通过」，也不是缺陷。')
+	}
+	if (skipped.length && !isParity) {
 		console.log(`\n注意：${skipped.length} 道门禁**没有真正运行**（脚本自己放弃了：内存不够 / 基线缺失 / 网络不可达）。`)
 		console.log('      它们不计入通过。上面的备注写了各自的原因——「全绿」不包括它们。')
 	}
@@ -509,10 +538,13 @@ function main() {
 		console.log(`\nFAILED: ${violations.length} 道门禁违规跳过，「全绿」不成立。`)
 		process.exit(1)
 	}
-	console.log(skipped.length ? 'ACCEPTED: no failures, but see the skipped steps above' : 'ACCEPTED: all steps green')
+	if (isParity && skipped.length)
+		console.log(`PARTIAL: parity 没有失败，但 ${skipped.length} 项不可运行（NOT-RUN，见上）——没有把它记成通过。`)
+	else
+		console.log(skipped.length ? 'ACCEPTED: no failures, but see the skipped steps above' : 'ACCEPTED: all steps green')
 	process.exit(0)
 }
 
 // 名单在底部导出，是为了让 check-ci-triggers.mjs 能 import 它校验
 // 「名单里的脚本都真实存在」——CI 不再手抄名单。
-export { BUILD_WARNING_GATE, FULL_EXTRA, gateName, gatePolicy, IS_CI, OFFLINE_GATES }
+export { BUILD_WARNING_GATE, gateName, gatePolicy, gateScriptOf, IS_CI, MAINTENANCE_GATES, PARITY_GATES, PROFILES, RELEASE_GATES }

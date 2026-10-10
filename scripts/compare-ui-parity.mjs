@@ -169,6 +169,7 @@ const ACCEPTED = [
 		reason: '3 个 ::info-card（3 × 59px = 177px）。线上因 2026-09-30 移除 Bangumi 后拿不到数据，'
 			+ '每张渲染成「暂时无法加载条目信息 + 重新加载」的错误卡；Astro 侧是空外壳。'
 			+ '用户 2026-10-02 决定不复刻这个坏掉的错误卡。上限 200px 恰好覆盖 177px。',
+		recheck: '2026-12（Bangumi 数据源恢复或决定删卡时，本条应可归零）',
 	},
 	{
 		// 上限刻意只覆盖 info-card 本身（5 × 59 = 295px）。
@@ -179,6 +180,7 @@ const ACCEPTED = [
 		maxDelta: 350,
 		reason: '5 个 ::info-card（5 × 59px = 295px），同 piece-hy1，用户 2026-10-02 决定不复刻错误卡。'
 			+ '上限 350px 只覆盖这部分；页面另有内容漂移（未提交的本地改动），不在豁免范围内。',
+		recheck: '2026-12（同 piece-hy1；内容改动部署后上限应能收紧）',
 	},
 ]
 
@@ -639,11 +641,13 @@ const STYLE_PROPS = [
 	'padding-left',
 ]
 const STYLE_ACCEPTED = [
+	// 每条都有 reason + 影响范围；recheck 写「什么时候该重看」。
 	{
 		sel: '.article p',
 		reason: '数量差，来自 §55 的 info-card 决定：线上每张加载失败的 info-card 里'
 			+ '有一个 `<p class="info-card-error-text">`，Astro 侧是空壳没有这个 `p`。'
 			+ '仅影响 nukitashi-gv-end(×5) 与 piece-hy1(×3) 两页。',
+		recheck: '2026-12（随 ACCEPTED 里两页的 info-card 决定一并复核）',
 	},
 	{
 		sel: '.hide-above-mobile',
@@ -657,6 +661,7 @@ const STYLE_ACCEPTED = [
 			+ '同一选择器下的 skip-link（390×50.39）也一致。'
 			+ '**别为了让它变绿而把 BlogPanel 的 `line-height: 1` 改回去**——'
 			+ '那是当初 §73 定位 +8.9px 时定下的值，改回去会让移动端面板高度变化。',
+		recheck: '2026-12（两侧行盒语义统一或不再共比计算值时撤掉本条）',
 	},
 	{
 		sel: '.gradient-card',
@@ -667,6 +672,7 @@ const STYLE_ACCEPTED = [
 			+ '于是线上这条规则从未生效，按钮落回 UA 默认的 `text-align:center`。'
 			+ 'Astro 按源码如实应用，差异来自线上构建漏链样式表，不是迁移缺陷——'
 			+ '刻意复刻等于故意让一条规则失效。故记录在案，不改。',
+		recheck: '2026-12（线上重建带上 .search-btn 样式表后本条应消失）',
 	},
 ]
 

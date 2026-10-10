@@ -2,31 +2,10 @@ import type { ReadTimeResults } from 'reading-time'
 import { glob } from 'astro/loaders'
 import { defineCollection, z } from 'astro:content'
 import blogConfig from './config/blog'
+// generateId（条目 id = URL 合同）提取至 `./lib/shared/content-id.ts`，
+// 规则说明随函数一并移动；那里是无 astro 依赖的纯模块，可直接跑单测（tests/content-id.test.mjs）。
+import { generateId } from './lib/shared/content-id'
 import { withArticleMeta } from './loaders/with-article-meta'
-
-// Nuxt 侧的 `content:file:afterParse` 钩子在 build 时改写 path，
-// 等价逻辑在这里用 glob loader 的 `generateId` 复刻：
-//   1. frontmatter.permalink 优先，直接作为条目 id
-//   2. 其次按 hidePostPrefix 去掉 /posts 前缀
-//      （`/posts/foo` → `/foo`，`/posts/a/b` → `/a/b`）
-function generateId({ entry, data, base }: { entry: string, data: Record<string, unknown>, base: URL }) {
-	const permalink = data.permalink
-	if (typeof permalink === 'string' && permalink)
-		return permalink.replace(/^\/+|\/+$/g, '')
-
-	// 去掉 base 与扩展名，得到相对内容根的路径
-	let rel = entry.replace(String(base), '').replace(/\.[^./]+$/, '')
-	rel = rel.replace(/^\/+/, '')
-
-	// index.md 表示所在目录本身，与 Nuxt 的文件路由一致：`games/index.md` → `games`
-	rel = rel.replace(/(^|\/)index$/, '$1')
-	rel = rel.replace(/\/+$/, '')
-
-	if (blogConfig.article.hidePostPrefix && rel.startsWith('posts/'))
-		rel = rel.slice('posts/'.length)
-
-	return rel
-}
 
 export interface ArticleSchema {
 	title?: string

@@ -1,6 +1,4 @@
 ---
-// getGithubAvatar / getFavicon 与 Nuxt 侧同源，临时跨项目引用，
-// 正式做法是把 app/utils/img.ts 整体搬进 astro-site/src/lib/img.ts
 import { getFavicon, getGithubAvatar } from '../../lib/img'
 import { getDomain, getGithubUsername, isExtLink } from '../../lib/shared'
 
@@ -33,15 +31,14 @@ else {
 const round = img ? !square : roundProp
 
 /*
- * link 可为空。Nuxt 侧 UtilLink 在没有 to 时渲染 <span> 而不是 <a>，
- * 而样式里有 `&[href]:hover`，所以这里必须区分。
+ * link 可为空：样式里有 `&[href]:hover`，所以无 link 时必须渲染 <span> 而不是 <a>，
+ * hover 规则才不会误挂。
  */
 const target = link && !link.startsWith('#') && isExtLink(link) ? '_blank' : undefined
 
 /*
- * rel 同理：Nuxt 侧走 `NuxtLink`（app/components/util/Link.vue:8），对 `target="_blank"`
- * 自动补 `rel="noopener noreferrer"`；这里就地渲染裸 `<a>`，必须自己补。
- * 实测漏掉时产物里 11 个外链 Badge 一个 rel 都没有。
+ * 新窗口外链必须就地补 rel="noopener noreferrer"：这里渲染的是裸 `<a>`，
+ * 没有任何框架会自动加 rel；漏掉既开窗安全（opener）也不符合产物合同。
  */
 const relValue = target === '_blank' ? 'noopener noreferrer' : undefined
 ---

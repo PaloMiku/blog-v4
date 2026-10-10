@@ -1,15 +1,12 @@
 /**
- * prose 增强层的客户端行为。
- *
- * 对应 Nuxt 侧由 Vue 组件自身驱动的部分：ProsePre 的复制/换行/折叠、
- * ProseTable 的换行切换、ProseP 的引用到评论区、ProseH* 的标题锚点、
- * ProseA 的 v-tip 链接浮层。
+ * prose 增强层的客户端行为：代码块复制/换行/折叠、表格换行切换、
+ * 段落引用到评论区、行内代码复制兜底、标题锚点、链接浮层。
+ * 构建期形状由 src/plugins/prose.ts 产出，本文件只管行为。
  *
  * ═══ 为什么标题锚点只能在这里做 ═══
  * Astro 的 heading id 由它自己的 rehype 阶段生成，在 `plugins/prose.ts`
- * **之后**才写入（实测 63 篇里 25 个标题在 prose 插件运行时还没有 id），
- * 所以构建期包不出 `<a href="#id">`。这里在 DOM 就绪后补，
- * 与本项目已有的渐进增强（归档排序、下拉、Tab、模态栈）同一套路。
+ * **之后**才写入，构建期有大量标题还没有 id，所以包不出 `<a href="#id">`。
+ * 这里在 DOM 就绪后补，与本项目已有的渐进增强（归档排序、下拉、Tab、模态栈）同一套路。
  *
  * 全部走**事件委托**挂在 document 上：prose 标记是构建期生成的，
  * 没有任何框架在客户端接管它们，逐个 addEventListener 会在
@@ -21,17 +18,12 @@
 /**
  * 只处理 h1–h4。
  *
- * Nuxt Content 的 `anchorLinks` 默认 `depth: 4`，**只把 h1–h4 包进锚点 `<a>`**，
- * h5/h6 不包。侧栏三级导航用的正是 `h5`，一旦一并包上就会多出几十个锚点。
+ * 锚点合同的深度是 4（与线上产物一致，见 engineering-inventory §4）：
+ * **只把 h1–h4 包进锚点 `<a>`**，h5/h6 不包。侧栏三级导航用的正是 `h5`，
+ * 一旦一并包上就会多出几十个锚点、几何门禁全红。
  *
- * 实测（2025-10-02，`/2025/05/misskey-sidebar`）：
- *   两侧标题总数一致（h2 2 + h3 30 + h4 81 + h5 63 = 176）
- *   Nuxt SSR 里「标题内含 `<a>`」= 113 = 2+30+81，**h5 一个都没有**
- *   Astro 原先的选择器是 h1–h6，于是多出 63 个（正好等于 h5 的数量）
- *
- * 这里只能在客户端做：Astro 的 heading id 由它自己的 rehype 阶段生成，
- * **晚于** `plugins/prose.ts`（实测 63 页里有 25 个标题在该插件运行时还没有 id），
- * 所以构建期包锚点会漏掉它们——这与 Nuxt 在 markdown 管线里就完成锚点并不等价。
+ * 只能在客户端做：Astro 的 heading id 由它自己的 rehype 阶段生成，
+ * **晚于** `plugins/prose.ts`，构建期包锚点会漏掉运行时还没有 id 的标题。
  */
 const HEADINGS = 'h1[id], h2[id], h3[id], h4[id]'
 
@@ -130,7 +122,10 @@ function onCodeAction(event: Event) {
 	}
 }
 
-/** 超过阈值的代码块默认折叠，与 Nuxt 的 collapsible 初始状态一致。 */
+/**
+ * 超过阈值的代码块默认折叠。构建期已写好 `collapsed` 的会被开头守卫整块跳过——
+ * 那是有意的（三件套约束见 plugins/prose.ts 的 collapsible 注释），这里只兜漏网。
+ */
 function initCodeCollapse() {
 	for (const figure of document.querySelectorAll<HTMLElement>('.z-codeblock.collapsible')) {
 		if (figure.classList.contains('collapsed'))
@@ -201,7 +196,7 @@ function onInlineCodeCopy(event: Event) {
 /**
  * 切换横向滚动 / 自动换行。
  *
- * 文案与图标都要换（Nuxt ProseTable.vue:8-12 是两个 icon + 两段文字一起翻），
+ * 文案与图标都要换（两段文字 + 两个图标一起翻），
  * 所以只改 `.md-table-toggle-text`，整体 `textContent` 会被图标节点冲掉。
  * 图标的显隐由 `.md-table-toggle-box` 上的 `md-table-scroll` 交给 CSS，
  * 这里同步一下这个状态类即可。
@@ -222,14 +217,14 @@ function onTableToggle(event: Event) {
 		label.textContent = nowScroll ? '自动换行' : '横向滚动'
 }
 
-/* ═══════════════════════ 链接浮层（ProseA 的 v-tip）═══════════════════════ */
+/* ═══════════════════════ 链接浮层 ═══════════════════════ */
 
 /**
  * 外链显示域名、内链显示解码后的 href——文案由 plugins/prose.ts 在构建期
- * 算好写进 `data-tip`，这里只做显隐（Nuxt ProseA.vue:10-13）。
+ * 算好写进 `data-tip`，这里只做显隐。
  *
- * ⚠️ vue-tippy 在 Astro 侧不可用，浮层用 `.tippy-box` / `.tippy-content`
- * 复刻。定位策略对齐 Nuxt 的 `inlinePositioning: true`：`position: absolute` +
+ * ⚠️ 不引入 tooltip 第三方库，浮层用 `.tippy-box` / `.tippy-content` 类名复刻
+ * 以复用 main.css 既有样式。定位策略：`position: absolute` +
  * 实测偏移，而不是 fixed + 视口翻转。代价是链接贴着视口上沿时浮层会被裁掉
  * 一角——Comment.astro 的浮层也是同样的取舍。
  *
@@ -249,8 +244,8 @@ function onTableToggle(event: Event) {
  *              （`scrollX/scrollY`）+ 挂 body + 单例重挂。
  *
  * 真正共享的只有类名与 `hidden` 开关那几行，抽象收益为负。
- * 另：这里的 `data-placement="top"` 与 `plugins/prose.ts:628` 那个一样，
- * 是从 tippy API 抄来的**死属性**——全仓库没有任何 `[data-placement]` 的 CSS 规则
+ * 另：这里的 `data-placement="top"` 与 `plugins/prose.ts` buildTable 里那个一样，
+ * 是沿自旧实现的**死属性**——全仓库没有任何 `[data-placement]` 的 CSS 规则
  * （实测 grep 只有这两处赋值、零处消费），改它不影响渲染，故保持原样。
  */
 let linkTip: HTMLElement | null = null
@@ -316,7 +311,7 @@ function onLinkPointerOut(event: Event) {
 
 /* ═══════════════════════ 段落引用到评论区 ═══════════════════════ */
 
-/** 与 Nuxt 的 getParagraphText 保持一致：剔除按钮自身、折叠行内空白。 */
+/** 引用进评论区的口径：剔除按钮自身、折叠行内空白——与线上产物一致，勿改。 */
 function paragraphText(paragraph: HTMLElement) {
 	const clone = paragraph.cloneNode(true) as HTMLElement
 	clone.querySelector('.paragraph-quote-btn')?.remove()
@@ -326,46 +321,32 @@ function paragraphText(paragraph: HTMLElement) {
 /**
  * 引用按钮缺失时的兜底形状。
  *
- * ⚠️ 这里**不再**写死图标名。原来那行手搓的
- * `<svg …><use href="#ai:tabler:message-circle-quote"></use></svg>` 有两个问题：
- *   1. 它把 astro-icon 的 sprite 约定（`ai:<set>:<name>`）抄进了客户端脚本，
- *      而 sprite 只包含**本页渲染过**的图标（`includeSymbol = i === 0`，
- *      cache 挂在 `Astro.locals` 上按页隔离）——`tabler:message-circle-quote`
- *      在 68 个页面的 sprite 里一个 symbol 都没有，于是这条路径渲染出**空白图标**；
- *      更糟的是那个名字在 `@iconify-json/tabler@1.2.41` 里压根不存在
- *      （Iconify API 对它 404），所以它永远不可能画出来。
- *   2. 它和构建期那条路（src/plugins/prose.ts 用的是另一个名字）各写各的字形，
- *      改一处忘另一处就分叉。
- * 现在改成克隆页面上已有的构建期按钮的图标子树：字形只有一个来源，
- * 两条路在结构上就不可能渲染出不同的东西，也不依赖 sprite。
+ * ⚠️ 这里**不许**写死图标名。手写 `<use href="#ai:<set>:<name>">` 有两个坑：
+ *   1. astro-icon 的 sprite 只包含**本页渲染过**的图标（按页隔离），
+ *      引用一个没在本页渲染过的名字就会画出**空白图标**，不报错；
+ *   2. 客户端与构建期各写一个名字，两条路各画各的字形，产物里同时出现两种图标。
+ * 改成克隆页面上已有的构建期按钮的图标子树：字形只有一个来源，
+ * 结构上就不可能分叉，也不依赖 sprite。
  */
 function fallbackQuoteIcon() {
 	return document.querySelector<HTMLElement>('.paragraph-quote-btn')?.querySelector('svg')?.outerHTML ?? ''
 }
 
 function initParagraphQuote() {
-	// Nuxt 的条件：评论区容器存在 + 桌面指针设备。
+	// 启用条件：评论区容器存在 + 桌面指针设备。
 	const hasComments = Boolean(document.querySelector('#twikoo'))
 	const desktop = window.matchMedia('(hover: hover) and (pointer: fine)').matches
 	if (!hasComments || !desktop)
 		return
 	for (const p of document.querySelectorAll<HTMLElement>('.prose-paragraph')) {
 		/*
-		 * ⚠️ 这里原来有一句「已经有按钮就 continue」。
-		 * 那是照抄 Nuxt 的直觉，但两边按钮的来源根本不同：
-		 *   - Nuxt  `ProseP.vue` 在 **onMounted 里 v-if 创建**按钮，可能重复插入，
-		 *          所以需要防重；
-		 *   - Astro 按钮由 `plugins/prose.ts` 在**构建期**写进静态 HTML，
-		 *          每段**本来就有一个**。
-		 * 于是这个防重判断在 Astro 侧对每一段都为真 → `continue` 掉全部段落：
-		 *
+		 * ⚠️ 这里**不许**写「已经有按钮就 continue」防重。
+		 * 按钮由构建期 `plugins/prose.ts` 写进静态 HTML，每段**本来就有一个**，
+		 * 这个防重判断对每一段都为真 → `continue` 掉全部段落：
 		 *   - `has-quote-button` 永远不加 → `padding-inline-end: 1.8em` 永不生效
-		 *     → 正文右侧不给按钮留位，**贴着行尾的段落会少换一行**；
+		 *     → 正文右侧不给按钮留位，**贴着行尾的段落会少换一行**（几何门禁红）；
 		 *   - `hidden` 永不摘掉 → 按钮始终 display:none，
-		 *     **「引用整段到评论区」这个功能在 Astro 侧等于没有**。
-		 *
-		 * 实测后果之一：全站 9 个页面的 `article.article` 差 −29px，
-		 * 全部来自同一个段落——恰好是那种「刚好排满一行」的段落。
+		 *     **「引用整段到评论区」这个功能等于没有**。
 		 *
 		 * 防重只需要在**真的缺按钮时补一个**，不能在有按钮时跳过整段。
 		 */
@@ -375,7 +356,7 @@ function initParagraphQuote() {
 			btn.removeAttribute('hidden')
 			continue
 		}
-		// 构建期没写进来的（理论上不该发生）：按 Nuxt 的形状补一个，
+		// 构建期没写进来的（理论上不该发生）：按既有形状补一个，
 		// 否则该段永远不会触发引用。图标直接克隆构建期那颗按钮的，
 		// 全页一个图标来源（见 fallbackQuoteIcon 的注释）。
 		p.insertAdjacentHTML('beforeend', `<button type="button" class="paragraph-quote-btn" aria-label="引用整段到评论区" data-paragraph-quote>${fallbackQuoteIcon()}</button>`)
@@ -384,24 +365,19 @@ function initParagraphQuote() {
 }
 
 /**
- * 把段落引用写进 Twikoo 的输入框，逐条对齐 Nuxt 侧
- * `app/composables/useCommentQuote.ts`（那份是参考实现，不是我方的假设）：
+ * 把段落引用写进 Twikoo 的输入框。以下口径是线上既有交互的合同，逐条对齐：
  *
- *   - `formatQuote`（useCommentQuote.ts:7-10）：`> ` + 折叠空白后的正文 + `\n\n`
- *   - `getCommentInput`（:12-33）：按 textarea → .el-textarea__inner →
- *     contenteditable 的顺序找输入框
- *   - `waitCommentInput`（:56-67）：最多等 6s、每 120ms 一次
- *   - `setInputContent`（:35-54）：已有内容则空两行追加，派发 input + change 并聚焦
- *   - `insertQuote`（:72-91）：先滚到 #twikoo，轮询到输入框就写入并返回 true；
- *     6s 还没出现就退回剪贴板、返回 false
+ *   - 引用格式：`> ` + 折叠空白后的正文 + `\n\n`
+ *   - 输入框按 textarea → .el-textarea__inner → contenteditable 的顺序找
+ *   - 最多等 6s、每 120ms 探一次
+ *   - 已有内容则空两行追加，派发 input + change 并聚焦
+ *   - 先滚到 #twikoo；6s 还没出现输入框就退回剪贴板
  *
- * ⚠️ 返回值必须**如实反映**有没有插进去。原来的实现把 Twikoo 实例丢掉、
- * 什么都没写，回调里一律闪「已插入」——按钮在骗用户。
- * 注意 Nuxt 那版成功时同样不闪字（ProseP.vue:25-30 丢弃了返回值），
- * 这里保留提示文案，但只在真的插入后才出现；退回剪贴板时另给一句不同的提示。
+ * ⚠️ 返回值必须**如实反映**有没有插进去——绝不能在没写任何东西时闪「已插入」，
+ * 按钮不许骗用户。成功时闪「已插入」，退回剪贴板时另给一句不同的提示。
  */
 
-/** useCommentQuote.ts:12-33 的输入框选择器，顺序不能改。 */
+/** 输入框选择器：按评论编辑器各种形态的回退查找顺序，顺序不能改。 */
 const COMMENT_INPUT_SELECTORS = [
 	'textarea',
 	'.el-textarea__inner',
@@ -433,7 +409,7 @@ function setInputContent(target: HTMLTextAreaElement | HTMLElement, value: strin
 	target.focus()
 }
 
-/** useCommentQuote.ts:56-67：最多 6s、每 120ms 探一次。 */
+/** 等待输入框出现：最多 6s、每 120ms 探一次（慢网络下 Twikoo 加载不完是常态）。 */
 async function waitCommentInput(timeout = 6000, step = 120) {
 	const start = Date.now()
 	while (Date.now() - start < timeout) {
@@ -460,11 +436,10 @@ async function insertQuote(text: string) {
 	}
 
 	// 输入框 6s 内没出现（Twikoo 还没加载完 / 换了个编辑器）：
-	// 与 Nuxt 一致退回剪贴板，让用户自己粘。
+	// 退回剪贴板，让用户自己粘。
 	//
-	// ⚠️ 这里**故意**与 useCommentQuote.ts:89-90 有一处不同：Nuxt 复制完无条件
-	// `return false`（它不知道复制成没成），本实现把 copyText 的结果如实回传，
-	// 好让提示能区分「插进去了」和「只进了剪贴板」。两处都不谎称「已插入」。
+	// ⚠️ copyText 的结果要如实回传，好让提示能区分「插进去了」和
+	// 「只进了剪贴板」。两处都不谎称「已插入」。
 	return copyText(quoteText)
 }
 
@@ -485,7 +460,7 @@ function onParagraphQuote(event: Event) {
 		return
 	}
 	// Twikoo 全局对象只是「评论区已加载」的信号，插入走的是它的 DOM
-	// （useCommentQuote.ts 也是这么做的：查 #twikoo 里的输入框，不调 Twikoo 方法）。
+	// （查 #twikoo 里的输入框，不调 Twikoo 方法）。
 	void insertQuote(text).then((inserted) => {
 		// 只有真的写进输入框才说「已插入」；退回剪贴板要说另一句，否则等于骗人。
 		// 「已复制」沿用代码块复制按钮的既有说法，不新造词。
