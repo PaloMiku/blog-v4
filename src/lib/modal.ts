@@ -75,8 +75,15 @@ export type ModalKey = typeof MODAL_KEYS[number]
 /** 与 `BikariyaModals` 一致的起始层级；遮罩占 z-1，故每层 +2 */
 const BASE_Z_INDEX = 510
 
-/** 默认退场时长，与 `stores/search.ts` 传入的 200 对齐 */
-const DEFAULT_DURATION = 200
+/**
+ * 默认退场时长，与 `stores/search.ts` 传入的 200 对齐。
+ *
+ * **导出**是因为大屏 Shell 的设置面板属于同一族浮层：它播退场动画的那段时间里
+ * 必须吞掉 B（规格：「动画退场期间阻止再次 B 导致离页」），而那段窗口的长度
+ * 若在 Shell 里另写一个数字，两处迟早对不上——对不上时第二次 B 会穿透到页面返回，
+ * 变成一次意外的离站导航。两处共用同一个常量是这个 bug 的根治办法。
+ */
+export const MODAL_DEFAULT_DURATION = 200
 
 let seq = 0
 const stack: ModalEntry[] = []
@@ -123,7 +130,7 @@ export function getModalStack(): readonly ModalEntry[] {
  * @returns 栈内 id。`unique` 命中已有项时返回那一项的 id（而非新 id）
  */
 export function openModal<P = Record<string, unknown>>(options: ModalOpenOptions<P>): string {
-	const { key, props, unique = false, duration = DEFAULT_DURATION } = options
+	const { key, props, unique = false, duration = MODAL_DEFAULT_DURATION } = options
 
 	if (unique) {
 		const existing = getModalByKey(key)

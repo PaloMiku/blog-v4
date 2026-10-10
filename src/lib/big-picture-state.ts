@@ -254,23 +254,31 @@ export interface BigPictureBackSnapshot {
  * 「只关一层」由**早退**保证：一旦命中就不再往下看，所以弹层开着时 B 永远不会顺手
  * 把抽屉也关掉。
  *
- * ## 退场动画期间返回 `null`（不是 `'page'`）
- * `closeModal()` 把状态置成 `closing` 后还要等 `duration` 毫秒才真正出栈；
- * 若这段时间里 B 继续往下穿透，第二次 B 就会一路落到「页面返回」把用户送走。
- * 规格把这写成硬要求（「动画退场期间阻止再次 B 导致离页」），所以退场中一律吞掉。
- * 设置面板自己播退场动画，因此它的形态是三态而不是布尔。
+ * ## 两个「退场中」的守卫各自站在哪一层
+ * 「动画退场期间阻止再次 B 导致离页」要求退场期间吞掉 B，但守卫的位置必须**低于**
+ * 它所保护的那一层的判定：
+ * - 设置面板自己播退场动画，所以 `settings === 'closing'` 的守卫排在**最前**——
+ *   它保护的是设置面板这一层，面板正在收起时不能让 B 穿透到下面任何一层；
+ * - 模态的守卫排在设置面板**之后**：设置面板开着时 B 归设置面板管，
+ *   底下那层 modal 正在淡出与否与这次 B 无关。若把它放在前面，
+ *   `{settings:'open', modalStack:[{status:'closing'}]}` 会返回 `null`——
+ *   用户按 B 什么都不发生，正是规格禁止的那种失效。
+ * - 抽屉与下拉**没有**退场态：`closeLayout()` 是同步的、`Dropdown.astro` 的开合
+ *   也直接改 `hidden`，两者都没有「正在收起」这个瞬间，因此不需要守卫，
+ *   也就不存在「收起的抽屉吞掉本该给下拉的那一下 B」这种组合。
  *
  * @returns 该关的层级；`null` 表示「这一下 B 什么都不做」
  */
 export function resolveBackLayer(snapshot: BigPictureBackSnapshot): BigPictureBackLayer | null {
 	if (snapshot.settings === 'closing')
 		return null
+	// 设置面板的优先级高于 modal，与它此刻是否在播退场无关
+	if (snapshot.settings === 'open')
+		return 'settings'
 	// 只看栈顶：叠了两层 modal 时，下面那层正在退场不该拦住对上面那层的关闭
 	const top = snapshot.modalStack.at(-1)
 	if (top?.status === 'closing')
 		return null
-	if (snapshot.settings === 'open')
-		return 'settings'
 	if (top)
 		return 'modal'
 	if (snapshot.dropdownOpen)
@@ -298,6 +306,12 @@ export type PageReturnAction
  */
 export interface PageReturnSource {
 	readonly path: string
+	/**
+	 * 这条记录要去的落地路径。缺省即视为「对不上」：
+	 * 规格把返回的前提写成合取（「目标与当前路径匹配**且**来源属于核心页面」），
+	 * 缺了目的地这一半就无法当场判定「这条记录是不是冲着我写的」。
+	 */
+	readonly destination?: string
 	readonly key?: string
 	readonly page?: string
 }
@@ -333,9 +347,16 @@ function isSameOriginPath(path: string): boolean {
  * ## 顺序：先来源，后兜底
  * 规格：「目标与当前路径匹配且来源属于核心页面时返回来源并恢复焦点；
  * 缺少来源时，文章返回首页，具体游戏页返回上一级游戏栏目，栏目页返回首页；
- * 首页 B 退出大屏模式。」
- * 来源只在「属于核心页面」时才生效——来源页是 `'off'`（云盘、预览、404）时它没开过增强，
- * 拿它当返回目标会把用户送进一个没有大屏外壳的页面。
+ * 首页 B 退出大屏模式。」那句合取拆成三个条件，缺一不可：
+ * 1. **目的地就是当前页**（`destination` 归一化后等于 `currentPath`）；
+ * 2. **来源路径是站内路径**；
+ * 3. **来源页属于核心页面**——来源页是 `'off'`（云盘、预览、404）时它没开过增强，
+ *    拿它当返回目标会把用户送进一个没有大屏外壳的页面。
+ *
+ * 第 1 条最容易被省掉、后果也最直接：来源记录最长活 30 分钟，而书签直达、
+ * 粘贴 URL、非 `<a>` 的脚本跳转都不会留下记录，于是一条旧记录会被**任意页面**
+ * 捡走当自己的来源，B 就把用户送到一个他压根不记得去过的页面。
+ * `consumeNavigationSource()` 会查同一件事，那不是冗余——这一份才是能被 Node 单测钉住的。
  *
  * ## 永远不会出现的返回值
  * `'history.back()` 在这条链路上不存在。规格把它明令禁止：直接打开的文章页
@@ -354,7 +375,14 @@ export function resolvePageReturn(input: {
 	if (page === 'off')
 		return null
 
-	if (source && isSameOriginPath(source.path) && source.page !== undefined && CORE_PAGES.includes(source.page)) {
+	const here = normalizeRoute(currentPath)
+	const landedHere = Boolean(
+		source
+		&& typeof source.destination === 'string'
+		&& isSameOriginPath(source.destination)
+		&& normalizeRoute(source.destination) === here,
+	)
+	if (source && landedHere && isSameOriginPath(source.path) && CORE_PAGES.includes(source.page ?? '')) {
 		return {
 			kind: 'source',
 			path: source.path,
@@ -367,7 +395,7 @@ export function resolvePageReturn(input: {
 		return { kind: 'exit' }
 
 	// 具体游戏页返回上一级游戏栏目；游戏栏目自己返回首页
-	if (page === 'games' && normalizeRoute(currentPath) !== GAMES_ROOT)
+	if (page === 'games' && here !== GAMES_ROOT)
 		return { kind: 'route', path: GAMES_ROOT }
 
 	// 文章、归档、友链、游戏栏目统一回首页
@@ -522,6 +550,105 @@ export function writeRestoreFocusKey(storage: StorageLike | null, key: string): 
 		guardedLocal(storage).setItem(RESTORE_FOCUS_KEY, key)
 	else
 		guardedLocal(storage).removeItem(RESTORE_FOCUS_KEY)
+}
+
+/**
+ * 设备状态。
+ * 与 `gamepad.ts` 的 `GamepadDeviceStatus` **同值但分开声明**：那边是浏览器侧模块，
+ * 从这里 `import type` 会让状态层与设备层互相引用（同文件不同层），
+ * 而这一组取值只出现在提示文案里，值的漂移只可能是「多一个提示分支」，
+ * 不会反向影响任何行为。改那边时同步这里即可。
+ */
+export type BigPictureDevice = 'none' | 'ready' | 'unsupported-mapping' | 'insufficient-buttons'
+
+/** 能力面。与 `gamepad.ts` 的 `GamepadSupportStatus` 同值，理由同上 */
+export type BigPictureSupport = 'supported' | 'unsupported'
+
+/**
+ * Shell 状态区要显示什么。
+ *
+ * 做成纯函数是因为这里有一条**规格级的硬要求**：「同一标签页不再自动进入」之后
+ * 「顶部或常规控制面板仍允许手动进入」。手动退出把自动进入关掉了，而输入层的轮询门禁
+ * 在抑制态下是停着的——也就是说菜单键此时按了没反应。这条路径一旦留在 `.astro` 里
+ * 就只能靠手测，而它恰好是最容易被「提示文案说得通」掩盖过去的一类缺陷：
+ * 文案说「按 Menu 键」，而那个键在当前状态下什么都不做。
+ */
+export interface BigPictureShellView {
+	/** 连接提示文案。`''` 表示不显示 */
+	readonly prompt: string
+	/** 状态条文案。`''` 表示不显示 */
+	readonly status: string
+	/**
+	 * 是否显示「进入大屏模式」按钮。
+	 *
+	 * 它是**不依赖轮询**的手动进入入口：被抑制时按任意键都不会进模式，
+	 * 只有这条控制面板上的路能回去（规格为此专门留了「常规控制面板」这一句）。
+	 */
+	readonly manualEntry: boolean
+}
+
+/**
+ * 由「页面类型 + 能力面 + 设备状态 + 两个进入开关」算出状态区该显示什么。
+ *
+ * ## 每一条文案都对应一个「这个状态下真的做得到」的动作
+ * - 未抑制 + 允许自动进入 → 「按任意键进入」：轮询在跑，第一次按键会被消耗并进入模式；
+ * - 被抑制 → 不提任何按键，改成让用户去按那颗**真的存在**的按钮；
+ * - 设置关掉了自动进入但未被抑制 → 轮询仍在跑，菜单键能开设置，因此这条文案成立；
+ * - 任何文案都只在「确实有设备」时出现：没接手柄的页面上不该出现任何一行字
+ *   （普通模式的视觉必须与今天完全一致）。
+ */
+export function resolveShellView(input: {
+	readonly page: BigPicturePage
+	readonly support: BigPictureSupport
+	readonly device: BigPictureDevice
+	/** 模式是否已激活 */
+	readonly active: boolean
+	/** 本标签页已被手动退出（不再自动进入） */
+	readonly suppressed: boolean
+	/** 设置面板的「首次按键自动进入」 */
+	readonly autoEntryEnabled: boolean
+	/** 本次页面生命周期内是否真的见到过设备（用于区分「没接过」与「刚断开」） */
+	readonly everConnected: boolean
+}): BigPictureShellView {
+	const { page, support, device, active, suppressed, autoEntryEnabled, everConnected } = input
+	// `'off'` 页面停用本页增强，也就没有任何话可说
+	if (page === 'off')
+		return { prompt: '', status: '', manualEntry: false }
+
+	// 浏览器能力面缺失（无 `navigator.getGamepads`、非安全上下文、策略禁止）。
+	// 规格要求这一档「显示可读提示」，所以它是唯一一条与设备状态无关的文案
+	if (support === 'unsupported')
+		return { prompt: '', status: '当前浏览器不支持手柄增强，已保留普通浏览', manualEntry: false }
+
+	if (device === 'unsupported-mapping')
+		return { prompt: '', status: '不支持该手柄，已保留普通浏览', manualEntry: false }
+	if (device === 'insufficient-buttons')
+		return { prompt: '', status: '手柄按钮数量不足，暂不支持大屏模式', manualEntry: false }
+
+	// 还没进模式：提示条讲「怎么进」，状态条讲设备
+	if (!active) {
+		if (device === 'ready') {
+			if (suppressed) {
+				// 手动退出之后没有任何按键路径能回去，按键文案在这里一律是假的
+				return {
+					prompt: '手柄已连接，已退出大屏模式',
+					status: '',
+					manualEntry: true,
+				}
+			}
+			return {
+				prompt: autoEntryEnabled
+					? '手柄已连接，按任意键进入大屏模式'
+					: '手柄已连接，按 Menu 键打开设置',
+				status: '',
+				manualEntry: false,
+			}
+		}
+		// 从没见到过设备就什么都不说；见到过又消失了才说「已断开」
+		return { prompt: '', status: everConnected ? '手柄已断开' : '', manualEntry: false }
+	}
+
+	return { prompt: '', status: '手柄已连接', manualEntry: false }
 }
 
 let globalsBound = false

@@ -45,6 +45,7 @@ const {
 	readRestoreFocusKey,
 	resolveBackLayer,
 	resolvePageReturn,
+	resolveShellView,
 	setAutoEntrySuppressed,
 	setBigPictureState,
 	subscribeBigPicture,
@@ -197,7 +198,7 @@ describe('存储不可用时降级到内存（抛错 / 为 null），页面不�
 	it('来源记录的写入与消费同样不抛：写进内存也读得回来（本次标签页内一致）', () => {
 		const storage = createThrowingStorage()
 
-		recordNavigationSource(storage, { path: '/a', key: 'k', page: 'home' })
+		recordNavigationSource(storage, { path: '/a', destination: '/b', key: 'k', page: 'home' })
 
 		const consumed = consumeNavigationSource(storage, '/b')
 		assert.equal(consumed?.path, '/a')
@@ -224,7 +225,7 @@ describe('存储不可用时降级到内存（抛错 / 为 null），页面不�
 
 		assert.doesNotThrow(() => writeSessionMode(null, true))
 		assert.doesNotThrow(() => writeAutoEntrySuppressed(null, true))
-		assert.doesNotThrow(() => recordNavigationSource(null, { path: '/a', key: 'k', page: 'home' }))
+		assert.doesNotThrow(() => recordNavigationSource(null, { path: '/a', destination: '/b', key: 'k', page: 'home' }))
 
 		// 共享同一个兜底，所以这些读写在本次运行内自洽（与「压根没存储」可分辨）
 		assert.equal(readSessionMode(null), 'active')
@@ -237,19 +238,43 @@ describe('导航来源记录', () => {
 	it('往返：写入什么就读回什么', () => {
 		const storage = createStorage()
 
-		recordNavigationSource(storage, { path: '/posts/a', key: 'posts/a', page: 'reading' }, 1000)
+		recordNavigationSource(storage, { path: '/', destination: '/posts/a', key: 'posts/a', page: 'reading' }, 1000)
 
-		assert.deepEqual(consumeNavigationSource(storage, '/posts/b', 1000), {
-			path: '/posts/a',
+		assert.deepEqual(consumeNavigationSource(storage, '/posts/a', 1000), {
+			path: '/',
+			destination: '/posts/a',
 			key: 'posts/a',
 			page: 'reading',
 			timestamp: 1000,
 		})
 	})
 
+	it('目的地必须是当前页：冲别的页面写的旧记录不得被这里捡走', () => {
+		// 规格那句是合取：「目标与当前路径匹配」且「来源属于核心页面」。
+		// 只判来源的话，一条最长 30 分钟的记录会被任意页面捡走当来源
+		for (const current of ['/x', '/x/', '/posts/b']) {
+			const storage = createStorage()
+			recordNavigationSource(storage, { path: '/', destination: '/posts/a', key: 'k', page: 'home' }, 1000)
+
+			assert.equal(consumeNavigationSource(storage, current, 1000), null, current)
+			assert.equal(storage.peek(SOURCE_KEY), null, current)
+		}
+	})
+
+	it('目的地比较走归一化（build.format: directory，尾斜杠不算不同页）', () => {
+		// 不含 `['/', '/']`：来源与落地页同路径时按「没有返回来源」处理，
+		// 那条规则由下面那条用例单独钉着
+		for (const [recorded, current] of [['/posts/a', '/posts/a/'], ['/posts/a/', '/posts/a']]) {
+			const storage = createStorage()
+			recordNavigationSource(storage, { path: '/', destination: recorded, key: 'k', page: 'home' }, 1000)
+
+			assert.notEqual(consumeNavigationSource(storage, current, 1000), null, `${recorded} → ${current}`)
+		}
+	})
+
 	it('一次性：读走即清，第二次拿不到', () => {
 		const storage = createStorage()
-		recordNavigationSource(storage, { path: '/a', key: 'k', page: 'home' }, 1000)
+		recordNavigationSource(storage, { path: '/', destination: '/b', key: 'k', page: 'home' }, 1000)
 
 		assert.notEqual(consumeNavigationSource(storage, '/b', 1000), null)
 		assert.equal(consumeNavigationSource(storage, '/b', 1000), null)
@@ -258,17 +283,18 @@ describe('导航来源记录', () => {
 
 	it('时间戳来自注入的 now，不读墙钟', () => {
 		const storage = createStorage()
-		recordNavigationSource(storage, { path: '/a' }, 1234)
+		recordNavigationSource(storage, { path: '/a', destination: '/b' }, 1234)
 
 		assert.equal(consumeNavigationSource(storage, '/b', 1234)?.timestamp, 1234)
 	})
 
 	it('key / page 缺省补空串（焦点恢复与页面类型判定各自有兜底）', () => {
 		const storage = createStorage()
-		recordNavigationSource(storage, { path: '/a' }, 1000)
+		recordNavigationSource(storage, { path: '/a', destination: '/b' }, 1000)
 
 		assert.deepEqual(consumeNavigationSource(storage, '/b', 1000), {
 			path: '/a',
+			destination: '/b',
 			key: '',
 			page: '',
 			timestamp: 1000,
@@ -278,14 +304,32 @@ describe('导航来源记录', () => {
 	it('站外来源根本不写入（每个 storage 各自断言，不借读端共用逻辑）', () => {
 		for (const path of ['https://evil.example/a', '//evil.example/a', '/\\evil.example/a', 'posts/a']) {
 			const storage = createStorage()
-			recordNavigationSource(storage, { path }, 1000)
+			recordNavigationSource(storage, { path, destination: '/b' }, 1000)
 
 			assert.equal(storage.peek(SOURCE_KEY), null, path)
 		}
 	})
 
-	it('path 不合型时早退而不抛（下游是内联点击处理器）', () => {
-		for (const source of [{ path: 42 }, { path: null }, {}, null, undefined]) {
+	it('站外目的地同样不写入（否则等于记录一个永远不会命中的来源）', () => {
+		for (const destination of ['https://evil.example/a', '//evil.example/a', '/\\evil.example/a', 'posts/a']) {
+			const storage = createStorage()
+			recordNavigationSource(storage, { path: '/a', destination }, 1000)
+
+			assert.equal(storage.peek(SOURCE_KEY), null, destination)
+		}
+	})
+
+	it('path / destination 不合型时早退而不抛（下游是内联点击处理器）', () => {
+		for (const source of [
+			{ path: 42, destination: '/b' },
+			{ path: null, destination: '/b' },
+			{ path: '/a' },
+			{ path: '/a', destination: 42 },
+			{ path: '/a', destination: null },
+			{},
+			null,
+			undefined,
+		]) {
 			const storage = createStorage()
 
 			assert.doesNotThrow(() => recordNavigationSource(storage, source, 1000))
@@ -303,16 +347,21 @@ describe('导航来源记录', () => {
 		}
 	})
 
-	it('字段不合型一律判废：缺 path、timestamp 缺失/非有限/非正', () => {
+	it('字段不合型一律判废：缺 path / 缺 destination / timestamp 缺失·非有限·非正', () => {
 		const cases = [
 			{ key: 'k', page: 'home', timestamp: 1000 },
-			{ path: '/a', timestamp: '1000' },
-			{ path: '/a', timestamp: Number.NaN },
-			{ path: '/a', timestamp: Number.POSITIVE_INFINITY },
+			{ path: '/a', key: 'k', page: 'home', timestamp: 1000 },
+			{ destination: '/b', key: 'k', page: 'home', timestamp: 1000 },
+			{ path: '/a', destination: 'https://evil.example/b', timestamp: 1000 },
+			{ path: '/a', destination: '//evil.example/b', timestamp: 1000 },
+			{ path: '/a', destination: 42, timestamp: 1000 },
+			{ path: '/a', destination: '/b', timestamp: '1000' },
+			{ path: '/a', destination: '/b', timestamp: Number.NaN },
+			{ path: '/a', destination: '/b', timestamp: Number.POSITIVE_INFINITY },
 			// 0 与负数是「没有时间」的写法：放行会让一条永远算不出年龄的记录
 			// 变成永久有效的返回来源
-			{ path: '/a', timestamp: 0 },
-			{ path: '/a', timestamp: -1 },
+			{ path: '/a', destination: '/b', timestamp: 0 },
+			{ path: '/a', destination: '/b', timestamp: -1 },
 		]
 
 		for (const payload of cases) {
@@ -326,7 +375,7 @@ describe('导航来源记录', () => {
 	it('存进去的站外路径读出来仍然是 null', () => {
 		for (const path of ['https://evil.example/a', '//evil.example/a', '/\\evil.example/a']) {
 			const storage = createStorage()
-			storage.setItem(SOURCE_KEY, JSON.stringify({ path, key: '', page: '', timestamp: 1000 }))
+			storage.setItem(SOURCE_KEY, JSON.stringify({ path, destination: '/b', key: '', page: '', timestamp: 1000 }))
 
 			assert.equal(consumeNavigationSource(storage, '/b', 1000), null, path)
 		}
@@ -334,18 +383,24 @@ describe('导航来源记录', () => {
 
 	it('超过 30 分钟判废；恰好 30 分钟仍然有效', () => {
 		const stale = createStorage()
-		stale.setItem(SOURCE_KEY, JSON.stringify({ path: '/a', key: '', page: '', timestamp: 1000 }))
+		stale.setItem(SOURCE_KEY, JSON.stringify({ path: '/a', destination: '/b', key: '', page: '', timestamp: 1000 }))
 		assert.equal(consumeNavigationSource(stale, '/b', 1000 + TTL + 1), null)
 
 		const edge = createStorage()
-		edge.setItem(SOURCE_KEY, JSON.stringify({ path: '/a', key: '', page: '', timestamp: 1000 }))
+		edge.setItem(SOURCE_KEY, JSON.stringify({ path: '/a', destination: '/b', key: '', page: '', timestamp: 1000 }))
 		assert.notEqual(consumeNavigationSource(edge, '/b', 1000 + TTL), null)
 	})
 
 	it('落地页与来源同路径时没有「返回来源」的含义，判为无来源', () => {
 		for (const current of ['/a', '/a/', '/']) {
 			const storage = createStorage()
-			storage.setItem(SOURCE_KEY, JSON.stringify({ path: current === '/' ? '/' : '/a', key: '', page: '', timestamp: 1000 }))
+			storage.setItem(SOURCE_KEY, JSON.stringify({
+				path: current === '/' ? '/' : '/a',
+				destination: current,
+				key: '',
+				page: '',
+				timestamp: 1000,
+			}))
 
 			assert.equal(consumeNavigationSource(storage, current, 1000), null, current)
 		}
@@ -355,13 +410,13 @@ describe('导航来源记录', () => {
 		const tab = createStorage()
 		const otherTab = createStorage()
 
-		recordNavigationSource(tab, { path: '/a', key: 'k', page: 'home' }, 1000)
+		recordNavigationSource(tab, { path: '/', destination: '/b', key: 'k', page: 'home' }, 1000)
 
 		assert.notEqual(tab.peek(SOURCE_KEY), null, '写进传入的 storage')
 		assert.equal(otherTab.peek(SOURCE_KEY), null, '写入不得外溢到别的 storage')
 		assert.equal(consumeNavigationSource(otherTab, '/b', 1000), null)
 		// 别的标签页的消费动不了这一份：若模块内藏着单例存储，这里会是 null
-		assert.equal(consumeNavigationSource(tab, '/b', 1000)?.path, '/a')
+		assert.equal(consumeNavigationSource(tab, '/b', 1000)?.path, '/')
 	})
 })
 
@@ -682,6 +737,44 @@ describe('B 键层级优先级（纯函数）', () => {
 		)
 	})
 
+	it('设置面板的优先级高于 modal，与 modal 此刻是否在退场无关', () => {
+		// 曾经的缺陷：两个 closing 守卫都排在设置面板判定之前，
+		// 于是「设置面板开着 + 底下那层 modal 正在淡出」会返回 null ——
+		// 用户按 B 什么都不发生，正是规格禁止的那种失效
+		assert.equal(
+			resolveBackLayer(openBackSnapshot({
+				settings: 'open',
+				modalStack: [{ key: 'search', status: 'closing' }],
+				dropdownOpen: false,
+				drawerOpen: false,
+			})),
+			'settings',
+		)
+	})
+
+	it('抽屉与下拉之间：打开的下拉压过「还没关掉的抽屉」，两者都没有退场态', () => {
+		// `closeLayout()` 同步生效、`Dropdown.astro` 直接改 `hidden`，
+		// 所以这两层不存在「正在收起」这个瞬间，也就不需要守卫
+		assert.equal(
+			resolveBackLayer(openBackSnapshot({
+				settings: 'closed',
+				modalStack: [],
+				dropdownOpen: true,
+				drawerOpen: true,
+			})),
+			'dropdown',
+		)
+		assert.equal(
+			resolveBackLayer(openBackSnapshot({
+				settings: 'closed',
+				modalStack: [],
+				dropdownOpen: false,
+				drawerOpen: true,
+			})),
+			'drawer',
+		)
+	})
+
 	it('输入快照不被改写（纯函数，Shell 复用同一份快照渲染提示条与派发动作）', () => {
 		const snapshot = openBackSnapshot()
 		const before = JSON.stringify(snapshot)
@@ -697,7 +790,7 @@ describe('页面级返回：先来源，后兜底，永不 history.back', () => 
 				resolvePageReturn({
 					page: 'reading',
 					currentPath: '/posts/a/',
-					source: { path: '/', key: 'list:featured', page: from },
+					source: { path: '/', destination: '/posts/a', key: 'list:featured', page: from },
 				}),
 				{ kind: 'source', path: '/', key: 'list:featured' },
 				from,
@@ -705,10 +798,40 @@ describe('页面级返回：先来源，后兜底，永不 history.back', () => 
 		}
 	})
 
+	it('目的地不是当前页就不算来源（规格那句合取的前一半）', () => {
+		// 来源记录最长活 30 分钟；书签直达、粘贴 URL、脚本跳转都不留记录，
+		// 只判来源的话一条旧记录会被任意页面捡走，B 于是把人送到陌生页面
+		for (const source of [
+			{ path: '/', destination: '/posts/b', key: 'k', page: 'home' },
+			{ path: '/', key: 'k', page: 'home' },
+			{ path: '/', destination: 'https://evil.example/posts/a', key: 'k', page: 'home' },
+		]) {
+			assert.deepEqual(
+				resolvePageReturn({ page: 'reading', currentPath: '/posts/a/', source }),
+				{ kind: 'route', path: '/' },
+				JSON.stringify(source),
+			)
+		}
+	})
+
+	it('目的地比较同样走归一化：落地页带尾斜杠也算命中', () => {
+		for (const [destination, currentPath] of [['/posts/a', '/posts/a/'], ['/posts/a/', '/posts/a']]) {
+			assert.deepEqual(
+				resolvePageReturn({
+					page: 'reading',
+					currentPath,
+					source: { path: '/', destination, key: 'k', page: 'home' },
+				}),
+				{ kind: 'source', path: '/', key: 'k' },
+				`${destination} → ${currentPath}`,
+			)
+		}
+	})
+
 	it('来源页不是核心页面（off / 缺失）时不用它返回', () => {
 		for (const page of ['off', '', undefined]) {
 			assert.deepEqual(
-				resolvePageReturn({ page: 'reading', currentPath: '/posts/a/', source: { path: '/drive/x', page } }),
+				resolvePageReturn({ page: 'reading', currentPath: '/posts/a/', source: { path: '/drive/x', destination: '/posts/a', page } }),
 				{ kind: 'route', path: '/' },
 				String(page),
 			)
@@ -718,7 +841,7 @@ describe('页面级返回：先来源，后兜底，永不 history.back', () => 
 	it('站外来源绝不返回（协议相对与反斜杠写法都算站外）', () => {
 		for (const path of ['https://evil.example/', '//evil.example/', '/\\evil.example/', 'posts/a']) {
 			assert.deepEqual(
-				resolvePageReturn({ page: 'reading', currentPath: '/posts/a/', source: { path, page: 'home' } }),
+				resolvePageReturn({ page: 'reading', currentPath: '/posts/a/', source: { path, destination: '/posts/a', page: 'home' } }),
 				{ kind: 'route', path: '/' },
 				path,
 			)
@@ -757,14 +880,14 @@ describe('页面级返回：先来源，后兜底，永不 history.back', () => 
 	it('off 页面不接管返回（本页停用增强）', () => {
 		assert.equal(resolvePageReturn({ page: 'off', currentPath: '/404/', source: null }), null)
 		assert.equal(
-			resolvePageReturn({ page: 'off', currentPath: '/404/', source: { path: '/', key: 'k', page: 'home' } }),
+			resolvePageReturn({ page: 'off', currentPath: '/404/', source: { path: '/', destination: '/404', key: 'k', page: 'home' } }),
 			null,
 		)
 	})
 
 	it('来源恢复是一次性的：同一趟往返里第二次 B 拿不到来源，改走页面兜底', () => {
 		const storage = createStorage()
-		recordNavigationSource(storage, { path: '/', key: 'list:featured', page: 'home' }, 1000)
+		recordNavigationSource(storage, { path: '/', destination: '/posts/a', key: 'list:featured', page: 'home' }, 1000)
 
 		// 落地页消费一次
 		const first = resolvePageReturn({
@@ -836,6 +959,110 @@ describe('设置面板的持久化（localStorage，存储不可用时退回内�
 		writeRestoreFocusKey(storage, '')
 		assert.equal(readRestoreFocusKey(storage), '')
 		assert.equal(storage.peek(RESTORE_FOCUS_KEY), null)
+	})
+})
+
+describe('状态区文案与手动进入入口（纯函数）', () => {
+	/** 默认：一台接上了的手柄、模式未激活、两个开关都允许自动进入 */
+	function view(overrides = {}) {
+		return resolveShellView({
+			page: 'home',
+			support: 'supported',
+			device: 'ready',
+			active: false,
+			suppressed: false,
+			autoEntryEnabled: true,
+			everConnected: true,
+			...overrides,
+		})
+	}
+
+	it('常规状态：提示「按任意键进入」，没有手动入口', () => {
+		assert.deepEqual(view(), {
+			prompt: '手柄已连接，按任意键进入大屏模式',
+			status: '',
+			manualEntry: false,
+		})
+	})
+
+	it('被手动退出抑制：不再承诺任何按键，给出控制面板上的手动入口', () => {
+		// 这一格就是缺陷现场：抑制态下轮询门禁是关的，Menu 键按了没反应，
+		// 而文案却让用户去按它。规格：「顶部或常规控制面板仍允许手动进入」
+		assert.deepEqual(view({ suppressed: true }), {
+			prompt: '手柄已连接，已退出大屏模式',
+			status: '',
+			manualEntry: true,
+		})
+	})
+
+	it('设置关掉了自动进入但未被抑制：轮询仍在跑，Menu 键提示成立', () => {
+		assert.deepEqual(view({ autoEntryEnabled: false }), {
+			prompt: '手柄已连接，按 Menu 键打开设置',
+			status: '',
+			manualEntry: false,
+		})
+	})
+
+	it('任何状态下都不提示一个此刻做不到的动作', () => {
+		// 枚举整张表：凡是 suppressed 为真的行，提示里不得出现「按…键」
+		const states = []
+		for (const active of [false, true]) {
+			for (const suppressed of [false, true]) {
+				for (const autoEntryEnabled of [false, true]) {
+					states.push({ active, suppressed, autoEntryEnabled })
+				}
+			}
+		}
+		for (const state of states) {
+			const result = view(state)
+			// 只在「未进模式」时才有「怎么进」这件事；已进模式时抑制标记不参与
+			if (state.suppressed && !state.active) {
+				assert.equal(result.manualEntry, true, JSON.stringify(state))
+				assert.doesNotMatch(result.prompt, /按.+键/, JSON.stringify(state))
+			}
+			if (result.manualEntry)
+				assert.equal(state.suppressed, true, '手动入口只服务于「被抑制」这一种锁死状态')
+		}
+	})
+
+	it('没接手柄的普通模式页面：一行字都不出现（今天的视觉必须一模一样）', () => {
+		assert.deepEqual(view({ device: 'none', everConnected: false }), {
+			prompt: '',
+			status: '',
+			manualEntry: false,
+		})
+		// 设备坏掉也不能给手动入口：进去了也没有输入可用
+		for (const device of ['unsupported-mapping', 'insufficient-buttons']) {
+			const result = view({ device })
+			assert.equal(result.manualEntry, false, device)
+			assert.equal(result.prompt, '', device)
+			assert.notEqual(result.status, '', device)
+		}
+	})
+
+	it('断开之后说的是「已断开」，但从未接过设备时不凭空多一句提示', () => {
+		assert.equal(view({ device: 'none', everConnected: true }).status, '手柄已断开')
+		assert.equal(view({ device: 'none', everConnected: false }).status, '')
+	})
+
+	it('浏览器没有能力面：只给一条可读提示，且不给手动入口', () => {
+		assert.deepEqual(view({ support: 'unsupported' }), {
+			prompt: '',
+			status: '当前浏览器不支持手柄增强，已保留普通浏览',
+			manualEntry: false,
+		})
+	})
+
+	it('模式里：提示条让位给状态条', () => {
+		assert.deepEqual(view({ active: true }), { prompt: '', status: '手柄已连接', manualEntry: false })
+	})
+
+	it('off 页面什么都不显示（停用本页增强）', () => {
+		assert.deepEqual(view({ page: 'off', support: 'unsupported' }), {
+			prompt: '',
+			status: '',
+			manualEntry: false,
+		})
 	})
 })
 

@@ -173,13 +173,25 @@ export function writeAutoEntrySuppressed(storage: StorageLike | null, suppressed
 }
 
 /**
- * 写入端载荷：调用方只需要给得出「从哪来、哪一条、哪种页面」。
+ * 写入端载荷：调用方只需要给得出「从哪来、到哪去、哪一条、哪种页面」。
  * `key`（列表项的稳定标识）与 `page`（页面的类型声明）可省，
- * 各自的消费方都有兜底。
+ * 各自的消费方都有兜底；`destination` **不可省**（见下）。
  */
 export interface NavigationSourceInput {
 	/** 来源页面的站内路径 */
 	readonly path: string
+	/**
+	 * 这次跳转要去的站内路径（落地页）。
+	 *
+	 * 为什么必须记：规格把返回的前提写成**合取**——「目标与当前路径匹配**且**来源属于核心页面」。
+	 * 只记来源的话，一条最长 30 分钟内的记录可以被任何一个页面捡走当自己的来源
+	 * （书签直达、粘贴 URL、非 `<a>` 的脚本跳转都不会留下记录），B 于是把用户送到
+	 * 一个他压根不记得去过的页面。记下目的地之后，「这条记录是不是给我的」就成了一条
+	 * 可以当场判定的事实。
+	 *
+	 * 与 `path` 同规则：站内路径、不带 query 与 hash（落地页比较的也是 `location.pathname`）。
+	 */
+	readonly destination: string
 	readonly key?: string
 	readonly page?: string
 }
@@ -187,6 +199,7 @@ export interface NavigationSourceInput {
 /** 读取端载荷：`key` / `page` 缺省补空串，`timestamp` 由写入端补 */
 export interface NavigationSource {
 	readonly path: string
+	readonly destination: string
 	readonly key: string
 	readonly page: string
 	readonly timestamp: number
@@ -229,9 +242,14 @@ function parseNavigationSource(raw: string): NavigationSource | null {
 	if (typeof parsed !== 'object' || parsed === null)
 		return null
 
-	const { path, key, page, timestamp } = parsed as Partial<Record<keyof NavigationSource, unknown>>
+	const { path, destination, key, page, timestamp } = parsed as Partial<Record<keyof NavigationSource, unknown>>
 	// 站外来源绝不返回：它可能来自 referrer 或任何第三方写入的键
 	if (typeof path !== 'string' || !isSameOriginPath(path))
+		return null
+	// 目的地同样必须是站内路径，且必须真的记下来过。
+	// 缺失时判废而不是放行：这条记录无法证明「它就是冲着我这个页面写的」，
+	// 放行等于让任何页面都能捡走一条 30 分钟内的旧记录当来源。
+	if (typeof destination !== 'string' || !isSameOriginPath(destination))
 		return null
 	// 时间戳缺失就没法判过期，一律判废——宁可少一条返回，也不要拿陈旧来源导航。
 	// `0` 与负数同样判废：它们是「没有时间」的写法（缺省填 0、时钟被拨回），
@@ -241,6 +259,7 @@ function parseNavigationSource(raw: string): NavigationSource | null {
 
 	return {
 		path,
+		destination,
 		key: typeof key === 'string' ? key : '',
 		page: typeof page === 'string' ? page : '',
 		timestamp,
@@ -254,8 +273,9 @@ function parseNavigationSource(raw: string): NavigationSource | null {
  * `now` 是可注入的时间源，测试据此断言过期规则，生产用墙钟。
  *
  * @param storage `null` 表示拿不到存储，走共享内存兜底
- * @param source 载荷不合型（含 `path` 不是字符串）一律早退而不抛：下游调用点
- *   是「点了站内链接」的内联处理器，抛错会打断整条点击链，而这里最多只是少记一条来源
+ * @param source 载荷不合型（`path` / `destination` 不是站内路径）一律早退而不抛：
+ *   下游调用点是「点了站内链接」的内联处理器，抛错会打断整条点击链，
+ *   而这里最多只是少记一条来源
  */
 export function recordNavigationSource(
 	storage: StorageLike | null,
@@ -264,9 +284,14 @@ export function recordNavigationSource(
 ): void {
 	if (typeof source?.path !== 'string' || !isSameOriginPath(source.path))
 		return
+	// 目的地缺一不可：记不出「这条记录是冲着我来的」就等于没记，
+	// 与其写一条落地页认不出来的记录，不如不写
+	if (typeof source?.destination !== 'string' || !isSameOriginPath(source.destination))
+		return
 
 	const record: NavigationSource = {
 		path: source.path,
+		destination: source.destination,
 		key: typeof source.key === 'string' ? source.key : '',
 		page: typeof source.page === 'string' ? source.page : '',
 		timestamp: now,
@@ -282,7 +307,9 @@ export function recordNavigationSource(
  * 触发（例如返回后又点一次同一处）而把用户来回弹。
  *
  * @param storage 标签页会话存储；为 `null`、取不到或抛错时内部降级到内存
- * @param currentPath 当前落地页路径。与来源同路径时没有「返回来源」的含义，判为无来源
+ * @param currentPath 当前落地页路径。两处比较都过归一化：
+ *   来源与当前路径相同时没有「返回来源」的含义；**目的地与当前路径不同时这条记录
+ *   根本不是冲这一页写的**（书签直达、粘贴 URL、脚本跳转都可能留下一条旧记录）
  * @param now 可注入的时间源，缺省墙钟
  */
 export function consumeNavigationSource(
@@ -304,7 +331,11 @@ export function consumeNavigationSource(
 	if (now - record.timestamp > SOURCE_TTL_MS)
 		return null
 
-	if (normalizeRoute(record.path) === normalizeRoute(currentPath))
+	const here = normalizeRoute(currentPath)
+	if (normalizeRoute(record.path) === here)
+		return null
+
+	if (normalizeRoute(record.destination) !== here)
 		return null
 
 	return record

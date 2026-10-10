@@ -66,6 +66,21 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 	*/}
 	<p class="big-picture-status" data-big-picture-status role="status" hidden />
 
+	{/*
+		手动进入的兜底入口。**它不能依赖轮询**：手动退出会置「本标签页不再自动进入」，
+		而输入层的门禁在抑制态下停轮询，于是这一状态下按任何键都不会进模式——
+		规格为此专门留了「顶部或常规控制面板仍允许手动进入」这一句。
+		显示条件由 `resolveShellView()` 裁决，只在「设备在、且被抑制」时出现；
+		没接手柄的普通模式页面上它一直是 `hidden`。
+	*/}
+	<button
+		class="big-picture-enter"
+		type="button"
+		data-big-picture-action="enter"
+		data-big-picture-manual-entry
+		hidden
+	>进入大屏模式</button>
+
 	<div class="big-picture-actions" data-gamepad-region="overlay" data-big-picture-actions hidden>
 		{/*
 			导航 / 目录开的是 `layout-state` 的两个抽屉。**刻意不写 `data-layout-toggle`**：
@@ -102,6 +117,11 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 		底部键帽。四个槽位是**静态渲染**的，脚本只改 `textContent`：
 		客户端 `createElement` 建出来的节点没有 `data-astro-cid`，
 		凡是带作用域的样式规则都命中不了（CLAUDE.md 坑位 4）。
+
+		`data-gamepad-region="footer"` **不是**误留：契约里这一条要求键帽条声明
+		`overlay|footer` 两个区域，而它自身没有可聚焦的子节点——键帽是纯展示，
+		LB/RB 的区域循环按「这一区真有可选目标」筛选，所以它会被自然跳过，
+		不会变成一个按了没反应的区域。站点真正的页脚由 Task 7 标成自己的 `footer` 区域。
 	*/}
 	<p class="big-picture-hints" data-gamepad-region="footer" data-big-picture-hints hidden>
 		<span data-big-picture-hint="confirm">A 确认</span>
@@ -127,20 +147,21 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 		readRestoreFocusKey,
 		resolveBackLayer,
 		resolvePageReturn,
+		resolveShellView,
 		subscribeBigPicture,
 		writeAutoEntryEnabled,
 		writeRestoreFocusKey,
 	} from '../../lib/big-picture-state'
 	import { consumeNavigationSource, recordNavigationSource } from '../../lib/big-picture-session'
 	import { bindLayoutGlobals, closeLayout, getLayoutState, subscribeLayout, toggleLayout } from '../../lib/layout-state'
-	import { bindModalGlobals, closeModal, getModalStack, subscribeModals } from '../../lib/modal'
+	import { bindModalGlobals, closeModal, getModalStack, MODAL_DEFAULT_DURATION, subscribeModals } from '../../lib/modal'
 
 	/*
-	 * 设置面板的退场时长。
-	 * 规格没给数字，取 `modal.ts` 的默认值：两处用同一个数，
-	 * 「退场期间吞掉 B」的窗口才和弹层那一层对得上。
+	 * 设置面板的退场时长**不写死在这里**：先读面板自己声明的 `transition-duration`，
+	 * 读到 0 才退回 modal 家族共享的 `MODAL_DEFAULT_DURATION`。理由见
+	 * `settingsCloseDelay()` 的注释——写死一个数只会在 Task 6 给面板加上更长的过渡时失配，
+	 * 而失配的代价是「第二次 B 穿透到页面返回」，即一次意外的离站导航。
 	 */
-	const SETTINGS_DURATION = 200
 
 	/** 标记本 Shell 已被接线的元素（幂等守卫，与仓库里其它组件同一写法） */
 	let shellEl = null
@@ -151,6 +172,13 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 	let active = false
 	let settingsState = 'closed'
 	let settingsTimer = 0
+	/**
+	 * 设置面板收起后的收尾函数（清定时器 + 摘 `transitionend` 监听 + 落回 `'closed'`）。
+	 * 留成模块级状态，`leaveMode()` / `teardown()` 必须能把它叫醒：否则那个
+	 * `transitionend` 监听会留在面板上，等下一次**别的**过渡结束时被误触发，
+	 * 在模式已经退出的页面上改状态、抢焦点。
+	 */
+	let settingsFinish = null
 	/** 上一次被本层标上 `overlay` 区域的弹层根，关闭时要把属性摘回去 */
 	let markedModalRoot = null
 	/** 关抽屉 / 关设置后要把焦点还给谁 */
@@ -160,7 +188,7 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 	let pendingFocusKey = ''
 	/** 滚动容器缓存。签名不变就不重扫 DOM——右摇杆是每帧都来的电平量 */
 	let scrollCache = { signature: '', element: null }
-	/** 设备状态。与 `gamepad.ts` 的 `GamepadDeviceStatus` 同值，但那是浏览器侧类型 */
+	/** 设备状态。与 `gamepad.ts` 的 `GamepadDeviceStatus` 同值，合法取值见 `resolveShellView()` */
 	let device = 'none'
 	/** 本页是否真的见到过设备。没见到过就不说「已断开」——那是凭空多出来的一条提示 */
 	let everConnected = false
@@ -202,47 +230,38 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 	/* ── 提示与状态 ────────────────────────────────────────────── */
 
 	/**
-	 * 设备状态 → 可读文案。
+	 * 状态区整块重算。
 	 *
-	 * 只报动作名与通用键帽，不承诺厂商布局（规格：提示以动作名为主，
-	 * 不通过手柄名字承诺兼容）；「不支持」「按钮数量不足」「浏览器没有 API」
-	 * 是三条独立的失败路径，合成一句话会让用户以为换个手柄就能解决。
+	 * 「显示什么」整段交给纯函数 `resolveShellView()`，本函数只负责把结果落到 DOM 上。
+	 * 之所以不留在本地：这里有一条会被文案掩盖的规格缺陷——手动退出之后轮询停摆，
+	 * 此时若文案仍写「按 Menu 键」，用户照做却毫无反应，而**没有任何测试会红**。
+	 * 把「设备状态 × 两个进入开关 → 文案与按钮」做成纯函数之后，
+	 * 「任何状态下都不提示一个此刻做不到的动作」就成了一条可断言的规则。
 	 */
-	function statusText() {
-		// `'off'` 页面没有控制器，也就没有任何话可说
-		if (pageType === 'off')
-			return ''
-		const support = controller ? controller.getStatus().support : 'unsupported'
-		if (support === 'unsupported')
-			return '当前浏览器不支持手柄增强，已保留普通浏览'
-		if (device === 'unsupported-mapping')
-			return '不支持该手柄，已保留普通浏览'
-		if (device === 'insufficient-buttons')
-			return '手柄按钮数量不足，暂不支持大屏模式'
-		if (device === 'none')
-			return everConnected ? '手柄已断开' : ''
-		// 连上了且已经在模式里：状态条说设备状态
-		return active ? '手柄已连接' : ''
-	}
-
 	function renderStatus() {
-		const statusEl = query('[data-big-picture-status]')
-		const text = statusText()
-		toggle(statusEl, Boolean(text))
-		if (statusEl)
-			statusEl.textContent = text
+		const view = resolveShellView({
+			page: pageType,
+			support: controller ? controller.getStatus().support : 'unsupported',
+			device,
+			active,
+			suppressed: isAutoEntrySuppressed(),
+			autoEntryEnabled: readAutoEntryEnabled(localStore()),
+			everConnected,
+		})
 
-		// 连接提示只在「连上了、还没进模式」时出现。自动进入被关掉时改成提示
-		// Menu 键——那是此时唯一还能用的手柄入口。
-		const showPrompt = device === 'ready' && !active
+		const statusEl = query('[data-big-picture-status]')
+		toggle(statusEl, Boolean(view.status))
+		if (statusEl)
+			statusEl.textContent = view.status
+
 		const promptEl = query('[data-big-picture-prompt]')
-		toggle(promptEl, showPrompt)
-		if (promptEl) {
-			const canAutoEnter = !isAutoEntrySuppressed() && readAutoEntryEnabled(localStore())
-			promptEl.textContent = canAutoEnter
-				? '手柄已连接，按任意键进入大屏模式'
-				: '手柄已连接，按 Menu 键打开设置'
-		}
+		toggle(promptEl, Boolean(view.prompt))
+		if (promptEl)
+			promptEl.textContent = view.prompt
+
+		// 手动进入的兜底入口：只在「设备在 + 被抑制」时出现，
+		// 于是没接手柄的普通模式页面上它恒为 `hidden`，与今天的视觉完全一致
+		toggle(query('[data-big-picture-manual-entry]'), view.manualEntry)
 
 		toggle(query('[data-big-picture-actions]'), active)
 		toggle(query('[data-big-picture-hints]'), active)
@@ -438,25 +457,68 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 		renderHints()
 	}
 
+	/** `'0.2s'` / `'200ms'` → 毫秒。解析不了一律当 0（= 没有过渡） */
+	function parseCssDuration(value) {
+		const number = Number.parseFloat(value)
+		if (!Number.isFinite(number))
+			return 0
+		return value.trim().endsWith('ms') ? number : number * 1000
+	}
+
+	/**
+	 * 设置面板收起后要等多久才把 `settings` 落回 `'closed'`。
+	 *
+	 * **从 CSS 读，不写死**。这一段窗口的作用是「吞掉 B」：面板正在收起时若 B 穿透到
+	 * 下面那一层（抽屉或页面返回），用户按两下 B 就会被送走。
+	 * 今天的实态是 `hidden`（`display: none`）→ 根本没有过渡 → 退回 modal 家族共享的
+	 * `MODAL_DEFAULT_DURATION`；Task 6 加上过渡之后这里自动跟随面板声明的时长，
+	 * 不会再出现「CSS 过渡比守卫窗口长，第二次 B 穿透」这种只在真实浏览器里复现的离站 bug。
+	 */
+	function settingsCloseDelay() {
+		const panel = query('[data-big-picture-settings]')
+		if (!panel)
+			return MODAL_DEFAULT_DURATION
+		const declared = getComputedStyle(panel).transitionDuration
+		const parsed = declared
+			.split(',')
+			.map(part => parseCssDuration(part))
+			.reduce((max, value) => Math.max(max, value), 0)
+		return parsed > 0 ? parsed : MODAL_DEFAULT_DURATION
+	}
+
 	function closeSettings() {
 		if (settingsState === 'closed')
 			return
 		// 先置 `closing`：这段时间 resolveBackLayer() 会吞掉 B，
 		// 否则第二次 B 会穿透到抽屉或页面返回把用户送走
 		settingsState = 'closing'
-		if (settingsTimer)
-			clearTimeout(settingsTimer)
-		settingsTimer = setTimeout(() => {
-			settingsTimer = 0
+		// 重复调用（面板已经在收起）时先收干净上一轮，避免两个收尾函数并存
+		settingsFinish?.()
+		const panel = query('[data-big-picture-settings]')
+		// 退场真的播了动画时以 `transitionend` 为准（CSS 说了算），
+		// 定时器只当它不来时的兜底；两条路径都汇聚到同一个收尾函数
+		const finish = () => {
+			if (settingsTimer) {
+				clearTimeout(settingsTimer)
+				settingsTimer = 0
+			}
+			panel?.removeEventListener('transitionend', finish)
+			if (settingsFinish === finish)
+				settingsFinish = null
 			settingsState = 'closed'
-			toggle(query('[data-big-picture-settings]'), false)
+			toggle(panel, false)
 			const target = settingsReturnTarget
 			settingsReturnTarget = null
+			// 规格：「关闭后回到触发目标」。只在模式里归还：
+			// 普通模式下这个面板是鼠标点的，焦点本来就在触发按钮上
 			if (active && target?.isConnected)
 				target.focus({ preventScroll: true })
 			manager?.refresh()
 			renderHints()
-		}, SETTINGS_DURATION)
+		}
+		settingsFinish = finish
+		panel?.addEventListener('transitionend', finish)
+		settingsTimer = setTimeout(finish, settingsCloseDelay())
 	}
 
 	function toggleSettings() {
@@ -533,6 +595,20 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 		location.assign(path)
 	}
 
+	/**
+	 * 下拉的触发目标。B 关掉下拉后焦点要还给它（规格：「关闭后回到触发目标」）。
+	 *
+	 * `Dropdown.astro` 的 `[data-dropdown-anchor]` 只是一个容器，可聚焦的是它里面
+	 * 调用方塞的按钮/链接；找不到就退到容器本身（它可能带 `tabindex`）。
+	 */
+	function dropdownTriggerOf(root) {
+		const anchor = root?.querySelector('[data-dropdown-anchor]')
+		if (!anchor)
+			return null
+		const focusable = anchor.querySelector('a[href],button,[tabindex]')
+		return focusable instanceof HTMLElement ? focusable : (anchor instanceof HTMLElement ? anchor : null)
+	}
+
 	function goBack() {
 		const layer = resolveBackLayer(backSnapshot())
 		if (layer === null)
@@ -551,12 +627,17 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 		}
 		if (layer === 'dropdown') {
 			const root = openDropdownRoot()
+			// 先记住触发目标再藏面板：藏完之后焦点所在的项变成不可聚焦，
+			// 焦点会掉回 `<body>`，用户就不知道自己刚才操作的是哪个下拉了
+			const trigger = dropdownTriggerOf(root)
 			// Dropdown.astro 的开合状态只落在 DOM 上（它自己的注释这么写），
 			// 而它的 open/close 是模块私有函数；这两行就是那份表示法的复刻
 			const panel = root?.querySelector('[data-dropdown-panel]')
 			if (panel)
 				panel.hidden = true
 			root?.removeAttribute('data-open')
+			if (active && trigger?.isConnected)
+				trigger.focus({ preventScroll: true })
 			manager?.refresh()
 			renderHints()
 			return
@@ -757,9 +838,34 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 		const current = manager?.getCurrent()
 		recordNavigationSource(sessionStore(), {
 			path: normalizeRoute(currentPath()),
+			// 目的地记的是链接解析出来的 pathname（不含 query / hash）：
+			// 落地页比对的也是 `location.pathname`，两边必须用同一种形态，
+			// 否则带 query 的站内跳转会永远对不上，退化成「没有来源」
+			destination: normalizeRoute(url.pathname),
 			key: current ? (readFocusTargetKey(current) ?? '') : '',
 			page: pageType,
 		})
+	}
+
+	/**
+	 * 手动进入的兜底入口。
+	 *
+	 * 这是规格里「顶部或常规控制面板仍允许手动进入」那句话的落点：手动退出会置抑制，
+	 * 抑制态下输入层**不轮询**，因此没有任何按键路径能把用户带回模式——只有这条不依赖
+	 * 轮询的控制面板路径可以。用 `'manual'` 而不是 `'auto'`：`enterBigPicture()` 只让
+	 * `manual` 绕过抑制闸（规格明确保留手动进入），传 `'auto'` 会原地被拒。
+	 *
+	 * 模式随之激活，`enterMode()` 里的 `controller.start()` 会重新裁决轮询并恢复循环——
+	 * 所以进入之后菜单键、方向键等一切照旧可用。
+	 */
+	function enterManually() {
+		if (active)
+			return
+		enterBigPicture('manual')
+		// 幂等的重复一次：抑制态的循环本来是停的，`enterMode()` 已经调过一次，
+		// 这里再调是为了在「模式已被别处改掉」这条边路上也保证循环真的起来
+		controller?.start()
+		renderStatus()
 	}
 
 	/**
@@ -804,6 +910,10 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 		else if (action === 'close-settings') {
 			event.preventDefault()
 			closeSettings()
+		}
+		else if (action === 'enter') {
+			event.preventDefault()
+			enterManually()
 		}
 	}
 
@@ -862,12 +972,12 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 	}
 
 	function leaveMode() {
-		// 设置面板的退场定时器必须在这里真的清掉：`closeSettings()` 只置形态，
-		// 不清定时器的话那个回调会在模式已经退出之后继续改 DOM、抢焦点
-		if (settingsTimer) {
-			clearTimeout(settingsTimer)
-			settingsTimer = 0
-		}
+		// 退场定时器与 `transitionend` 监听必须在这里真的收掉：否则那个回调会在
+		// 模式已经退出之后继续改 DOM、抢焦点；那个监听更糟——面板元素在页面存活期内一直
+		// 都在，下一次**别的**过渡结束就会把它叫醒
+		settingsFinish?.()
+		settingsFinish = null
+		settingsTimer = 0
 		settingsState = 'closed'
 		toggle(query('[data-big-picture-settings]'), false)
 		manager?.destroy()
@@ -982,10 +1092,11 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 		for (const dispose of disposers)
 			dispose()
 		disposers = []
-		if (settingsTimer) {
-			clearTimeout(settingsTimer)
-			settingsTimer = 0
-		}
+		// 面板元素会活过 swap（ClientRouter），那个 `transitionend` 监听必须摘掉，
+		// 否则它会在新页面的某次过渡结束时被叫醒并改这边的状态
+		settingsFinish?.()
+		settingsFinish = null
+		settingsTimer = 0
 		document.removeEventListener('click', onDocumentClick)
 		document.removeEventListener('click', onShellActionClick)
 		document.removeEventListener('change', onPreferenceChange)
