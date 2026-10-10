@@ -147,7 +147,20 @@ export interface GamepadController {
 	readonly start: () => void
 	/** 停止：取消 rAF、解绑监听、作废按住的按钮。幂等，且不留下任何挂起的 rAF */
 	readonly stop: () => void
-	/** 重新读设备并重新裁决轮询（连接事件、可见性变化、调用方主动同步都用它） */
+	/**
+	 * 重新读设备并重新裁决轮询，**非破坏**：不动输入状态。
+	 *
+	 * 它保留的方向节流计时与按键边沿正是「按住」这件事本身。破坏性地清一遍会让
+	 * 正在按住的方向从第一帧重新计 350ms、把仍按住的按钮当成新的按下——所以
+	 * 「重新读一遍设备看看」这类调用（页面结构变化后确认设备、连接事件漏发后的补读）
+	 * 必须走这里，而不是内部那条会作废输入的路径。
+	 *
+	 * 唯一例外：这一读若发现当前设备**已经不在了**，`applyScan` 会丢弃它并重置输入
+	 * （设备都没了，记住它的按键当然也不作数）。这是断开检测本身，不是副作用。
+	 *
+	 * 连接 / 断开 / 可见性 / 失焦 / pagehide 这些「外部世界变了」的事件走内部的
+	 * `resync()`，那才是破坏性的；`refresh()` 刻意不暴露它。
+	 */
 	readonly refresh: () => void
 	/** 是否真的在轮询（即已排期下一帧）。门禁不满足时为 `false` */
 	readonly isRunning: () => boolean
@@ -162,10 +175,15 @@ const STANDARD_MAPPING = 'standard'
 const RIGHT_STICK_Y_AXIS = 3
 
 /**
- * 帧间隔上限。
- * 后台标签页被浏览器冻结后再恢复、`performance.now()` 的跨度可能有几秒；
- * 原样交给 `getScrollDelta` 会让一帧滚过好几屏（900px/s × 数秒）。夹到 250ms
- * 等于「按一帧算」，视觉上是一次正常的滚动。
+ * 帧间隔上限（毫秒）。
+ *
+ * 存在的理由是**标签页解冻**：浏览器冻结后台标签页，恢复时相邻两帧的
+ * `performance.now()` 可能相差数秒。把它原样交给 `getScrollDelta`（上限 900px/s）
+ * 就是一帧滚过好几屏，视觉上是「页面突然自己窜走了」。夹到 250ms 等价于按一帧算。
+ *
+ * 它让规格里的「按帧时间累积」**在解冻之后变成近似**：那一段真实流逝的时间被当作
+ * 丢弃而不是补滚。这是有意接受的损失——补滚会让用户看到页面急冲一段，
+ * 而「慢一点继续滚」没有这种突兀感。稳态下（帧间隔 ≪ 250ms）本常量不参与计算。
  */
 const MAX_FRAME_DELTA_MS = 250
 
@@ -408,9 +426,13 @@ export function createGamepadController(options: GamepadControllerOptions = {}):
 
 	/**
 	 * 轮询门禁。前四条任一不满足就不排期 rAF。
-	 * 最后一条的语义是「还有没有理由去读设备」：模式已激活时**总是**读——用户
-	 * 从顶部按钮手动进入之后，即使本标签页的自动进入仍被抑制，输入也必须立刻可用；
-	 * 尚未激活时才受抑制标记约束（规格：自动进入被抑制时停止轮询）。
+	 *
+	 * 最后一条的「或」是**有意为之的偏离**：规格原句是「自动进入被抑制时停止轮询」，
+	 * 但那句话约束的是**自动**进入这条路径——抑制标记是「手动退出」的副作用，
+	 * 用户随后仍可能从顶部按钮或控制面板**手动**进入。若把抑制当成绝对开关，
+	 * 手动进入之后循环会停在关闭状态：人已经在模式里，推摇杆却毫无反应。
+	 * 因此这里给「模式已激活」留了口子：**手动进入必须继续轮询**，
+	 * 抑制只挡「还没进模式时的那次自动进入」。
 	 */
 	function canPoll(scan: DeviceScan): boolean {
 		if (!started || left || hidden || !focused)
@@ -540,30 +562,48 @@ export function createGamepadController(options: GamepadControllerOptions = {}):
 			cancelFrame()
 	}
 
-	const onConnected = () => refresh()
-	const onDisconnected = () => refresh()
+	/**
+	 * 事件回调与 `start()` 用的「重新同步」：**破坏性**——先作废输入状态再读设备。
+	 *
+	 * 与公开的 `refresh()` 分开，是因为两者的触发理由根本不同：公开那条是
+	 * 「我怀疑设备变了，读一眼」（不确定是否变化，故不能顺手清掉按住状态）；
+	 * 这一条是「外部世界确实变了」（连接、断开、可见性、失焦、离开），
+	 * 规格要求这时按住的按钮必须先松开。
+	 */
+	function resync() {
+		resetInput()
+		sync()
+	}
+
+	/** 公开的 `refresh()`：只重读与重新裁决，输入状态原样保留 */
+	function refresh() {
+		sync()
+	}
+
+	const onConnected = () => resync()
+	const onDisconnected = () => resync()
 	const onVisibilityChange = () => {
 		hidden = env?.isHidden() ?? false
 		if (!hidden)
 			focused = env?.isFocused() ?? true
-		refresh()
+		resync()
 	}
 	const onFocus = () => {
 		focused = true
-		refresh()
+		resync()
 	}
 	const onBlur = () => {
 		focused = false
-		refresh()
+		resync()
 	}
 	// 离开页面（含 BFCache）：停轮询但**保留监听**，否则 pageshow 回来时没人重启
 	const onPageHide = () => {
 		left = true
-		refresh()
+		resync()
 	}
 	const onPageShow = () => {
 		left = false
-		refresh()
+		resync()
 	}
 
 	function bind() {
@@ -615,11 +655,6 @@ export function createGamepadController(options: GamepadControllerOptions = {}):
 		cancelFrame()
 		unbind()
 		dropDevice()
-	}
-
-	function refresh() {
-		resetInput()
-		sync()
 	}
 
 	return {

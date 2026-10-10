@@ -12,6 +12,14 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import {
+	enterBigPicture,
+	exitBigPicture,
+	getBigPictureState,
+	isAutoEntrySuppressed,
+	setAutoEntrySuppressed,
+	setBigPictureState,
+} from '../src/lib/big-picture-state.ts'
+import {
 	createInputState,
 	getScrollDelta,
 	isStandardGamepad,
@@ -1074,6 +1082,36 @@ describe('手柄生命周期：可见性、失焦与离开', () => {
 		assert.equal(rig.environment.pending(), 1)
 	})
 
+	it('refresh() 是非破坏的重读：按住的按钮与方向节流都不被作废', () => {
+		const devices = createDevices([createDevice()])
+		const rig = createRig(devices)
+		rig.controller.start()
+		rig.enter()
+		rig.frames(2)
+
+		// 按住 A：只应有一次按下边沿
+		devices.press(0, [0])
+		rig.frame()
+		rig.controller.refresh()
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['confirm'], 'refresh 不得把仍按住的按钮当成新按下')
+
+		// 按住右摇杆：节流计时不得被清掉（清掉会立刻重触发一次）
+		devices.press(0, [])
+		devices.axes(0, [0.9])
+		rig.frame()
+		rig.controller.refresh()
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['confirm', 'right'], 'refresh 不得把方向节流从头计')
+
+		// 对照组：失焦走的是内部那条破坏性路径，节流确实被作废，重新进入后首次立刻触发
+		rig.environment.blur()
+		rig.environment.focus()
+		rig.frames(2)
+		rig.frame()
+		assert.deepEqual(rig.actions(), ['confirm', 'right', 'right'])
+	})
+
 	it('自动进入被抑制且模式未激活时不轮询；进入模式后由调用方再次 start 恢复', () => {
 		const devices = createDevices([createDevice()])
 		const rig = createRig(devices)
@@ -1227,5 +1265,107 @@ describe('手柄生命周期：能力回退', () => {
 			environment.runFrame()
 			controller.stop()
 		})
+	})
+})
+
+// 下面这一块**故意不动** isModeActive / isAutoEntryAllowed：生产里跑的正是
+// big-picture-state 那两个默认值（「抑制 ⇒ 不轮询」就靠它们兑现），注入缝的版本
+// 证明不了默认路径。代价是它会改进程内的模式单例，因此每个用例都在 finally 里
+// 把单例还原，绝不外泄给其它用例。
+describe('手柄生命周期：默认门禁走真实的模式单例', () => {
+	/** 把 big-picture-state 的进程内单例还原到初始态 */
+	function restoreBigPictureState() {
+		setAutoEntrySuppressed(false)
+		setBigPictureState('inactive')
+	}
+
+	beforeEach(() => {
+		installEnvironment()
+		restoreBigPictureState()
+	})
+
+	afterEach(() => {
+		uninstallEnvironment()
+		restoreBigPictureState()
+	})
+
+	it('手动退出的抑制标记真的挡住轮询；手动进入后即使抑制仍在也恢复输入', () => {
+		const devices = createDevices([createDevice()])
+		const environment = installed
+		const actions = []
+		let clock = 0
+		// 不注入门禁：走 getBigPictureState() / isAutoEntrySuppressed() 的真实默认
+		const controller = createGamepadController({
+			getGamepads: () => devices.read(),
+			now: () => clock,
+			onAction: action => actions.push(action),
+		})
+
+		try {
+			exitBigPicture('manual')
+			assert.equal(isAutoEntrySuppressed(), true)
+			controller.start()
+
+			// 设备看得见（提示条照常显示「手柄已连接」），但没有轮询
+			assert.equal(controller.getStatus().device, 'ready')
+			assert.equal(controller.isRunning(), false)
+			assert.equal(environment.pending(), 0, '抑制态下不轮询')
+
+			// 手动进入：抑制标记还在，循环必须恢复（这正是门禁里那个「或」）
+			enterBigPicture('manual')
+			assert.equal(getBigPictureState(), 'active')
+			assert.equal(isAutoEntrySuppressed(), true)
+			controller.start()
+
+			assert.equal(controller.isRunning(), true)
+			assert.equal(environment.pending(), 1)
+			devices.press(0, [0])
+			clock += 16
+			environment.runFrame()
+			assert.deepEqual(actions, ['confirm'], '已在模式中：抑制不得再挡住输入')
+
+			// 手动退出 → 再次抑制且模式关闭：循环应当停住
+			exitBigPicture('manual')
+			controller.refresh()
+			assert.equal(controller.isRunning(), false)
+			assert.equal(environment.pending(), 0)
+		}
+		finally {
+			controller.stop()
+			restoreBigPictureState()
+			// 单例确实还原：后面的用例不应看到任何模式/抑制残留
+			assert.equal(getBigPictureState(), 'inactive')
+			assert.equal(isAutoEntrySuppressed(), false)
+		}
+	})
+
+	it('默认门禁下，未激活的第一次按键仍只请求进入、不发布动作', () => {
+		const devices = createDevices([createDevice()])
+		const environment = installed
+		const actions = []
+		const intents = []
+		let clock = 0
+		const controller = createGamepadController({
+			getGamepads: () => devices.read(),
+			now: () => clock,
+			onAction: action => actions.push(action),
+			onEntryIntent: action => intents.push(action),
+		})
+
+		try {
+			// 没有抑制、模式未激活：轮询正常（否则永远等不到那次首次按键）
+			controller.start()
+			assert.equal(environment.pending(), 1)
+
+			devices.press(0, [0])
+			clock += 16
+			environment.runFrame()
+			assert.deepEqual(intents, ['confirm'])
+			assert.deepEqual(actions, [])
+		}
+		finally {
+			controller.stop()
+			restoreBigPictureState()
+		}
 	})
 })
