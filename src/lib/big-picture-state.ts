@@ -192,6 +192,338 @@ export function isAutoEntrySuppressed(): boolean {
 	return readAutoEntrySuppressed(getSessionStorage())
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   以下是 Task 5 追加的部分：动作协调器的**纯优先级层**与设置面板的持久化。
+
+   ## 为什么纯逻辑要住在这个模块里
+   Shell 的协调器写在 `.astro` 的 `<script>` 里，而 `.astro` 无法被 Node 测试导入。
+   若把「B 键该关哪一层」「返回该去哪」写成那里的 DOM 遍历，这两条规格里最硬的
+   验收项就只能靠浏览器手测。于是这里把两者都写成**对快照求值**的纯函数：
+   入参是布局状态、模态栈、页面类型这类普通数据，`.astro` 只负责把真实 DOM
+   翻译成快照、再按返回值去调用 `closeModal()` / `closeLayout()` / 导航。
+   规格要求「不能仅修改根属性」在两侧都成立：优先级由纯函数裁决，执行仍然走
+   现有单例的公开入口。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** 页面声明的大屏页面类型（spec §模式与布局状态）。`'off'` = 本页停用增强 */
+export type BigPicturePage = 'home' | 'archive' | 'games' | 'links' | 'reading' | 'off'
+
+/**
+ * 合法取值列表。导出成运行时数组而不只是类型：Shell 在构建期用它把页面传进来的
+ * 字符串收敛回合法值（写错一个拼写就静默降级成 `'off'`，而不是把一个非法页面类型
+ * 带进客户端）。写成第二份手抄的联合类型就正是 CLAUDE.md 说的「第二份真相」。
+ */
+export const BIG_PICTURE_PAGES: readonly BigPicturePage[] = ['home', 'archive', 'games', 'links', 'reading', 'off']
+
+/** 增强核心页面：这些页面类型可以互相作为返回来源 */
+const CORE_PAGES: readonly string[] = ['home', 'archive', 'games', 'links', 'reading']
+
+/** 游戏栏目的站内根路径。具体游戏页的兜底返回目标 */
+const GAMES_ROOT = '/games'
+
+/**
+ * B 键要关掉的层级，按规格的优先级从高到低。
+ * `'page'` 是最后一层（页面级返回），不是「某一层 UI」。
+ */
+export type BigPictureBackLayer = 'settings' | 'modal' | 'dropdown' | 'drawer' | 'page'
+
+/** 模态栈项的最小形状。只取键与开合状态，其余字段（props / 层级 / 回调元素）用不上 */
+export interface BigPictureModalSnapshot {
+	readonly key: string
+	readonly status: 'open' | 'closing'
+}
+
+/**
+ * B 键的输入快照。**全部是普通数据**，不引用任何 DOM 节点，
+ * 所以 Node 里可以直接用字面量构造出任意层级的组合。
+ */
+export interface BigPictureBackSnapshot {
+	/** 设置面板的形态。`'closing'` 是退场动画期间那一档，它的存在本身就是一条规则 */
+	readonly settings: 'closed' | 'open' | 'closing'
+	readonly modalStack: readonly BigPictureModalSnapshot[]
+	/** 是否有一个打开的下拉控件（`Dropdown.astro` 的开合状态只落在 DOM 上） */
+	readonly dropdownOpen: boolean
+	/** 侧栏 / 右栏 / 搜索 / 灯箱抽屉是否开着 */
+	readonly drawerOpen: boolean
+}
+
+/**
+ * 裁决 B 键应该关闭哪一层。
+ *
+ * 优先级逐条对应规格那一行：设置面板 → 最上层 modal → 打开的下拉 → 抽屉 → 页面返回。
+ * 「只关一层」由**早退**保证：一旦命中就不再往下看，所以弹层开着时 B 永远不会顺手
+ * 把抽屉也关掉。
+ *
+ * ## 退场动画期间返回 `null`（不是 `'page'`）
+ * `closeModal()` 把状态置成 `closing` 后还要等 `duration` 毫秒才真正出栈；
+ * 若这段时间里 B 继续往下穿透，第二次 B 就会一路落到「页面返回」把用户送走。
+ * 规格把这写成硬要求（「动画退场期间阻止再次 B 导致离页」），所以退场中一律吞掉。
+ * 设置面板自己播退场动画，因此它的形态是三态而不是布尔。
+ *
+ * @returns 该关的层级；`null` 表示「这一下 B 什么都不做」
+ */
+export function resolveBackLayer(snapshot: BigPictureBackSnapshot): BigPictureBackLayer | null {
+	if (snapshot.settings === 'closing')
+		return null
+	// 只看栈顶：叠了两层 modal 时，下面那层正在退场不该拦住对上面那层的关闭
+	const top = snapshot.modalStack.at(-1)
+	if (top?.status === 'closing')
+		return null
+	if (snapshot.settings === 'open')
+		return 'settings'
+	if (top)
+		return 'modal'
+	if (snapshot.dropdownOpen)
+		return 'dropdown'
+	if (snapshot.drawerOpen)
+		return 'drawer'
+	return 'page'
+}
+
+/**
+ * 页面级返回的目标。`'source'` 会恢复焦点，`'route'` 只是换个页面，`'exit'` 退出大屏模式。
+ *
+ * 入参是**具名的对象类型**而不是位置参数：三个字段（页面类型、当前路径、来源）
+ * 都不是必填的，且调用点全在同一处，位置参数会让「忘了传来源」变成一个静默的错值。
+ */
+export type PageReturnAction
+	= | { readonly kind: 'source', readonly path: string, readonly key: string }
+		| { readonly kind: 'route', readonly path: string }
+		| { readonly kind: 'exit' }
+
+/**
+ * 来源记录的最小形状。与 `big-picture-session.ts` 的 `NavigationSource` 对齐但更宽松：
+ * `key` / `page` 可缺省，缺省由本函数补空串——调用方传进来的是 `consumeNavigationSource()`
+ * 的结果，它的 `key` / `page` 已经是字符串，这里只是不把它绑死成那个类型。
+ */
+export interface PageReturnSource {
+	readonly path: string
+	readonly key?: string
+	readonly page?: string
+}
+
+/**
+ * 去尾斜杠再比较。
+ * 与 `big-picture-session.ts` 里那份同名私有函数**同规则不同实现**：那份不在导出面上，
+ * 而这里是纯函数、不能为了共用一条规则把会话层拖进来。改一处必须改另一处，
+ * 注释即契约。
+ */
+function normalizeRoute(path: string): string {
+	if (path === '/')
+		return '/'
+	return path.endsWith('/') ? path.slice(0, -1) : path
+}
+
+/**
+ * 是否是站内路径。
+ * 与 `big-picture-session.ts` 的私有同名函数同规则：`//host/x` 与 `/\host/x` 都会被浏览器
+ * 解析成站外地址，只看「以 `/` 开头」会把协议相对 URL 当成站内路径放回去。
+ * 这里是**纵深防御**：来源记录在读端已经验过一遍，但本函数会被单独测试、
+ * 也可能拿到别的调用方传来的数据，返回目标是会真的导航出去的。
+ */
+function isSameOriginPath(path: string): boolean {
+	if (!path.startsWith('/'))
+		return false
+	return !path.startsWith('//') && !path.startsWith('/\\')
+}
+
+/**
+ * 页面级返回该去哪。
+ *
+ * ## 顺序：先来源，后兜底
+ * 规格：「目标与当前路径匹配且来源属于核心页面时返回来源并恢复焦点；
+ * 缺少来源时，文章返回首页，具体游戏页返回上一级游戏栏目，栏目页返回首页；
+ * 首页 B 退出大屏模式。」
+ * 来源只在「属于核心页面」时才生效——来源页是 `'off'`（云盘、预览、404）时它没开过增强，
+ * 拿它当返回目标会把用户送进一个没有大屏外壳的页面。
+ *
+ * ## 永远不会出现的返回值
+ * `'history.back()` 在这条链路上不存在。规格把它明令禁止：直接打开的文章页
+ * `history.length` 为 1，浏览器自己的后退会把用户送出站外。浏览器自己的后退按钮
+ * 仍按浏览器规则工作，不受本函数影响。
+ *
+ * @returns 目标；`null` 表示本页不接管返回（`'off'` 页面）
+ */
+export function resolvePageReturn(input: {
+	readonly page: BigPicturePage
+	readonly currentPath: string
+	readonly source: PageReturnSource | null
+}): PageReturnAction | null {
+	const { page, currentPath, source } = input
+	// `'off'` 页面停用本页增强，返回链也不接管
+	if (page === 'off')
+		return null
+
+	if (source && isSameOriginPath(source.path) && source.page !== undefined && CORE_PAGES.includes(source.page)) {
+		return {
+			kind: 'source',
+			path: source.path,
+			key: typeof source.key === 'string' ? source.key : '',
+		}
+	}
+
+	// 首页：没有任何「上一层」可退，B 就是退出大屏模式本身
+	if (page === 'home')
+		return { kind: 'exit' }
+
+	// 具体游戏页返回上一级游戏栏目；游戏栏目自己返回首页
+	if (page === 'games' && normalizeRoute(currentPath) !== GAMES_ROOT)
+		return { kind: 'route', path: GAMES_ROOT }
+
+	// 文章、归档、友链、游戏栏目统一回首页
+	return { kind: 'route', path: '/' }
+}
+
+/**
+ * 过程内兜底。**与 `big-picture-session.ts` 里的同名函数刻意平行而非复用**：
+ * 那份的 `guarded()` 是私有的（会话键由它成对提供读/写），而设置面板的开关与
+ * 焦点恢复键是跨会话的（`localStorage`），语义不同、寿命不同，合成一处会让
+ * 「哪一批键属于哪个存储」变得不可推理。
+ */
+/**
+ * 取 `localStorage`，**取不到就返回 `null`**（而不是造一个内存 storage 顶上去）。
+ *
+ * 与 `getSessionStorage()` 的差别是有意的：会话键（模式、抑制、来源）必须跨调用往返，
+ * 所以那一层自己兜一份内存；而这里返回 `null` 后由 `guardedLocal()` 统一接管降级，
+ * 少一个「内存 storage 是共享还是每次新建」的变量要推理。取属性就抛（Safari 无痕）
+ * 与压根没有 `window`（SSR 求值）都走这条路。
+ */
+export function getBigPictureLocalStorage(): StorageLike | null {
+	try {
+		if (typeof window !== 'undefined' && window.localStorage)
+			return window.localStorage
+	}
+	catch {
+		// 隐私模式是「取属性就抛」，不是返回一个坏对象
+	}
+	return null
+}
+
+/** 某个 storage 的兜底状态。以 storage 对象为键：不同标签页/不同替身互不污染 */
+interface LocalFallback {
+	/** 一旦某次访问抛错就永久降级到内存，不再回头碰坏存储 */
+	broken: boolean
+	data: Map<string, string>
+}
+
+const localFallbacks = new WeakMap<StorageLike, LocalFallback>()
+
+/** 压根没拿到 storage 时用的共享兜底。`broken` 直接为真：没有对象可试错 */
+let missingLocalFallback: LocalFallback | null = null
+
+/**
+ * 给一个 storage 包一层「永不抛」（**包括 storage 本身为 `null`**）。
+ *
+ * 读：能读真存储就读真存储；已降级或抛错则读内存。
+ * 写/删：成功即止（不同时写内存，避免真存储一旦恢复又被陈旧值盖回去）；抛错则标记降级并落到内存。
+ *
+ * 兜底状态存在模块级表里而不是每次调用新建闭包：`readAutoEntryEnabled()` 与
+ * `writeAutoEntryEnabled()` 是两次独立调用，各建一份内存的话「关掉开关」写进去的值
+ * 下一次读根本看不到，用户点了复选框却像没反应。
+ */
+function guardedLocal(storage: StorageLike | null): StorageLike {
+	// `typeof storage !== 'object' || storage === null` 走共享兜底：
+	// WeakMap 拿 null 当键会抛 `Invalid value used as weak map key`，
+	// 而「拿不到存储」恰恰是本模块声明要扛住的情形之一
+	if (typeof storage !== 'object' || storage === null) {
+		missingLocalFallback ??= { broken: true, data: new Map() }
+		return wrapLocal(null, missingLocalFallback)
+	}
+	let entry = localFallbacks.get(storage)
+	if (!entry) {
+		entry = { broken: false, data: new Map() }
+		localFallbacks.set(storage, entry)
+	}
+	return wrapLocal(storage, entry)
+}
+
+function wrapLocal(storage: StorageLike | null, entry: LocalFallback): StorageLike {
+	return {
+		getItem(key: string): string | null {
+			if (storage && !entry.broken) {
+				try {
+					return storage.getItem(key)
+				}
+				catch {
+					entry.broken = true
+				}
+			}
+			return entry.data.get(key) ?? null
+		},
+		setItem(key: string, value: string): void {
+			if (storage && !entry.broken) {
+				try {
+					storage.setItem(key, value)
+					return
+				}
+				catch {
+					entry.broken = true
+				}
+			}
+			entry.data.set(key, value)
+		},
+		removeItem(key: string): void {
+			if (storage && !entry.broken) {
+				try {
+					storage.removeItem(key)
+					return
+				}
+				catch {
+					entry.broken = true
+				}
+			}
+			entry.data.delete(key)
+		},
+	}
+}
+
+/** 设置面板「首次按键自动进入」开关的键。`localStorage`，跨会话保留，与抑制标记是两件事 */
+export const AUTO_ENTRY_ENABLED_KEY = 'blog-big-picture:auto-entry-enabled'
+
+/** 返回来源的焦点恢复键。一次导航往返里只该用一次 */
+export const RESTORE_FOCUS_KEY = 'blog-big-picture:restore-focus'
+
+/**
+ * 读「首次按键自动进入」开关。
+ *
+ * 缺省为 `true`（规格：默认开启），并且只有恰好写入 `'false'` 才算关闭：
+ * 与会话层同一判据——「键不存在」「值是脏数据」「存储抛错」都退回落回默认，
+ * 而不是被读成「关掉了」。读成关掉的后果是用户莫名其妙再也进不去模式且没有任何提示。
+ *
+ * @param storage `localStorage`；取不到时传 `null`，走内存兜底
+ */
+export function readAutoEntryEnabled(storage: StorageLike | null): boolean {
+	return guardedLocal(storage).getItem(AUTO_ENTRY_ENABLED_KEY) !== 'false'
+}
+
+/**
+ * 写「首次按键自动进入」开关。
+ * 存储不可用时写进内存：本次标签页内往返一致，刷新即失效——
+ * 这正是规格要的降级（页面功能正常可用），而不是让开关看起来按不动。
+ */
+export function writeAutoEntryEnabled(storage: StorageLike | null, enabled: boolean): void {
+	guardedLocal(storage).setItem(AUTO_ENTRY_ENABLED_KEY, enabled ? 'true' : 'false')
+}
+
+/**
+ * 读「返回来源后要恢复焦点的条目 key」。`''` 表示没有待恢复的焦点。
+ * 一次性语义由调用方在消费后写空串实现（本函数不删），与 `consumeNavigationSource`
+ * 把「读走即清」和「判废」合在一起不同：这里要在**已经解析出匹配目标之后**才清，
+ * 否则页面还没渲染完就清会把这趟恢复彻底丢掉。
+ */
+export function readRestoreFocusKey(storage: StorageLike | null): string {
+	const value = guardedLocal(storage).getItem(RESTORE_FOCUS_KEY)
+	return typeof value === 'string' ? value : ''
+}
+
+/** 写焦点恢复键；`key` 为空串即清除 */
+export function writeRestoreFocusKey(storage: StorageLike | null, key: string): void {
+	if (key)
+		guardedLocal(storage).setItem(RESTORE_FOCUS_KEY, key)
+	else
+		guardedLocal(storage).removeItem(RESTORE_FOCUS_KEY)
+}
+
 let globalsBound = false
 
 /**

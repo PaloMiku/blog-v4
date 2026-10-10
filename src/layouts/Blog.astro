@@ -10,15 +10,25 @@ import BlogAside from '../components/blog/BlogAside.astro'
 import BlogFooter from '../components/blog/BlogFooter.astro'
 import BlogPanel from '../components/blog/BlogPanel.astro'
 import BlogSidebar from '../components/blog/BlogSidebar.astro'
+import BigPictureShell from '../components/blog/BigPictureShell.astro'
 import SkipToContent from '../components/blog/SkipToContent.astro'
 import Base from './Base.astro'
 import ModalHost from '../components/ModalHost.astro'
 import '../styles/index.css'
+import type { BigPicturePage } from '../lib/big-picture-state'
 
 interface Props {
 	title: string
 	/** 是否有具名 aside 插槽（对应 Nuxt 的 provideLayoutSlots().aside） */
 	hasAside?: boolean
+	/**
+	 * 本页的大屏页面类型（spec §模式与布局状态）。
+	 *
+	 * **由页面显式声明，布局不猜**：文章可以用 frontmatter `permalink` 改成任何路径，
+	 * 按 URL 前缀判「是不是文章」必然出错。缺省 `'off'` 是安全的缺省——停用本页增强，
+	 * 但会话意图仍保留，返回核心页面后自动恢复。
+	 */
+	bigPicturePage?: BigPicturePage
 	/**
 	 * 以下三项只往 Base.astro 透传，让各页自己声明 SEO 数据。
 	 *
@@ -40,7 +50,18 @@ interface Props {
 	jsonLd?: Record<string, unknown>[]
 }
 
-const { title, hasAside = false, description, image, ogType, noindex, minimalSeo, hasMath, jsonLd } = Astro.props
+const {
+	title,
+	hasAside = false,
+	bigPicturePage = 'off',
+	description,
+	image,
+	ogType,
+	noindex,
+	minimalSeo,
+	hasMath,
+	jsonLd,
+} = Astro.props
 ---
 
 <Base title={title} description={description} image={image} ogType={ogType} noindex={noindex} minimalSeo={minimalSeo} hasMath={hasMath} jsonLd={jsonLd}>
@@ -77,6 +98,14 @@ const { title, hasAside = false, description, image, ogType, noindex, minimalSeo
 
 	<BlogFooter />
 	<BlogPanel hasAside={hasAside} />
+
+	{/*
+		手柄大屏模式的常驻 Shell。挂在 `#modal-root` **之前**是刻意的：
+		弹层要在它之上（`data-big-picture-region="overlay"` 只给最上层弹层用），
+		而脚本自己按栈顶动态给弹层根补标记，不依赖文档顺序。
+		普通模式下它的所有控件都带 `hidden`，根节点高度为 0，不动现有布局几何。
+	*/}
+	<BigPictureShell page={bigPicturePage} />
 
 	{/* 模态栈宿主：搜索、灯箱等弹窗的唯一挂载点（@bikariya/modals 的替代） */}
 	<div id="modal-root">

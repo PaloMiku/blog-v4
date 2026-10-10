@@ -9,11 +9,16 @@
 //             且**只有手动退出**写抑制；抑制挡自动进入、不挡手动进入；
 //             模式与抽屉状态互不覆盖；astro 生命周期绑定幂等，
 //             before-swap 不清模式意图，page-load 从会话恢复。
+//   动作   —— B 键层级优先级表（设置 → 最上层 modal → 下拉 → 抽屉 → 页面返回）、
+//             退场动画期间吞掉 B、页面级返回的来源优先与四类兜底、
+//             来源恢复的一次性、设置面板的 localStorage 往返与内存降级、
+//             以及「首次按键只进入、松开再按才执行」在真实模式单例上的表现。
 // 另钉两条「不该存在」：不导出可变的订阅者集合；模式联合里不含设备连接状态。
 import assert from 'node:assert/strict'
-import { before, beforeEach, describe, it } from 'node:test'
+import { afterEach, before, beforeEach, describe, it } from 'node:test'
 import * as bigPictureSession from '../src/lib/big-picture-session.ts'
 import * as bigPictureState from '../src/lib/big-picture-state.ts'
+import { createGamepadController } from '../src/lib/gamepad.ts'
 import * as layoutState from '../src/lib/layout-state.ts'
 
 const {
@@ -29,14 +34,22 @@ const {
 } = bigPictureSession
 
 const {
+	AUTO_ENTRY_ENABLED_KEY,
+	RESTORE_FOCUS_KEY,
 	bindBigPictureGlobals,
 	enterBigPicture,
 	exitBigPicture,
 	getBigPictureState,
 	isAutoEntrySuppressed,
+	readAutoEntryEnabled,
+	readRestoreFocusKey,
+	resolveBackLayer,
+	resolvePageReturn,
 	setAutoEntrySuppressed,
 	setBigPictureState,
 	subscribeBigPicture,
+	writeAutoEntryEnabled,
+	writeRestoreFocusKey,
 } = bigPictureState
 
 /** 规格：过期来源（超过 30 分钟）不再用于返回 */
@@ -582,6 +595,396 @@ describe('astro 页面生命周期', () => {
 
 		assert.equal(getBigPictureState(), 'active')
 		assert.equal(isAutoEntrySuppressed(), false)
+	})
+})
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Task 5 追加：B 键层级优先级、页面级返回目标、设置面板持久化，
+   以及「首次输入被消耗」这条链在真实模式单例上的表现。
+
+   为什么这些纯函数住在 `big-picture-state.ts`：Shell 的协调器写在 `.astro` 的
+   `<script>` 里，Node 导入不了它。把「B 该关哪一层」「返回去哪」做成对快照求值的
+   纯函数，规格里最硬的两条验收项才进得了单测，而 `.astro` 只剩 DOM 接线。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** 全部层都开着的快照。逐个关掉一层，B 的目标就应当顺次落到下一层 */
+function openBackSnapshot(overrides = {}) {
+	return {
+		settings: 'open',
+		modalStack: [{ key: 'search', status: 'open' }],
+		dropdownOpen: true,
+		drawerOpen: true,
+		...overrides,
+	}
+}
+
+describe('B 键层级优先级（纯函数）', () => {
+	it('优先级表：设置面板 → 最上层 modal → 下拉 → 抽屉 → 页面返回', () => {
+		assert.equal(resolveBackLayer(openBackSnapshot()), 'settings')
+		assert.equal(resolveBackLayer(openBackSnapshot({ settings: 'closed' })), 'modal')
+		assert.equal(resolveBackLayer(openBackSnapshot({ settings: 'closed', modalStack: [] })), 'dropdown')
+		assert.equal(
+			resolveBackLayer(openBackSnapshot({ settings: 'closed', modalStack: [], dropdownOpen: false })),
+			'drawer',
+		)
+		assert.equal(
+			resolveBackLayer(openBackSnapshot({
+				settings: 'closed',
+				modalStack: [],
+				dropdownOpen: false,
+				drawerOpen: false,
+			})),
+			'page',
+		)
+	})
+
+	it('一次只关一层：上层开着时 B 不会顺手把下层也关掉', () => {
+		// 抽屉与下拉都开着、但设置面板也开着 → 只关设置面板，其余两层原样不动
+		const snapshot = openBackSnapshot()
+		assert.equal(resolveBackLayer(snapshot), 'settings')
+		assert.equal(snapshot.modalStack.length, 1)
+		assert.equal(snapshot.dropdownOpen, true)
+		assert.equal(snapshot.drawerOpen, true)
+	})
+
+	it('退场动画期间吞掉 B（否则第二次 B 会一路穿透到页面返回）', () => {
+		// 只剩页面层可退时也一样吞掉：穿透出去就是离页
+		assert.equal(
+			resolveBackLayer(openBackSnapshot({
+				settings: 'closing',
+				modalStack: [],
+				dropdownOpen: false,
+				drawerOpen: false,
+			})),
+			null,
+		)
+		assert.equal(
+			resolveBackLayer(openBackSnapshot({
+				settings: 'closed',
+				modalStack: [{ key: 'search', status: 'closing' }],
+				dropdownOpen: false,
+				drawerOpen: false,
+			})),
+			null,
+		)
+	})
+
+	it('叠层时只看栈顶：下面那层正在退场不拦住对上面那层的关闭', () => {
+		assert.equal(
+			resolveBackLayer(openBackSnapshot({
+				settings: 'closed',
+				modalStack: [
+					{ key: 'search', status: 'closing' },
+					{ key: 'lightbox', status: 'open' },
+				],
+			})),
+			'modal',
+		)
+	})
+
+	it('输入快照不被改写（纯函数，Shell 复用同一份快照渲染提示条与派发动作）', () => {
+		const snapshot = openBackSnapshot()
+		const before = JSON.stringify(snapshot)
+		resolveBackLayer(snapshot)
+		assert.equal(JSON.stringify(snapshot), before)
+	})
+})
+
+describe('页面级返回：先来源，后兜底，永不 history.back', () => {
+	it('来源属于核心页面 → 回来源并带上焦点 key', () => {
+		for (const from of ['home', 'archive', 'games', 'links', 'reading']) {
+			assert.deepEqual(
+				resolvePageReturn({
+					page: 'reading',
+					currentPath: '/posts/a/',
+					source: { path: '/', key: 'list:featured', page: from },
+				}),
+				{ kind: 'source', path: '/', key: 'list:featured' },
+				from,
+			)
+		}
+	})
+
+	it('来源页不是核心页面（off / 缺失）时不用它返回', () => {
+		for (const page of ['off', '', undefined]) {
+			assert.deepEqual(
+				resolvePageReturn({ page: 'reading', currentPath: '/posts/a/', source: { path: '/drive/x', page } }),
+				{ kind: 'route', path: '/' },
+				String(page),
+			)
+		}
+	})
+
+	it('站外来源绝不返回（协议相对与反斜杠写法都算站外）', () => {
+		for (const path of ['https://evil.example/', '//evil.example/', '/\\evil.example/', 'posts/a']) {
+			assert.deepEqual(
+				resolvePageReturn({ page: 'reading', currentPath: '/posts/a/', source: { path, page: 'home' } }),
+				{ kind: 'route', path: '/' },
+				path,
+			)
+		}
+	})
+
+	it('缺少来源：文章、归档、友链、游戏栏目回首页', () => {
+		for (const [page, currentPath] of [
+			['reading', '/posts/a/'],
+			['archive', '/archive/'],
+			['links', '/link/'],
+			['games', '/games/'],
+		]) {
+			assert.deepEqual(resolvePageReturn({ page, currentPath, source: null }), { kind: 'route', path: '/' })
+		}
+	})
+
+	it('具体游戏页返回上一级游戏栏目（带不带尾斜杠都算栏目首页）', () => {
+		assert.deepEqual(
+			resolvePageReturn({ page: 'games', currentPath: '/games/galgames/', source: null }),
+			{ kind: 'route', path: '/games' },
+		)
+		assert.deepEqual(
+			resolvePageReturn({ page: 'games', currentPath: '/games/2024/game/', source: null }),
+			{ kind: 'route', path: '/games' },
+		)
+	})
+
+	it('首页 B 退出大屏模式，而不是去找一个不存在的上一层', () => {
+		assert.deepEqual(
+			resolvePageReturn({ page: 'home', currentPath: '/', source: null }),
+			{ kind: 'exit' },
+		)
+	})
+
+	it('off 页面不接管返回（本页停用增强）', () => {
+		assert.equal(resolvePageReturn({ page: 'off', currentPath: '/404/', source: null }), null)
+		assert.equal(
+			resolvePageReturn({ page: 'off', currentPath: '/404/', source: { path: '/', key: 'k', page: 'home' } }),
+			null,
+		)
+	})
+
+	it('来源恢复是一次性的：同一趟往返里第二次 B 拿不到来源，改走页面兜底', () => {
+		const storage = createStorage()
+		recordNavigationSource(storage, { path: '/', key: 'list:featured', page: 'home' }, 1000)
+
+		// 落地页消费一次
+		const first = resolvePageReturn({
+			page: 'reading',
+			currentPath: '/posts/a/',
+			source: consumeNavigationSource(storage, '/posts/a/', 1000),
+		})
+		assert.deepEqual(first, { kind: 'source', path: '/', key: 'list:featured' })
+
+		// 已经返回到来源页：再来一次 B 时来源已被消费掉
+		const second = resolvePageReturn({
+			page: 'reading',
+			currentPath: '/posts/a/',
+			source: consumeNavigationSource(storage, '/posts/a/', 1000),
+		})
+		assert.deepEqual(second, { kind: 'route', path: '/' })
+		assert.equal(storage.peek(SOURCE_KEY), null)
+	})
+})
+
+describe('设置面板的持久化（localStorage，存储不可用时退回内存）', () => {
+	it('缺省开启；只有恰好写入 false 才算关掉', () => {
+		const storage = createStorage()
+
+		assert.equal(readAutoEntryEnabled(storage), true)
+
+		for (const raw of ['0', 'no', '', 'null']) {
+			const dirty = createStorage()
+			dirty.setItem(AUTO_ENTRY_ENABLED_KEY, raw)
+			assert.equal(readAutoEntryEnabled(dirty), true, raw)
+		}
+	})
+
+	it('往返：关掉再读得回来', () => {
+		const storage = createStorage()
+
+		writeAutoEntryEnabled(storage, false)
+		assert.equal(readAutoEntryEnabled(storage), false)
+		assert.equal(storage.peek(AUTO_ENTRY_ENABLED_KEY), 'false')
+
+		writeAutoEntryEnabled(storage, true)
+		assert.equal(readAutoEntryEnabled(storage), true)
+	})
+
+	it('存储抛错时不抛，且本次运行内往返一致（内存兜底）', () => {
+		const storage = createThrowingStorage()
+
+		assert.equal(readAutoEntryEnabled(storage), true)
+		assert.doesNotThrow(() => writeAutoEntryEnabled(storage, false))
+		// 关键：兜底状态跨调用共享，否则「关掉开关」写进去的值下一次读看不到，
+		// 用户点了复选框却像没反应
+		assert.equal(readAutoEntryEnabled(storage), false)
+	})
+
+	it('storage 为 null 时读写都存活（WeakMap 拿非对象当键会抛）', () => {
+		assert.equal(readAutoEntryEnabled(null), true)
+		assert.doesNotThrow(() => writeAutoEntryEnabled(null, false))
+		assert.equal(readAutoEntryEnabled(null), false)
+	})
+
+	it('焦点恢复键：写入→读出，空串即清除', () => {
+		const storage = createStorage()
+
+		assert.equal(readRestoreFocusKey(storage), '')
+
+		writeRestoreFocusKey(storage, 'href:/posts/a')
+		assert.equal(readRestoreFocusKey(storage), 'href:/posts/a')
+
+		writeRestoreFocusKey(storage, '')
+		assert.equal(readRestoreFocusKey(storage), '')
+		assert.equal(storage.peek(RESTORE_FOCUS_KEY), null)
+	})
+})
+
+/**
+ * 手柄控制器的浏览器能力面 double。
+ *
+ * 只提供控制器真正取用的那几项：rAF 两兄弟、window/document 的事件目标、
+ * 页面可见性与焦点。断言与实现读的是**同一个** `globalThis`，各造各的会出现
+ * 「控制器在跑、夹具说没跑」这种自相矛盾的现象。
+ */
+function createControllerEnvironment() {
+	const frames = new Map()
+	const windowListeners = new Map()
+	const documentListeners = new Map()
+	let nextHandle = 0
+
+	const listen = (map, type, fn, drop) => {
+		if (drop) {
+			const list = map.get(type) ?? []
+			const index = list.indexOf(fn)
+			if (index >= 0)
+				list.splice(index, 1)
+			return
+		}
+		const list = map.get(type) ?? []
+		list.push(fn)
+		map.set(type, list)
+	}
+
+	const win = {
+		addEventListener: (type, fn) => { listen(windowListeners, type, fn, false) },
+		removeEventListener: (type, fn) => { listen(windowListeners, type, fn, true) },
+		requestAnimationFrame(fn) {
+			const handle = ++nextHandle
+			frames.set(handle, fn)
+			return handle
+		},
+		cancelAnimationFrame(handle) {
+			frames.delete(handle)
+		},
+	}
+	const doc = {
+		hidden: false,
+		hasFocus: () => true,
+		addEventListener: (type, fn) => { listen(documentListeners, type, fn, false) },
+		removeEventListener: (type, fn) => { listen(documentListeners, type, fn, true) },
+	}
+	return {
+		win,
+		doc,
+		/** 执行一个已排期的 rAF 回调；没有排期返回 false */
+		runFrame() {
+			const entry = frames.entries().next().value
+			if (!entry)
+				return false
+			frames.delete(entry[0])
+			entry[1]()
+			return true
+		},
+	}
+}
+
+/** 标准映射设备：0–16 共 17 个按钮 */
+function createStandardPad(pressed = []) {
+	return {
+		mapping: 'standard',
+		buttons: Array.from({ length: 17 }, (_, i) => ({ pressed: pressed.includes(i) })),
+		axes: [0, 0, 0, 0],
+	}
+}
+
+describe('Shell 边界：首次输入被消耗，模式激活后才发布动作', () => {
+	let environment
+	let pads
+	let intents
+	let actions
+	let controller
+	let originalWindow
+	let originalDocument
+
+	beforeEach(() => {
+		pads = [createStandardPad()]
+		intents = []
+		actions = []
+		environment = createControllerEnvironment()
+		originalWindow = globalThis.window
+		originalDocument = globalThis.document
+		// 模式单例仍在跑，所以 window 上必须留着 sessionStorage
+		globalThis.window = { ...environment.win, sessionStorage }
+		globalThis.document = environment.doc
+		controller = createGamepadController({
+			getGamepads: () => pads.slice(),
+			now: () => 0,
+			onEntryIntent: action => intents.push(action),
+			onAction: action => actions.push(action),
+		})
+		controller.start()
+		environment.runFrame()
+		environment.runFrame()
+	})
+
+	afterEach(() => {
+		controller.stop()
+		globalThis.window = originalWindow
+		globalThis.document = originalDocument
+	})
+
+	it('模式未激活时第一次按键只请求进入，一个动作都不发布', () => {
+		pads[0] = createStandardPad([0])
+		environment.runFrame()
+
+		assert.deepEqual(intents, ['confirm'])
+		assert.deepEqual(actions, [], '进入用的那次按键必须被消耗')
+
+		// 一直按住：既不重复请求进入，也不发布动作
+		environment.runFrame()
+		assert.deepEqual(intents, ['confirm'])
+		assert.deepEqual(actions, [])
+	})
+
+	it('松开 + 完成进入之后，下一次按下才执行为动作', () => {
+		pads[0] = createStandardPad([0])
+		environment.runFrame()
+		assert.deepEqual(intents, ['confirm'])
+
+		// 松开：门闩解开，但模式仍未激活
+		pads[0] = createStandardPad()
+		environment.runFrame()
+		assert.deepEqual(actions, [])
+
+		// Shell 在 onEntryIntent 里做的就是这个
+		enterBigPicture('auto')
+		assert.equal(getBigPictureState(), 'active')
+		controller.refresh()
+		assert.equal(controller.isRunning(), true, '抑制态下循环本来停着，进入后必须恢复')
+
+		pads[0] = createStandardPad([0])
+		environment.runFrame()
+		assert.deepEqual(actions, ['confirm'])
+		assert.deepEqual(intents, ['confirm'], '进入意图不会被第二次按键再触发一次')
+	})
+
+	it('摇杆漂移不触发进入（规格：进入由有效按钮按键发起）', () => {
+		pads[0] = { ...createStandardPad(), axes: [0.1, 0.1, 0, 0] }
+		environment.runFrame()
+
+		assert.deepEqual(intents, [])
+		assert.deepEqual(actions, [])
+		assert.equal(getBigPictureState(), 'inactive')
 	})
 })
 
