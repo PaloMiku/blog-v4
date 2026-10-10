@@ -111,6 +111,40 @@ describe('几何：交叉轴重叠优先', () => {
 		assert.equal(chooseNextFocus(current, candidates, 'right')?.key, 'far-but-overlap')
 	})
 
+	/**
+	 * 反向的一半：**重叠是偏好，不是准入**。
+	 *
+	 * 上一批用例全都只证明「重叠的赢了」，没有任何一条钉住「不重叠的仍然有资格」。
+	 * 若有人把第 1 级键从「排序里的最高优先级」写成「过滤」，稀疏布局里方向键会开始
+	 * 谎报「没有候选」——而上面那几条用例照样全绿。
+	 */
+	it('没有任何候选在交叉轴上重叠时，仍选出主轴最近的那个（重叠不是准入门槛）', () => {
+		const current = target('a', 'main', [300, 300])
+		const candidates = row('main', [
+			['near', [360, 100]], // 交叉轴差 200，不重叠；主轴 60
+			['far', [900, 100]], // 同样不重叠；主轴 600
+		])
+		assert.equal(chooseNextFocus(current, candidates, 'right')?.key, 'near')
+	})
+
+	it('只有一个不重叠的候选时，它照样入选（不是「没有候选」）', () => {
+		const current = target('a', 'main', [300, 300])
+		const candidates = row('main', [
+			['lonely', [320, 60]], // 交叉轴差 240，完全不重叠
+		])
+		assert.equal(chooseNextFocus(current, candidates, 'right')?.key, 'lonely')
+	})
+
+	it('不重叠的候选之间仍按主轴距离排序', () => {
+		const current = target('a', 'main', [0, 300])
+		const candidates = row('main', [
+			['second', [800, 0]],
+			['first', [400, 0]],
+			['third', [1200, 0]],
+		])
+		assert.equal(chooseNextFocus(current, candidates, 'right')?.key, 'first')
+	})
+
 	it('恰好边贴边（重叠长度 0）算对齐', () => {
 		// 当前 y 中心 320、区间 [300,340]；候选 y 中心 360、区间 [340,380]。两者只在 340 相接
 		const current = target('a', 'main', [300, 300])
@@ -259,6 +293,20 @@ describe('mini-dom 自检：double 自己得先是对的', () => {
 		assert.throws(() => node.matches('div + a'), /不支持的组合符/)
 	})
 
+	it('属性运算符只认裸 =：^= $= *= ~= |= 一律抛错', () => {
+		// 这一条是替 Task 5/7 挡刀：本仓库已经在用 `[href^="http"]`（src/lib/icon-sprite.ts），
+		// double 若把运算符当属性名的一部分，`[aria-current^="page"]` 会静默返回 false，
+		// 「选择器写错了」就伪装成「这个页面没有目标」，而且测试全绿
+		const node = el('a', { href: 'https://example.test/x' })
+		for (const selector of ['a[href^="https"]', 'a[href$="x"]', 'a[href*="exam"]', 'a[href~="x"]', 'a[href|="x"]'])
+			assert.throws(() => node.matches(selector), /不支持的属性运算符/, selector)
+		// 裸 = 正常生效，且值里带 `=` 不误判
+		assert.equal(node.matches('a[href="https://example.test/x"]'), true)
+		assert.equal(node.matches('[href="https://example.test/x"]'), true)
+		const withEquals = el('a', { href: 'a=b' })
+		assert.equal(withEquals.matches('a[href="a=b"]'), true)
+	})
+
 	it('祖先的 visibility:hidden 会继承；元素自己写 visible 能覆盖回来', () => {
 		const hiddenParent = el('div', { style: 'visibility: hidden' }, [el('button', {}, [])])
 		const override = el('div', { style: 'visibility: hidden' }, [el('button', { style: 'visibility: visible' }, [])])
@@ -310,6 +358,31 @@ describe('mini-dom 自检：double 自己得先是对的', () => {
 		// 宽观察器**看得见** class 变更：若这里也是空，说明「生产代码观察不到 class」这条
 		// 断言其实是 double 的假阴性，不是生产代码做对了
 		assert.deepEqual(unfiltered.map(record => record.attributeName), ['class', 'hidden'])
+	})
+
+	it('作用域对 childList 同样生效：观察 inside 不带 subtree 时收不到 outside 的插入', async () => {
+		const inside = el('div', { id: 'inside' }, [el('p', {})])
+		const outside = el('div', { id: 'outside' }, [])
+		const doc = createDocument([inside, outside])
+		const deep = []
+		const shallow = []
+		const ObserverCtor = doc.defaultView.MutationObserver
+		const deepObserver = new ObserverCtor(records => deep.push(...records))
+		deepObserver.observe(inside, { childList: true, subtree: true })
+		const shallowObserver = new ObserverCtor(records => shallow.push(...records))
+		shallowObserver.observe(inside, { childList: true })
+
+		inside.children[0].append(el('span')) // inside 的**子孙**：只有 deep 收得到
+		outside.append(el('span')) // outside：两个都不该收
+		await Promise.resolve()
+
+		assert.deepEqual(deep.map(record => record.target.localName), ['p'], 'deep 只收 inside 子树内的插入')
+		assert.deepEqual(shallow, [], 'shallow 既收不到子孙，也收不到子树外')
+
+		// 自身的目标节点仍然命中（subtree 与否都一样）
+		inside.append(el('em'))
+		await Promise.resolve()
+		assert.deepEqual(shallow.map(record => record.target.id), ['inside'])
 	})
 })
 
@@ -545,6 +618,52 @@ describe('DOM：永不可选的元素', () => {
 		assert.equal(page.manager.move('down'), false, '不可见的卡片不在候选里，也就没有「向下」这一说')
 	})
 
+	/**
+	 * `overflow: auto` 的滚动容器**不是**裁剪祖先：滚出去的内容按规格仍可选。
+	 *
+	 * 两条半边各有各的真假程度，这里说清楚：
+	 * - **真**：`auto` 与 `hidden` 的分流判断（`CLIPPING_OVERFLOW`）是生产代码真在跑；
+	 * - **模拟**：double 没有排版引擎，**不会滚动**。「滚出去」这个状态是用 `setRect()`
+	 *   直接把第二张的盒子摆到容器盒子之外表达的——那正是真实浏览器滚动之后
+	 *   `getBoundingClientRect()` 会报出来的形状。所以这条验证的是「面对一个已经滚出去的
+	 *   盒子，管理器怎么判」，不是「double 真的会滚动」。
+	 */
+	it('overflow:auto 的滚动容器不算裁剪；overflow:hidden 与 clip 仍裁掉', () => {
+		function buildWithOverflow(style) {
+			const page = createPage((root, nodes) => {
+				const scroller = el('div', { style, [REGION_ATTRIBUTE]: 'main' })
+				const first = el('a', { 'href': '/item-1', 'data-list-key': 'k1' }, ['1'])
+				const second = el('a', { 'href': '/item-2', 'data-list-key': 'k2' }, ['2'])
+				scroller.append(first, second)
+				root.append(scroller)
+				nodes.scroller = scroller
+				nodes.first = first
+				nodes.second = second
+			})
+			// 容器只有 44 高；把第二张摆到容器盒子之外 = 「已滚出去」
+			page.doc.setRect(page.nodes.scroller, { x: 0, y: 0, width: 640, height: 44 })
+			page.doc.setRect(page.nodes.first, { x: 0, y: 0, width: 640, height: 44 })
+			page.doc.setRect(page.nodes.second, { x: 0, y: 200, width: 640, height: 44 })
+			page.manager.refresh()
+			return page
+		}
+
+		const scrolled = buildWithOverflow('overflow: auto')
+		scrolled.manager.focusInitial('main')
+		assert.equal(scrolled.manager.getCurrent(), scrolled.nodes.first)
+		assert.equal(scrolled.manager.move('down'), true, '滚出去的项仍在候选里')
+		assert.equal(scrolled.manager.getCurrent(), scrolled.nodes.second)
+
+		// hidden 与 clip 都是真裁剪，两个都要钉——只钉 hidden 的话，把 clip 漏出名单
+		// （轮播轨道真身用的就是 clip）不会有任何用例变红
+		for (const style of ['overflow: hidden', 'overflow: clip']) {
+			const clipped = buildWithOverflow(style)
+			clipped.manager.focusInitial('main')
+			assert.equal(clipped.manager.getCurrent(), clipped.nodes.first, style)
+			assert.equal(clipped.manager.move('down'), false, `${style}：被裁掉的项不在候选里`)
+		}
+	})
+
 	it('视口之外但已展开的目标仍然可选（不做视口相交判定）', () => {
 		const page = createPage((root, nodes) => {
 			const region = el('main', { [REGION_ATTRIBUTE]: 'main' }, [
@@ -720,7 +839,62 @@ describe('DOM：focusin 接管', () => {
 })
 
 describe('DOM：动态列表与刷新', () => {
-	it('同一批变更只触发一次刷新（每个微任务一次）', async () => {
+	/**
+	 * 「每个微任务只刷一次」的**可证伪**版本。
+	 *
+	 * 上一版把三次变更放在同一个同步块里，于是 MutationObserver 只交付一次，
+	 * `scheduleRefresh` 也只被调一次——把 `refreshScheduled` 守卫整个删掉，测试照样绿。
+	 * 那条断言证明不了任何东西。
+	 *
+	 * 这里让交付**跨两个检查点**：
+	 *   - 先注册一个「页面自己的」观察者（比管理器早，所以同一个检查点里它的回调先跑）；
+	 *   - 它的回调在**第一次交付期间**同步改一次 DOM。真浏览器会把这批新记录排到**下一个**
+	 *     微任务检查点，而那个检查点排在管理器排的刷新微任务**之前**；
+	 *   - 于是管理器在同一次 `settle()` 里收到**两次交付**，而刷新只该有一次。
+	 * 删掉 `refreshScheduled` 守卫 → 排两个刷新微任务 → refreshes 变成 2 → 变红。
+	 *
+	 * `deliveries === 2` 一并断言：若 double 哪天不再跨检查点交付，这条测试会**先**红在
+	 * 「根本没制造出两次交付」上，而不是继续假装证明着合并语义。
+	 */
+	it('跨两个交付检查点的一批变更仍只刷一次（refreshScheduled 守的正是这个窗口）', async () => {
+		const doc = createDocument()
+		const nodes = {}
+		const root = el('div', { id: 'page' })
+		doc.body.append(root)
+		buildListPage(root, nodes)
+		doc.invalidate()
+
+		let deliveries = 0
+		let mutated = false
+		const pageObserver = new doc.defaultView.MutationObserver(() => {
+			deliveries++
+			if (mutated)
+				return
+			mutated = true
+			nodes.list.append(el('li', {}, [el('a', { 'href': '/posts/x/', 'data-list-key': 'post-x' }, ['X'])]))
+		})
+		pageObserver.observe(root, { childList: true, subtree: true })
+
+		let refreshes = 0
+		const manager = createGamepadFocusManager(root, {
+			onRefresh: () => {
+				refreshes++
+			},
+		})
+
+		nodes.list.append(el('li', {}, [el('a', { 'href': '/posts/e/', 'data-list-key': 'post-e' }, ['E'])]))
+		nodes.list.append(el('li', {}, [el('a', { 'href': '/posts/f/', 'data-list-key': 'post-f' }, ['F'])]))
+		nodes.cards[1].setAttribute('hidden', '')
+		for (let i = 0; i < 6; i++)
+			await Promise.resolve()
+
+		assert.equal(deliveries, 2, '前提：确实跨了两个交付检查点')
+		assert.equal(refreshes, 1, '两次交付合并成一次刷新')
+
+		manager.destroy()
+	})
+
+	it('同步发生的多次变更只交付一批（同一检查点内合并）', async () => {
 		const page = createPage(buildListPage)
 		const before = page.refreshes()
 		page.nodes.list.append(el('li', {}, [el('a', { 'href': '/posts/e/', 'data-list-key': 'post-e' }, ['E'])]))

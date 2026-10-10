@@ -35,10 +35,12 @@ import type { Direction } from './gamepad-input'
  *   那是 UA 自己渲染出来的）；
  * - `getBoundingClientRect()` 为 0（`display: none` 的整棵子树都没有盒子）；
  * - 计算样式 `visibility` 为 `hidden`（该属性继承，所以一次读就够）；
- * - 中心点落在某个**裁剪祖先**（`overflow` 不是 `visible`）的盒子之外。最后一条是
+ * - 中心点落在某个**裁剪祖先**（`overflow` 为 `hidden` / `clip`）的盒子之外。最后一条是
  *   「轮播里当前不可见的卡片不得入选」的通用落法：轮播卡片本身有盒子（只是被 `transform`
- *   移出可视区），只有「相对裁剪容器」才认得出来。**刻意不做视口相交判定**——规格要求
- *   「允许视口之外但已展开的目标」，按视口过滤会把长列表的下半页全灭掉。
+ *   移出可视区），只有「相对裁剪容器」才认得出来。**`overflow: auto` / `scroll` 的滚动
+ *   容器不算裁剪**——滚出去一半的侧栏项、灯箱正文、评论项按规格仍然可选。
+ *   **刻意不做视口相交判定**——规格要求「允许视口之外但已展开的目标」，按视口过滤会把长列表
+ *   的下半页全灭掉。
  *
  * ## Tab 顺序：为什么不给所有目标补 `tabindex="-1"`
  * 规格明令「不把其他全部目标改为 `tabindex="-1"`」，那会毁掉键盘用户的 Tab 顺序。
@@ -287,8 +289,24 @@ function visibilityOf(element: Element): string {
 }
 
 /**
- * 中心点是否还在所有裁剪祖先之内。
- * 「裁剪祖先」= 计算样式里 `overflow-x` 或 `overflow-y` 不是 `visible` 的祖先。
+ * **会裁掉内容**的 overflow 取值。
+ *
+ * 只有 `hidden` 与 `clip` 裁剪；`auto` / `scroll` 是**滚动**。这条区分不是洁癖：
+ * 规格要求「允许滚动视口之外、但仍属于已展开内容的目标」，而站点的侧栏列表、灯箱正文、
+ * 评论区都是 `overflow-y: auto` 的滚动容器——按「非 visible 即裁剪」判，滚出去一半的
+ * 侧栏项与评论项会被整批判成不可选，用户推摇杆时它们凭空消失。
+ * 反过来轮播轨道用的是 `overflow: hidden`（或 `clip`），「当前不可见的卡片不得入选」
+ * 由这两个值继续兜住。
+ */
+const CLIPPING_OVERFLOW = new Set(['hidden', 'clip'])
+
+function isClippingOverflow(value: string): boolean {
+	return CLIPPING_OVERFLOW.has(value)
+}
+
+/**
+ * 中心点是否还在所有**裁剪**祖先之内。
+ * 「裁剪祖先」= 计算样式里 `overflow-x` 或 `overflow-y` 落在 `CLIPPING_OVERFLOW` 里的祖先。
  *
  * 这一条**不**参与视口判定：页面滚动不是裁剪，视口之外的目标仍然合法。
  *
@@ -304,10 +322,8 @@ function insideClippingAncestors(element: Element, rect: FocusRect): boolean {
 		if (!style)
 			continue
 		const base = style.overflow || 'visible'
-		const overflowX = style.getPropertyValue?.('overflow-x') || base
-		const overflowY = style.getPropertyValue?.('overflow-y') || base
-		const clipsX = overflowX !== 'visible'
-		const clipsY = overflowY !== 'visible'
+		const clipsX = isClippingOverflow(style.getPropertyValue?.('overflow-x') || base)
+		const clipsY = isClippingOverflow(style.getPropertyValue?.('overflow-y') || base)
 		if (!clipsX && !clipsY)
 			continue
 		const box = node.getBoundingClientRect()
@@ -320,7 +336,8 @@ function insideClippingAncestors(element: Element, rect: FocusRect): boolean {
 }
 
 /**
- * 这个元素现在能不能被手柄选中。**不查视口**——规格允许视口之外但已展开的目标。
+ * 这个元素现在能不能被手柄选中。**不查视口**——规格允许视口之外但已展开的目标，
+ * 滚动容器里滚出去的内容同样算「已展开」。
  */
 function isSelectable(element: Element): boolean {
 	if (blockedByAttribute(element))

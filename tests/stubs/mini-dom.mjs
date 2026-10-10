@@ -117,6 +117,14 @@ function parseCompound(text) {
 				compound.attrs.push({ name: body.trim().toLowerCase(), value: null })
 			}
 			else {
+				// 第一个 `=` 一定是运算符（值里的 `=` 在它后面，如 `[href="a=b"]`）。
+				// 运算符非裸 `=` 时**抛错**：把它们当成属性名的一部分会让
+				// `[aria-current^="page"]` 静默返回 false，于是「选择器写错了」这条真缺陷
+				// 会伪装成「这个页面没有目标」，而且测试全绿——本仓库已经在用
+				// `[href^="http"]` / `[id^="ai:"]`（见 src/lib/icon-sprite.ts），拼错的概率不低
+				const operator = body[eq - 1]
+				if (operator === '~' || operator === '|' || operator === '^' || operator === '$' || operator === '*')
+					throw new Error(`mini-dom：不支持的属性运算符「${operator}=」→ ${text}`)
 				const name = body.slice(0, eq).trim().toLowerCase()
 				let value = body.slice(eq + 1).trim()
 				const quoted = (value.startsWith('"') && value.endsWith('"')) || (value.startsWith('\'') && value.endsWith('\''))
@@ -632,16 +640,24 @@ class MiniMutationObserver {
 		return records
 	}
 
-	/** 这条记录是否被本次 observe 覆盖。真浏览器也是逐条过滤后再回调的 */
+	/**
+	 * 这条记录是否被本次 observe 覆盖。真浏览器也是逐条过滤后再回调的。
+	 *
+	 * **作用域检查对两类记录都要做**。只给 `attributes` 做的话，`childList` 会变得比浏览器
+	 * 宽松得多：观察 `inside`（不带 subtree）却收到 `outside` 里的插入记录。这类偏差会把
+	 * 生产代码的 bug 变成绿的测试——生产代码「本来就不该收到」的那条记录，在这里照收不误，
+	 * 于是断言永远看不到它。
+	 */
 	accepts(record) {
 		if (record.seq < this.startSeq)
 			return false
 		return this.registrations.some((registration) => {
 			const { target, options } = registration
+			// 目标自身总是命中；subtree 才管子孙
+			if (!isDescendantOf(record.target, target, options.subtree))
+				return false
 			if (record.type === 'attributes') {
 				if (!options.attributes)
-					return false
-				if (!isDescendantOf(record.target, target, options.subtree))
 					return false
 				const filter = options.attributeFilter
 				return !filter || filter.includes(record.attributeName)
