@@ -121,6 +121,12 @@ const RELEASE_GATES = [
 	// 结构与内容：产物里该有的东西在不在
 	'check-integration',
 	'check-layout',
+	// 大屏阅读态的几何不变量（Task 6）。它量的是**计算后的盒子**而不是标记：
+	// 该布局曾因一条「重复属性选择器」被移除而从 860px 静默退回 457px，
+	// 而当时 17/17 门禁与 374 个测试全绿——没有任何东西读这个布局。
+	// skip 用 'env-dependent'：它要起无头 Chrome，内存不足时该自我放弃；
+	// 但它在脚本里刻意不输出 SKIP（缺产物/起不来一律 exit 1），避免「跑没跑」被误判。
+	{ name: 'check-big-picture-layout', skip: 'env-dependent', why: '起 preview + 无头 Chrome（约 700MB）实测大屏阅读态几何。内存不足时本机可以跳过；CI runner 是 16GB 规格，在那里跳过说明环境退化。' },
 	'check-anchor-classes',
 	'check-prose-layer',
 	'check-content-preservation',

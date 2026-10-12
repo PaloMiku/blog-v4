@@ -33,6 +33,40 @@
  */
 export type LayoutState = 'none' | 'sidebar' | 'aside' | 'search' | 'lightbox'
 
+/**
+ * 两侧栏各自的「多窄以下成为抽屉」断点。**唯一的定义处。**
+ *
+ * ## 为什么它必须只有一份
+ * 同一个数字此前出现在三处，且彼此只靠注释保持一致：
+ *   - `src/styles/big-picture.css` 的 `@media` 查询（决定盒子是常驻列还是抽屉）
+ *   - `src/layouts/Blog.astro` 的 `COLUMNS`（决定 `aria-hidden` / `inert`）
+ *   - `src/layouts/Blog.astro` 的 `<style>` 注释（`hide-above-*` 工具类）
+ * 一旦漂移，症状是**「抽屉已经滑出画布却仍可 Tab 进去」**：CSS 认为它是抽屉，
+ * JS 认为它是常驻列，于是收起时没有写 `inert`——正是 `applyColumnVisibility()`
+ * 存在的理由被自己捅穿。
+ *
+ * ## CSS 怎么读到它
+ * CSS 读不到 TS 常量，所以**消费方向反过来**：断点以字面量写在
+ * `src/styles/big-picture.css` 的 `@custom-media` 里（构建期由 Lightning CSS 内联），
+ * 而这里用**字符串字面量**而不是计算式——两边都从 `@custom-media` 的源头各自写一次，
+ * 并由 `scripts/check-big-picture-layout.mjs` 在门禁里比对它们是否逐字一致。
+ * 那道门禁是这份「唯一」的**实际保证**：注释不是，改名不是，只有会红的那道门禁是。
+ *
+ * ⚠️ 两侧的漂移检查与阅读态布局检查在**同一道门禁**里，因为它们是同一类断言：
+ * 「CSS 与 JS 对同一个结构事实的认知必须一致」。
+ */
+export const LAYOUT_BREAKPOINTS = {
+	/** `#blog-sidebar`：≤768px 成为左侧抽屉（与 `.hide-above-mobile` 同值） */
+	sidebar: '768px',
+	/** `#blog-aside`：≤1080px 成为右侧抽屉（与 `.hide-above-tablet` 同值） */
+	aside: '1080px',
+} as const
+
+/** 上面那个表拼成 `matchMedia` 用的查询串 */
+export function drawerMediaQuery(key: keyof typeof LAYOUT_BREAKPOINTS): string {
+	return `(max-width: ${LAYOUT_BREAKPOINTS[key]})`
+}
+
 let state: LayoutState = 'none'
 const subscribers = new Set<(state: LayoutState) => void>()
 

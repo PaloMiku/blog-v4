@@ -163,20 +163,20 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(b
 	 * `inert` 缺失而把栏内的项算作可选目标，于是「收起了」的侧栏仍能被摇杆选中。
 	 * 只写 `inert` 则读屏软件仍会念出整栏目录。
 	 */
-	import { bindLayoutGlobals, getLayoutState, subscribeLayout } from '../lib/layout-state'
+	import { bindLayoutGlobals, drawerMediaQuery, getLayoutState, subscribeLayout } from '../lib/layout-state'
 	import { subscribeBigPicture } from '../lib/big-picture-state'
 
 	/**
 	 * 一侧栏的静态配置。
 	 *
-	 * `drawer` 是「该列在多窄以下成为抽屉」——它与 `src/styles/big-picture.css`
-	 * 里的同名媒体查询**必须逐字一致**：CSS 用它决定盒子是常驻列还是抽屉，
-	 * 这里用它决定 `aria-hidden` / `inert`。两边一旦漂移，症状是
-	 * 「抽屉已经滑出去了但仍可 Tab 进去」或「常驻列被读屏隐藏」。
+	 * 断点来自 `layout-state.ts` 的 `LAYOUT_BREAKPOINTS`（唯一定义处），
+	 * **不再在这里手写 `(max-width: …)`**：此前 CSS 与本文件各写一份、只靠注释同步，
+	 * 漂移的症状是「抽屉已滑出画布却仍可 Tab 进去」——
+	 * `scripts/check-big-picture-layout.mjs` 现在会比对两边是否逐字一致。
 	 */
 	const COLUMNS = [
-		{ id: 'blog-sidebar', key: 'sidebar', drawer: '(max-width: 768px)' },
-		{ id: 'blog-aside', key: 'aside', drawer: '(max-width: 1080px)' },
+		{ id: 'blog-sidebar', key: 'sidebar', drawer: drawerMediaQuery('sidebar') },
+		{ id: 'blog-aside', key: 'aside', drawer: drawerMediaQuery('aside') },
 	]
 
 	/** 本页是不是「两侧栏默认收起」的阅读态 */
@@ -196,10 +196,11 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(b
 	 * ⚠️ 阅读态**不**另开一份状态：它与抽屉共用 `layout-state` 的那一个枚举值。
 	 * 规格要的是「关闭抽屉后归还焦点」，那由 `BigPictureShell` 依据
 	 * `subscribeLayout` 完成——若这里另开一份状态，Shell 与 Aside 就会写相反的东西。
+	 *
+	 * 空侧栏（`is-empty`）不在这里判：它在 `applyColumnVisibility()` 开头就被整块跳过
+	 * （那是构建期写在模板上的事实），留一个永远走不到这里的分支只会误导下一个人。
 	 */
-	function isCollapsed(column, key, media) {
-		if (column.classList.contains('is-empty'))
-			return true
+	function isCollapsed(key, media) {
 		if (getLayoutState() === key)
 			return false
 		return media.matches || isReadingPage()
@@ -221,7 +222,7 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(b
 		if (column.classList.contains('is-empty'))
 			return
 
-		const collapsed = isCollapsed(column, key, media)
+		const collapsed = isCollapsed(key, media)
 
 		column.classList.toggle('show', getLayoutState() === key)
 		if (collapsed) {
