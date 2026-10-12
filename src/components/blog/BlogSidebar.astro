@@ -260,7 +260,7 @@ const iconNav = appConfig.footer.iconNav
 </aside>
 
 <script>
-	import { bindLayoutGlobals, subscribeLayout, toggleLayout } from '../../lib/layout-state'
+	import { bindLayoutGlobals, toggleLayout } from '../../lib/layout-state'
 
 	/*
 	 * 折叠动画：等价于 Nuxt 侧的 <Transition name="collapse">。
@@ -357,12 +357,16 @@ const iconNav = appConfig.footer.iconNav
 			 * 标志之后才登记 activation target，故祖先的激活行为一并被跳过）。
 			 */
 			sidebar.querySelector('.search-btn [data-key-root]')?.addEventListener('press', () => toggleLayout('search'))
-
-			// 抽屉状态：Panel 点开后本组件要跟着显示
-			subscribeLayout((state) => {
-				sidebar.classList.toggle('show', state === 'sidebar')
-			})
 		}
+
+		/*
+		 * `.show` / `aria-hidden` / `inert` **不在这里写**——统一由
+		 * `src/layouts/Blog.astro` 的 `applyColumnVisibility()` 负责。
+		 * 本组件原先有一份只切 `.show` 的 `subscribeLayout`，与
+		 * `BlogAside` 那份是**两套并行实现**：大屏阅读态下两侧栏要一起收起，
+		 * 两套各写各的就会出现「一边收起一边展开」。
+		 * 本组件仍然 import `toggleLayout`（折叠动画与搜索键要用）。
+		 */
 
 		// 搜索按钮（data-layout-toggle="search"）由 `bindLayoutGlobals()` 里的
 		// 全局事件委托统一处理，这里不重复绑定，避免 toggle 被触发两次；

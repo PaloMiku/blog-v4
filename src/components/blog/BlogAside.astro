@@ -106,7 +106,7 @@ const filled = Boolean(hasAside) || metaNames.length > 0
 </aside>
 
 <script>
-	import { bindLayoutGlobals, closeLayout, subscribeLayout } from '../../lib/layout-state'
+	import { bindLayoutGlobals, closeLayout } from '../../lib/layout-state'
 
 	function initAside() {
 		for (const aside of document.querySelectorAll('#blog-aside')) {
@@ -118,26 +118,20 @@ const filled = Boolean(hasAside) || metaNames.length > 0
 			for (const widget of aside.querySelectorAll(':scope > .blog-widget'))
 				widget.dataset.nativeEntered = ''
 
-			// aria-hidden 只表达「抽屉关闭」这一种状态：≤1080px（与下方样式里
-			// 的断点一致）时侧栏是抽屉，收起态必须对辅助技术隐藏；桌面常驻列
-			// 一直可见，写 aria-hidden="true" 会让目录整块对读屏消失。
-			// mq change 也要重算：视口跨过断点时 layout state 未必变化，
-			// 只订阅 state 会把旧视口下的取值残留下来。
-			const drawerMq = window.matchMedia('(max-width: 1080px)')
-			let layoutState: string = 'none'
-			const applyLayout = () => {
-				const on = layoutState === 'aside'
-				aside.classList.toggle('show', on)
-				if (drawerMq.matches)
-					aside.setAttribute('aria-hidden', on ? 'false' : 'true')
-				else
-					aside.removeAttribute('aria-hidden')
-			}
-			subscribeLayout((state) => {
-				layoutState = state
-				applyLayout()
-			})
-			drawerMq.addEventListener('change', applyLayout)
+			/*
+			 * `.show` / `aria-hidden` / `inert` **不在这里写**。
+			 *
+			 * 它们统一由 `src/layouts/Blog.astro` 的 `applyColumnVisibility()` 负责，
+			 * 那里的判据读的是 `layout-state` + matchMedia + `data-big-picture-page`
+			 * 三份输入。本组件原先自带一份 `applyLayout()` + matchMedia 监听，
+			 * 与侧栏那份 `.show` 订阅是**两套并行的实现**——规格要求
+			 * 「BlogAside 的 media-query 监听须统一走同一可见性函数，
+			 * 避免 resize 把折叠栏重新暴露」，两套正是那条缺陷的来源。
+			 *
+			 * 桌面常驻列不写 `aria-hidden` 这条语义保持不变：
+			 * `scripts/check-runtime-dom.mjs` 的 E1 断言 1280px 下
+			 * `#blog-aside` 的 `aria-hidden` 不是 `"true"`。
+			 */
 
 			// 点侧栏自身（而非其内容）时关闭抽屉
 			aside.addEventListener('click', (e) => {

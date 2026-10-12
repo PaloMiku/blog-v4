@@ -1,0 +1,661 @@
+/**
+ * 手柄大屏模式的视觉与布局层（spec §布局与视觉 / Task 6）。
+ *
+ * ## 唯一的入口是 `:root[data-big-picture]`
+ * 根属性由 `src/lib/big-picture-state.ts` 的 `applyModeAttribute()` 写：
+ * 进模式时加、退出时**删**（不是 `="inactive"`）。于是「非大屏模式不命中这些选择器」
+ * 这条规格是由选择器本身保证的，不需要任何运行时判断，也不需要在每条规则里
+ * 写「当前是不是大屏模式」。
+ *
+ * 由此带来的两条硬约束，本文件全程遵守：
+ *
+ * 1. **普通模式的产物一个像素都不变。** 下面每一条声明都挂在
+ *    `:root[data-big-picture]` 之下，退出模式时整段失效，被覆盖的原声明原样回来。
+ *    `Blog.astro` 的 `<style>`、各组件的 `<style>`、`src/styles/*.css` 一行未动，
+ *    import 顺序也只在本文件**末尾**追加一行。
+ * 2. **主题偏好一个字都不改。** 大屏配色走的是「在模式选择器下重定义 `--c-*` /
+ *    `--ld-*` 令牌」这条路，而不是给 `<html>` 换 class 或写 localStorage：
+ *    `color.css` 的 `.dark` / `.light` 是 (0,1,0)，`:root[data-big-picture]` 是
+ *    (0,2,0)，后者赢；退出时属性被摘掉，原主题立即回来（不需要重绘、不需要
+ *    重新读 localStorage、`ThemeToggle` 的按钮状态也不受影响）。
+ *
+ * ## 焦点描边为什么写成 `:is(.gamepad-focus, .gamepad-focus:focus, …)`
+ * 不是为了「只在聚焦时描边」——`.gamepad-focus` 与真实焦点本来就同时存在——
+ * 而是为了**压过组件自带的 `outline: none`**：Tab 的触发器、搜索输入框、
+ * 评论区输入框、代码块都在 `:focus` 上写了 `outline: none`，编译后是 (0,3,0)。
+ * `:is()` 取参数里最高的特异性，于是整条规则到 (0,5,0)，与样式表的输出顺序无关。
+ * 少写这一层，Tab 页签和搜索框在大屏模式下就完全没有焦点标记。
+ *
+ * ## 为什么不给滚动容器加 `overflow: hidden`
+ * `src/lib/gamepad-focus.ts` 把 `overflow: hidden|clip` 的祖先判为**裁剪者**，
+ * 目标中心点落在它外面就整批判成不可选；`auto|scroll` 不算裁剪。所以「让焦点
+ * 一直在视野里」这种动机**绝不能**用 `overflow: hidden` 实现——那会把滚出去的
+ * 侧栏项、归档条目、评论项一起变成推摇杆也够不着的目标。本文件需要把东西框住时
+ * 用的都是非 overflow 手段（`transform` 离屏 + `visibility`，或 `display: contents`）。
+ *
+ * ## 页型从哪里来
+ * `main#main-content[data-big-picture-page]`，构建期由页面通过 `Blog.astro` 的
+ * `bigPicturePage` prop 显式声明，**不按 URL 前缀猜**（文章可以用 frontmatter
+ * `permalink` 改成任何路径）。友链页因此不会因为「有正文」被误判成阅读态——
+ * 它的页型是 `links`。同一份属性也被 `src/lib/layout-state.ts` 的
+ * `applyColumnVisibility()` 读走，于是 CSS 的「盒子」与 JS 的
+ * `aria-hidden` / `inert` 判据同源，resize 不可能让两者打架。
+ *
+ * ## 引入位置
+ * 由 `src/styles/index.css` **最后**引入。层叠顺序本身不产生依赖（下面覆盖
+ * Blog.astro 的规则特异性都更高），放在最后只是让「模式层压在普通层之上」
+ * 这件事在调试时一眼可见。
+ */
+
+:root[data-big-picture] {
+	/* ── 深蓝主题（已确认草图）─────────────────────────────────
+	 * 这一组是模式自有色，不复用 `--hue-theme`：草图要的是一套**固定的深蓝**，
+	 * 而 `color.css` 的令牌随 light/dark 走，在浅色下会变成灰白。
+	 * 换句话说这里不是「给现有令牌换个值」，而是新增一层自己的调色板，
+	 * 再把需要覆盖的那几个 `--c-*` 指向它（见文件末尾的「主题覆盖」）。
+	 */
+	--bp-bg: hsl(222 47% 9%);
+	--bp-surface: hsl(222 40% 13%);
+	--bp-surface-2: hsl(222 36% 18%);
+	--bp-border: hsl(217 34% 34%);
+	--bp-text: hsl(210 60% 96%);
+	--bp-text-1: hsl(210 45% 88%);
+	--bp-text-2: hsl(213 30% 70%);
+	--bp-text-3: hsl(215 22% 52%);
+	--bp-accent: hsl(212 92% 66%);
+	--bp-accent-soft: hsl(212 92% 66% / 18%);
+
+	/* ── 焦点标记（规格：3px 描边）─────────────────────────────
+	 * 3px 是规格给的字面量，不换算成 rem —— 它在任何缩放下都必须仍是 3px。 */
+	--bp-focus: hsl(205 100% 72%);
+	--bp-focus-width: 3px;
+	--bp-focus-offset: 2px;
+
+	/* ── 卡片位移（规格：最多上移 2px）──────────────────────── */
+	--bp-lift: -2px;
+
+	/* ── 间距与圆角 ──────────────────────────────────────────── */
+	--bp-gap: 1.5rem;
+	--bp-radius: 0.75rem;
+
+	/* ── 常驻 Shell 的两条家具（页面为它们预留空间，见 §3）───── */
+	--bp-bar-top: 4rem;
+	--bp-bar-bottom: 3.25rem;
+
+	/* ── 层级 ───────────────────────────────────────────────────
+	 * 刻意夹在 `--z-index-popover`（100，Mask 与 Panel）与 modal 的
+	 * 510 / 512 之间：大屏家具要盖住抽屉与遮罩（抽屉里的目标不该被键帽条压住），
+	 * 但搜索 / 灯箱必须仍然盖住它们——规格要求弹层打开后背景不可达，
+	 * BigPictureShell 也据此给 Shell 整体打 `inert`。 */
+	--bp-z-shell: 400;
+	--bp-z-settings: 420;
+
+	/* ── 栅格尺度 ───────────────────────────────────────────────
+	 * 1280×800（Steam Deck 常见视口）落在 >1080 的三栏档：
+	 * 256 + 288 + 2×24 = 592 被两侧占用，中间还剩 688px 正文宽度。
+	 * 这两个宽度就是这么来的——再宽一点，正文就放不下首页的两列卡片了。 */
+	--bp-nav-width: 16rem;
+	--bp-info-width: 18rem;
+	--bp-content-max: 68rem;
+
+	/* ── 阅读态（860px / 18–20px / 1.8，三条都是规格给的字面量）─ */
+	--bp-reading-max: 860px;
+	--bp-reading-size-min: 1.125rem;
+	--bp-reading-size-max: 1.25rem;
+	--bp-reading-leading: 1.8;
+
+	/* ── 控件尺度（规格：清晰的大字号控件）──────────────────── */
+	--bp-control-size: 1.125rem;
+	--bp-control-min: 3rem;
+	--bp-control-pad: 0.5rem 1rem;
+
+	/* ── 抽屉 ───────────────────────────────────────────────────
+	 * 常驻列与抽屉共用同一组 token，所以「≤1080 的右栏」「≤768 的左栏」
+	 * 「任何视口下的阅读态」三条规则写出来的盒子完全一致。 */
+	--bp-drawer-width: 20rem;
+	--bp-drawer-pad: 0.75rem;
+
+	/* ══════════════════════════════════════════════════════════
+	   主题覆盖：把大屏配色接到现有令牌上
+	   ══════════════════════════════════════════════════════════
+	   只覆盖「让这套深蓝真正铺开」所必需的那几个。刻意**不**动 `--hue-theme`、
+	   `--c-success` / `--c-warning` / `--c-error` 与 `--delay` 等非颜色令牌：
+	   前者被 `color.css` 的 calc() 消费（动了会让所有 hsl() 一起偏），
+	   后者与大屏模式无关。 */
+	color-scheme: dark;
+	--c-bg: var(--bp-bg);
+	--c-bg-1: var(--bp-bg);
+	--c-bg-2: var(--bp-surface);
+	--c-bg-3: var(--bp-surface-2);
+	--c-bg-soft: var(--bp-accent-soft);
+	--c-border: var(--bp-border);
+	--c-text: var(--bp-text);
+	--c-text-1: var(--bp-text-1);
+	--c-text-2: var(--bp-text-2);
+	--c-text-3: var(--bp-text-3);
+	--c-primary: var(--bp-accent);
+	--c-primary-soft: var(--bp-accent-soft);
+	--c-bg-a50: hsl(222 47% 9% / 55%);
+	--c-bg-a80: hsl(222 47% 9% / 82%);
+	--ld-bg-blur: var(--c-bg-a80);
+	--ld-bg-card: var(--bp-surface);
+	--ld-bg-active: var(--bp-accent-soft);
+	--ld-shadow: hsl(222 60% 3% / 55%);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   1. 常驻 Shell 家具
+   ══════════════════════════════════════════════════════════════
+   Shell 根在普通模式是 `#blog-root` 的一个零高度 grid item（所有控件都带
+   `hidden`）。这里把它**移出流**：`position: fixed` + `inset: 0` + `pointer-events: none`。
+   于是它在任何视口下都不再是 grid item——页面几何完全不受它影响，
+   而它内部的每一块家具都能相对视口定位。
+   `pointer-events` 要**逐块**发回去：键帽条与提示条是纯展示，
+   让它们吃掉整条全屏 overlay 的点击会让页面「点不动」，那是个很难查的缺陷。 */
+:root[data-big-picture] .big-picture-shell {
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	z-index: var(--bp-z-shell);
+}
+
+:root[data-big-picture] .big-picture-actions,
+:root[data-big-picture] .big-picture-enter,
+:root[data-big-picture] .big-picture-settings {
+	pointer-events: auto;
+}
+
+/* 顶部动作区：导航 / 目录 / 设置 / 退出大屏。 */
+:root[data-big-picture] .big-picture-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.75rem;
+	position: fixed;
+	inset-block-start: 0;
+	inset-inline: 0;
+	min-height: var(--bp-bar-top);
+	padding: 0.5rem 1rem;
+	border-block-end: 1px solid var(--bp-border);
+	background-color: var(--ld-bg-blur);
+	backdrop-filter: blur(0.75rem);
+}
+
+/* 底部键帽条。四个槽位是静态渲染的纯展示（没有可聚焦子节点），
+   LB/RB 的区域循环会自然跳过它——所以它不需要、也不该有自己的焦点样式。 */
+:root[data-big-picture] .big-picture-hints {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 0.5rem 1.5rem;
+	position: fixed;
+	inset-block-end: 0;
+	inset-inline: 0;
+	min-height: var(--bp-bar-bottom);
+	padding: 0.5rem 1rem;
+	border-block-start: 1px solid var(--bp-border);
+	background-color: var(--ld-bg-blur);
+	backdrop-filter: blur(0.75rem);
+	font-family: var(--font-basic);
+	font-size: 1rem;
+	color: var(--c-text-2);
+}
+
+:root[data-big-picture] [data-big-picture-hint] {
+	padding: 0.1rem 0.6rem;
+	border: 1px solid var(--bp-border);
+	border-radius: 2em;
+	background-color: var(--bp-surface-2);
+	white-space: nowrap;
+	color: var(--c-text-1);
+}
+
+/* 连接提示 / 状态条 / 手动进入按钮：贴在顶部动作区下方，各自独立定位，
+   互不挤压（规格：顶部状态区是常驻家具，不是流内元素）。
+   prompt 与 status 在 `resolveShellView()` 里是互斥返回的（一个讲怎么进、
+   一个讲设备），所以这里让 status 固定落在 prompt 那一行的下面，
+   两者同时出现的布局变化是零。 */
+:root[data-big-picture] .big-picture-prompt,
+:root[data-big-picture] .big-picture-status {
+	position: fixed;
+	inset-block-start: var(--bp-bar-top);
+	inset-inline: 0;
+	margin: 0;
+	padding: 0.35rem 1rem;
+	background-color: var(--c-bg-a80);
+	font-family: var(--font-basic);
+	font-size: 1rem;
+	text-align: center;
+	color: var(--c-text-1);
+}
+
+:root[data-big-picture] .big-picture-status {
+	inset-block-start: calc(var(--bp-bar-top) + 1.75rem);
+	color: var(--c-text-2);
+}
+
+:root[data-big-picture] .big-picture-enter {
+	position: fixed;
+	inset-block-start: var(--bp-bar-top);
+	inset-inline-end: 1rem;
+}
+
+:root[data-big-picture] .big-picture-actions button,
+:root[data-big-picture] .big-picture-enter {
+	display: inline-flex;
+	align-items: center;
+	min-height: var(--bp-control-min);
+	padding: var(--bp-control-pad);
+	border: 1px solid var(--bp-border);
+	border-radius: var(--bp-radius);
+	background-color: var(--bp-surface-2);
+	font-family: var(--font-basic);
+	font-size: var(--bp-control-size);
+	line-height: 1.2;
+	color: var(--c-text);
+	transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+:root[data-big-picture] .big-picture-actions button:hover,
+:root[data-big-picture] .big-picture-enter:hover {
+	border-color: var(--c-primary);
+	background-color: var(--bp-surface-2);
+	color: var(--c-primary);
+}
+
+/* 设置面板。
+ *
+ * ⚠️ `transition-duration` 在这里是**契约的一部分**，不是装饰：
+ * BigPictureShell 的 `settingsCloseDelay()` 读
+ * `getComputedStyle(panel).transitionDuration`，把它当「退场期间吞掉 B」的窗口长度。
+ * 没有这条声明时它读到 0、退回 `MODAL_DEFAULT_DURATION`，那个兜底与真实动画
+ * 毫无关系；有了它，两者就对上了。数值取 0.2s 正是为了与 `MODAL_DEFAULT_DURATION`
+ * 此刻的取值一致——**改这里要同步改 `src/lib/modal.ts` 的那个常量，或反过来**。
+ *
+ * 面板的显隐仍由 Shell 用 `hidden` 属性驱动（Task 5 的接线，本任务不改），
+ * 所以这里声明的是时长来源，而不是一条会真的播完的退场动画。
+ * 同理 `prefers-reduced-motion` 那段**刻意不**覆盖它——
+ * 把 duration 归零会让「吞掉 B」的窗口塌成 0，那是实打实的离站导航缺陷，
+ * 而不是动效偏好。 */
+:root[data-big-picture] .big-picture-settings {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	position: fixed;
+	inset-block-start: calc(var(--bp-bar-top) + 2.5rem);
+	inset-inline-end: 1rem;
+	min-width: 18rem;
+	max-width: calc(100vw - 2rem);
+	padding: 1rem 1.25rem;
+	border: 1px solid var(--bp-border);
+	border-radius: var(--bp-radius);
+	box-shadow: var(--box-shadow-3);
+	background-color: var(--bp-surface-2);
+	font-family: var(--font-basic);
+	font-size: var(--bp-control-size);
+	color: var(--c-text);
+	transition-property: opacity, transform;
+	transition-duration: 0.2s;
+	transition-timing-function: ease-out;
+	z-index: var(--bp-z-settings);
+}
+
+:root[data-big-picture] .big-picture-setting {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	min-height: var(--bp-control-min);
+	color: var(--c-text-1);
+}
+
+:root[data-big-picture] .big-picture-setting input {
+	width: 1.5rem;
+	height: 1.5rem;
+	accent-color: var(--c-primary);
+}
+
+:root[data-big-picture] .big-picture-settings button {
+	min-height: var(--bp-control-min);
+	padding: var(--bp-control-pad);
+	border: 1px solid var(--bp-border);
+	border-radius: var(--bp-radius);
+	background-color: var(--bp-surface);
+	font: inherit;
+	color: var(--c-text);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   2. 焦点标记
+   ══════════════════════════════════════════════════════════════ */
+:root[data-big-picture] :is(.gamepad-focus, .gamepad-focus:focus, .gamepad-focus:focus-visible) {
+	border-radius: var(--bp-radius);
+	outline: var(--bp-focus-width) solid var(--bp-focus);
+	outline-offset: var(--bp-focus-offset);
+}
+
+/* 卡片最多上移 2px（规格上限）。只给真正的卡片，不给正文里的链接。 */
+:root[data-big-picture] :is(.article-card, .card, .feed-card).gamepad-focus {
+	transform: translateY(var(--bp-lift));
+}
+
+/* 正文内链接只描边、不位移：显式写出来，免得日后有人把上一条的位移规则
+   用组合选择器扩到这里。 */
+:root[data-big-picture] .article a.gamepad-focus {
+	transform: none;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   3. 页面为 Shell 家具预留的空间
+   ══════════════════════════════════════════════════════════════
+   上下各留一条，栅格因此整体下移——这就是「顶部状态区与底部提示条是常驻
+   Shell，页面预留空间」的落点。`scroll-padding-block` 是另一半：它保证
+   `gamepad-focus.ts` 里 `scrollIntoView({ block: 'nearest' })` 滚完之后，
+   目标不会被压在键帽条底下。
+   ⚠️ 这两条**只能同时存在**：只留 padding 不留 scroll-padding，滚到底的
+   目标正好被底条盖住；只留 scroll-padding 不留 padding，首屏就被家具吃掉一块。 */
+:root[data-big-picture] #blog-root {
+	padding-block: var(--bp-bar-top) var(--bp-bar-bottom);
+}
+
+:root[data-big-picture] {
+	scroll-padding-block: calc(var(--bp-bar-top) + 1rem) calc(var(--bp-bar-bottom) + 1rem);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   4. 响应式栅格（只在模式选择器下改写）
+   ══════════════════════════════════════════════════════════════
+   `Blog.astro` 里那条「有没有 aside 内容」的 `:has()` 判定原样保留在下面——
+   规格要求「右栏仅在页面已有内容时显示」，而判据只能是 `#blog-aside:not(.is-empty)`。
+   少写这一段，右栏就会在 /link 这类没有侧栏内容的页面上凭空占掉一列
+   （正文被压窄 288px），那正是规格禁止的「虚构阅读时长或统计」的几何版本。
+
+   两条规则的选择器特异性相同（2,3,0）但条件互斥（`:has(...)` 与 `:not(:has(...))`），
+   因此书写顺序不影响胜负。
+
+   ⚠️ 但**阅读态那条规则的 `:has()` 与本节的三栏规则特异性也相等**
+   （都是 2 个 id + 3 个类/属性），两者同时命中时胜负就退化成书写顺序，
+   而 Lightning CSS 会跨规则合并与提升——实测 1600×800 的阅读页上三栏赢了，
+   正文被压到 457px 而不是 860px。
+   §6 因此把阅读态选择器的 `[data-big-picture]` 写两遍，抬到 (2,4,0)。
+   **新增页型规则时请照这个办法抬特异性，不要依赖顺序。** */
+:root[data-big-picture] #blog-root,
+:root[data-big-picture] #blog-root:not(:has(> .blog-aside-track > #blog-aside:not(.is-empty))) {
+	grid-template-columns: var(--bp-nav-width) minmax(0, 1fr);
+}
+
+:root[data-big-picture] #blog-root:has(> .blog-aside-track > #blog-aside:not(.is-empty)) {
+	grid-template-columns: var(--bp-nav-width) minmax(0, 1fr) var(--bp-info-width);
+}
+
+:root[data-big-picture] #blog-root {
+	column-gap: var(--bp-gap);
+	max-width: calc(var(--bp-info-width) + var(--bp-gap) + var(--bp-content-max));
+}
+
+/* 769–1080：两栏，右栏转为抽屉（抽屉盒子见 §5）。 */
+@media (max-width: 1080px) {
+	:root[data-big-picture] #blog-root,
+	:root[data-big-picture] #blog-root:not(:has(> .blog-aside-track > #blog-aside:not(.is-empty))),
+	:root[data-big-picture] #blog-root:has(> .blog-aside-track > #blog-aside:not(.is-empty)) {
+		grid-template-columns: var(--bp-nav-width) minmax(0, 1fr);
+	}
+}
+
+/* ≤768：单列，两侧都是抽屉（抽屉盒子见 §5）。 */
+@media (max-width: 768px) {
+	:root[data-big-picture] #blog-root,
+	:root[data-big-picture] #blog-root:not(:has(> .blog-aside-track > #blog-aside:not(.is-empty))),
+	:root[data-big-picture] #blog-root:has(> .blog-aside-track > #blog-aside:not(.is-empty)) {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	:root[data-big-picture] {
+		--bp-bar-top: 4.5rem;
+		--bp-bar-bottom: 4rem;
+	}
+}
+
+/* ══════════════════════════════════════════════════════════════
+   5. 常驻列与抽屉
+   ══════════════════════════════════════════════════════════════
+   常驻列（>1080 的两侧）：`position: sticky`，但要避开两条家具——
+   `top` 抬到顶部动作区之下，`height` 扣掉上下两条，于是 sticky 到底时
+   最后一屏的导航项也不会沉进键帽条里。 */
+:root[data-big-picture] :is(#blog-sidebar, #blog-aside) {
+	top: var(--bp-bar-top);
+	height: calc(100dvh - var(--bp-bar-top) - var(--bp-bar-bottom));
+	scroll-padding-block: 1rem;
+}
+
+/* 抽屉：`position: fixed` + `transform` 离屏 + `visibility: hidden`。
+   **刻意不用 `overflow: hidden`**：那会让 `gamepad-focus.ts` 把整条侧栏判成
+   裁剪者，抽屉里滚出去的项一个都选不中（见文件头「为什么不给滚动容器加
+   `overflow: hidden`」）。`visibility` 同样能把它移出焦点顺序与无障碍树，
+   而且可以过渡。 */
+@media (max-width: 1080px) {
+	:root[data-big-picture] #blog-aside {
+		position: fixed;
+		visibility: hidden;
+		inset-block: var(--bp-bar-top) var(--bp-bar-bottom);
+		inset-inline: auto 0;
+		width: var(--bp-drawer-width);
+		max-width: 100%;
+		padding: var(--bp-drawer-pad);
+		box-shadow: var(--box-shadow-2);
+		background-color: var(--ld-bg-blur);
+		backdrop-filter: blur(0.75rem);
+		transform: var(--transform-end-far);
+		transition: transform 0.2s, visibility 0.2s;
+	}
+
+	:root[data-big-picture] #blog-aside.show {
+		visibility: visible;
+		box-shadow: var(--box-shadow-1), var(--box-shadow-3);
+		transform: none;
+	}
+}
+
+@media (max-width: 768px) {
+	:root[data-big-picture] #blog-sidebar {
+		position: fixed;
+		visibility: hidden;
+		inset-block: var(--bp-bar-top) var(--bp-bar-bottom);
+		inset-inline: 0 auto;
+		width: var(--bp-drawer-width);
+		max-width: 100%;
+		padding: var(--bp-drawer-pad);
+		box-shadow: var(--box-shadow-2);
+		background-color: var(--ld-bg-blur);
+		backdrop-filter: blur(0.75rem);
+		transform: var(--transform-start-far);
+		transition: transform 0.2s, visibility 0.2s;
+	}
+
+	:root[data-big-picture] #blog-sidebar.show {
+		visibility: visible;
+		box-shadow: var(--box-shadow-1), var(--box-shadow-3);
+		transform: none;
+	}
+}
+
+/* 常驻列内部的可滚动列表同样要有 scroll-padding，
+   否则 `scrollIntoView` 会把目标停在抽屉边缘的半个字上。 */
+:root[data-big-picture] .sidebar-nav {
+	scroll-padding-block: 0.5rem;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   6. 阅读态（文章页 / 具体游戏档案 / 关于页）
+   ══════════════════════════════════════════════════════════════
+   收起两侧栏在这里是**几何**层面的：把它们移出流（fixed），栅格收成单列。
+   与之配套的 `aria-hidden` + `inert` 由 `src/lib/layout-state.ts` 的
+   `applyColumnVisibility()` 写，CSS 只管盒子——两者读同一份
+   `data-big-picture-page` 与同一份 layout state，判据同源。
+
+   ⚠️ 本节每条选择器都把 `[data-big-picture]` **写两遍**。这不是笔误，原因见 §4
+   末尾：§4 的三栏规则与本节的 `:has()` 特异性完全相等（2 个 id + 3 个类/属性），
+   胜负退化成「书写顺序」，而 Lightning CSS 会跨规则做合并与提升——
+   实测 1600×800 的阅读页上三栏规则赢了，正文被压到 457px 而不是 860px。
+   重复一次属性选择器让本节稳定高出 (0,1,0)。
+   （先试过加 `body` 元素选择器，**无效**——实测该处只比较 id/类/属性级，
+   元素选择器不参与；不要改回去。）
+   */
+:root[data-big-picture][data-big-picture] #blog-root:has(> #main-content[data-big-picture-page="reading"]) {
+	grid-template-columns: minmax(0, 1fr);
+	max-width: none;
+	padding-inline: 1rem;
+}
+
+/* 两侧栏在阅读态下即使视口很宽也是抽屉：它们必须能由顶部的
+   「导航」「目录」按钮唤起，而抽屉的开启靠 `.show`（layout-state 的订阅者
+   统一写），不靠视口。`closeLayout()` 之后焦点由 Shell 归还给触发按钮。 */
+:root[data-big-picture][data-big-picture] #blog-root:has(> #main-content[data-big-picture-page="reading"]) :is(#blog-sidebar, #blog-aside) {
+	position: fixed;
+	visibility: hidden;
+	inset-block: var(--bp-bar-top) var(--bp-bar-bottom);
+	inset-inline: 0 auto;
+	width: var(--bp-drawer-width);
+	max-width: 100%;
+	padding: var(--bp-drawer-pad);
+	box-shadow: var(--box-shadow-2);
+	background-color: var(--ld-bg-blur);
+	backdrop-filter: blur(0.75rem);
+	transform: var(--transform-start-far);
+	transition: transform 0.2s, visibility 0.2s;
+}
+
+:root[data-big-picture][data-big-picture] #blog-root:has(> #main-content[data-big-picture-page="reading"]) #blog-aside {
+	inset-inline: auto 0;
+	transform: var(--transform-end-far);
+}
+
+:root[data-big-picture][data-big-picture] #blog-root:has(> #main-content[data-big-picture-page="reading"]) :is(#blog-sidebar, #blog-aside).show {
+	visibility: visible;
+	box-shadow: var(--box-shadow-1), var(--box-shadow-3);
+	transform: none;
+}
+
+/* 阅读态下两侧栏都是 fixed（out of flow），`.blog-aside-track` 必须跟着
+   `display: contents`，否则它会作为空 grid item 留在第 3 列——
+   一个隐式列凭空出现会把正文挤窄，正是本节要避免的。 */
+:root[data-big-picture][data-big-picture] #blog-root:has(> #main-content[data-big-picture-page="reading"]) .blog-aside-track {
+	display: contents;
+}
+
+/* 单列之后 `grid-area` 必须一并复位：`Blog.astro` 给 main 与页脚写的是
+   第 2 列，在只有一列的栅格里那会凭空生成一条隐式列。 */
+:root[data-big-picture][data-big-picture] #blog-root:has(> #main-content[data-big-picture-page="reading"]) #main-content {
+	grid-area: 1 / 1;
+	max-width: var(--bp-reading-max);
+	margin-inline: auto;
+	font-size: clamp(var(--bp-reading-size-min), 0.95rem + 0.4vw, var(--bp-reading-size-max));
+	line-height: var(--bp-reading-leading);
+}
+
+:root[data-big-picture][data-big-picture] #blog-root:has(> #main-content[data-big-picture-page="reading"]) > .blog-footer {
+	grid-area: 2 / 1 / auto / -1;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   7. 页面变体
+   ══════════════════════════════════════════════════════════════ */
+
+/* 首页：文章列表两列卡片。
+   只改排布，不碰 `.article-card` 自身的样式——它有 `@container` 断点，
+   两列之后每张卡变窄，封面会自动切回「整幅在上」的形态，那是它本来就有的行为。 */
+:root[data-big-picture] #main-content[data-big-picture-page="home"] [data-post-menu] {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	align-content: start;
+	gap: var(--bp-gap);
+}
+
+@media (max-width: 1080px) {
+	:root[data-big-picture] #main-content[data-big-picture-page="home"] [data-post-menu] {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+/* 归档：保留年份 / 条目分组，只把每行做大一点让方向键走得舒服。
+   `--archive-item-column` 由页面自己的密度面板写（内联 style），
+   这里不覆盖它——用户调过的列数必须继续有效。 */
+:root[data-big-picture] #main-content[data-big-picture-page="archive"] .article-item {
+	padding-block: 0.35rem;
+	font-size: 1.0625rem;
+}
+
+/* 友链：内容列表布局。这是它与阅读态的**唯一**区别——列表页每一项都是链接，
+   不是连续正文。 */
+:root[data-big-picture] #main-content[data-big-picture-page="links"] .feed-list {
+	grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+	gap: 0.75rem 1rem;
+}
+
+:root[data-big-picture] #main-content[data-big-picture-page="links"] .feed-group {
+	margin-block: 2.5rem;
+}
+
+/* 游戏入口：保持现有 LinkBanner 图片。规格要的是「不把图片换成纯文字卡片」，
+   所以这里只给一个更宽的上限让横幅不至于被压成窄条；
+   `.link-banner-bg` 的 `aspect-ratio` 与 `object-fit` 一概不动。 */
+:root[data-big-picture] #main-content[data-big-picture-page="games"] .link-banner {
+	max-width: 100%;
+}
+
+:root[data-big-picture] #main-content[data-big-picture-page="games"] .link-banner-bg {
+	aspect-ratio: 2.4;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   8. 大字号控件（规格：清晰的大字号控件）
+   ══════════════════════════════════════════════════════════════
+   范围刻意只覆盖「手柄真正会选中的那几处」：侧栏导航项与文章卡片。
+   搜索 / 灯箱 / 标签页沿用现有 modal、tab 与 layout 状态，**只**多了 §2 的
+   焦点标记——规格对它们的要求就是这一句。 */
+:root[data-big-picture] .sidebar-nav-item,
+:root[data-big-picture] .sidebar-nav-item-parent {
+	min-height: var(--bp-control-min);
+	padding-block: 0.35em;
+	font-size: 1.0625rem;
+}
+
+:root[data-big-picture] .sidebar-nav h3 {
+	font-size: 0.875rem;
+	letter-spacing: 0.08em;
+}
+
+:root[data-big-picture] .article-card {
+	font-size: 1.0625rem;
+}
+
+/* 悬浮开关面板：只让它给底部的键帽条让出位置，功能与外观一概不动。
+   它的两颗按钮仍可被鼠标点到，只是 `z-index` 在 Shell 之下，
+   因此必须靠位移而不是靠层级让开。 */
+:root[data-big-picture] .panel-anchor {
+	bottom: calc(var(--bp-bar-bottom) + min(2rem, 5%));
+}
+
+/* ══════════════════════════════════════════════════════════════
+   9. prefers-reduced-motion
+   ══════════════════════════════════════════════════════════════
+   规格：关闭位移与平滑定位，**保留 3px 焦点描边**。
+   `animation.css` 已经把 `:root` 的 `scroll-behavior` 在这个媒体查询里改成
+   `auto`，但那条是 (0,1,0)；这里用 `:root[data-big-picture]` 再写一次
+   （0,2,0），把「模式内的滚动定位」也一并钉死——
+   `gamepad-focus.ts` 的 `scrollIntoView({ block: 'nearest' })` 走的就是它。
+   焦点描边不在这个块里改，所以它照常是 3px。
+   `.big-picture-settings` 同样不在这里：它的 duration 是「吞掉 B」的窗口长度，
+   归零会让第二次 B 穿透到页面返回，把用户送走。 */
+@media (prefers-reduced-motion: reduce) {
+	:root[data-big-picture] {
+		scroll-behavior: auto;
+	}
+
+	:root[data-big-picture] :is(.article-card, .card, .feed-card).gamepad-focus {
+		transform: none;
+	}
+
+	:root[data-big-picture] :is(#blog-sidebar, #blog-aside, .big-picture-shell) {
+		transition: none;
+	}
+}

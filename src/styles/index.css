@@ -17,3 +17,7 @@
 /* prose 增强层（ProsePre / ProseA / ProseP / ProseCode / ProseTable 的样式）。
    放在最后：article.css 的 `blockquote > .z-codeblock` 需要能覆盖这里的块间距。 */
 @import "./prose.css";
+/* 手柄大屏模式层。**必须放在最后**：它的每一条规则都以 `:root[data-big-picture]`
+   为入口，普通模式下一个也不命中，所以层叠顺序对它没有约束力；
+   放最后只是让「模式层压在普通层之上」在调试时一眼可见。 */
+@import "./big-picture.css";
