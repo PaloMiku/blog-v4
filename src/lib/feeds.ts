@@ -395,6 +395,17 @@ export default [
 				comment: '一个一言站点，萌言萌句汇聚于此。',
 			},
 			{
+				author: 'Wayne',
+				title: 'Wayne\'s 博客',
+				desc: 'Wayne 的个人博客，记录技术折腾、出海见闻与日常思考。',
+				link: 'https://blog.iswayne.com/',
+				feed: 'https://blog.iswayne.com/atom.xml',
+				icon: 'https://blog.iswayne.com/logo.png',
+				avatar: 'https://blog.iswayne.com/logo.png',
+				archs: ['Astro', 'EdgeOne'],
+				comment: 'Stay hungry, stay foolish.',
+			},
+			{
 				author: 'Homulilly',
 				title: 'Homulilly',
 				desc: '圆环之外，仍有未尽之愿。',
