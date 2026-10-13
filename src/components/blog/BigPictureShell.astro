@@ -153,6 +153,7 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 		writeRestoreFocusKey,
 	} from '../../lib/big-picture-state'
 	import { consumeNavigationSource, recordNavigationSource } from '../../lib/big-picture-session'
+	import { longestCssDuration } from '../../lib/big-picture/settings-timing'
 	import { bindLayoutGlobals, closeLayout, getLayoutState, subscribeLayout, toggleLayout } from '../../lib/layout-state'
 	import { bindModalGlobals, closeModal, getModalStack, MODAL_DEFAULT_DURATION, subscribeModals } from '../../lib/modal'
 
@@ -457,35 +458,19 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(r
 		renderHints()
 	}
 
-	/** `'0.2s'` / `'200ms'` → 毫秒。解析不了一律当 0（= 没有过渡） */
-	function parseCssDuration(value) {
-		const number = Number.parseFloat(value)
-		if (!Number.isFinite(number))
-			return 0
-		return value.trim().endsWith('ms') ? number : number * 1000
-	}
-
 	/**
 	 * 设置面板收起后要等多久才把 `settings` 落回 `'closed'`。
 	 *
-	 * **从 CSS 读，不写死**。这一段窗口的作用是「吞掉 B」：面板正在收起时若 B 穿透到
-	 * 下面那一层（抽屉或页面返回），用户按两下 B 就会被送走。
-	 *
-	 * 读的是**此刻**的计算样式，而此刻面板还开着（`hidden` 是 `finish()` 稍后才加的），
-	 * 所以拿到的是它声明的 `transition-duration`，不是 0s。
-	 * 今天还没有任何过渡声明 → 解析出 0 → 退回 modal 家族共享的 `MODAL_DEFAULT_DURATION`；
-	 * Task 6 加上过渡之后这里自动跟随面板声明的时长，
-	 * 不会再出现「CSS 过渡比守卫窗口长，第二次 B 穿透」这种只在真实浏览器里复现的离站 bug。
+	 * 纯逻辑已搬到 `src/lib/big-picture/settings-timing.ts`——那里才有
+	 * 「从 CSS 读、绝不写死」的完整理由，以及 reduced-motion 不得归零这条
+	 * `transition-duration` 的注意事项。本函数只保留 DOM 读取那一步。
 	 */
 	function settingsCloseDelay() {
 		const panel = query('[data-big-picture-settings]')
 		if (!panel)
 			return MODAL_DEFAULT_DURATION
 		const declared = getComputedStyle(panel).transitionDuration
-		const parsed = declared
-			.split(',')
-			.map(part => parseCssDuration(part))
-			.reduce((max, value) => Math.max(max, value), 0)
+		const parsed = longestCssDuration(declared)
 		return parsed > 0 ? parsed : MODAL_DEFAULT_DURATION
 	}
 
