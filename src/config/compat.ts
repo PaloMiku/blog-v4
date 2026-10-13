@@ -14,21 +14,20 @@ export const compat = {
 	/**
 	 * 压制文章内容页的「合集」（Collection）区块。
 	 *
-	 * 保留原因：**已解除压制**（2026-10-13）。原先的理由是「线上产物从来没有这个
-	 * 区块——Nuxt 侧因 `useNuxtData` payload 缓存静默失效而零渲染」，切流期要求
-	 * 视觉一致，故压掉。站长随后决定把它作为**新增产品行为**正式上线，并按
-	 * plumz.me 的 playlist 形态重做（默认折叠 + `当前/总数` 计数 + 内部滚动 +
-	 * 合集归档入口），位置从正文之后移到正文之前。
+	 * 保留原因：**暂时移除**（2026-10-13）。合集功能已实现并跑通过（组件、数据链路、
+	 * 7 个合集的登记都在仓库里，见 `Collection.astro` 的 COLLECTION_SETTINGS），
+	 * 但站长决定先把「文章分类体系」这件事放一放，故不渲染该区块。
+	 * 原始压制理由（迁流期视觉一致）见本文件 git 历史。
 	 *
-	 * 验证证据（2026-10-13 本机，产物级）：带 `collection:` 的文章 4 篇，
-	 * 产物中 `post-collection` 出现 4 次，与源侧篇数相等。
+	 * 验证证据（2026-10-13 本机，产物级）：开关为 true 时，产物中
+	 * `post-collection` 出现 0 次；35 篇文章的 frontmatter 已移除 `collection:`
+	 * 字段（`git grep -l "^collection:" -- src/content/posts` 返回空）。
 	 *
-	 * 退出条件：**已不是待退出的兼容点**——它是产品行为。若将来要重新压制，
-	 * 改回 `true` 即可，Collection 组件与数据链路无需改动；
-	 * ⚠️ 重新压制会让 `compare-ui-parity` 那 4 页重新出现高度偏差，
-	 * 届时需要重新冻结基线。
+	 * 退出条件：想恢复合集时，把本开关改为 false **并**给文章加回
+	 * frontmatter 的 `collection:` 字段（两者缺一不可：组件按 `collectionKey`
+	 * 取数据，没有字段就什么都不渲染）。组件与数据链路无需改动。
 	 *
-	 * 复核日期：不再需要。
+	 * 复核日期：2026-11（与「文章分类」这件事一起决定）。
 	 */
-	hideCollectionBlock: false,
+	hideCollectionBlock: true,
 } as const

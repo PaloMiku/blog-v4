@@ -36,8 +36,8 @@ export async function getStaticPaths() {
 const { entry } = Astro.props
 const { Content, headings } = await render(entry)
 
-// 「合集」区块的显隐由 compat.hideCollectionBlock 统一控制（2026-10-13 起已放开，
-// 作为产品行为上线）。开关语义与退出条件见 src/config/compat.ts。
+// 「合集」区块的显隐由 compat.hideCollectionBlock 统一控制（2026-10-13 起暂时关闭，
+// 组件与登记项都还在仓库里）。开关语义与恢复条件见 src/config/compat.ts。
 
 // 对应 Nuxt 的 useWidgets()：frontmatter 的 aside 决定侧栏挂哪些组件。
 // `meta-aside-*` 由 rehype-meta-slots 提取成 metaSlots，消费侧需去掉 `meta-` 前缀。
