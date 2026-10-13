@@ -4,7 +4,7 @@
  * ## 它盯的是什么
  *
  * `src/data/summaries.json` 是摘要的唯一真相源（frontmatter 里已无 `description`）。
- * 这道门禁盯四条不变量：
+ * 这道门禁盯五条不变量：
  *
  *   1. **键集合 == glob loader 的条目 id 集合**。多一个键 = 有幽灵摘要（文章删了键没删）；
  *      少一个键 = 有裸奔文章（走了「标题——站点名」的占位兜底，却没人知道该补）。
@@ -16,6 +16,8 @@
  *   4. **每条 `seo` 非空**。空串既不超长（判据 2 放行）也覆盖不到 summary
  *      （判据 3 只看 summary），而它在渲染期的后果是 meta description 空白，
  *      详见判据处的注释。
+ *   5. **summary 与 seo 不含换行**。`Excerpt.astro` 的摘要块是 `pre-wrap`，
+ *      JSON 里的 `\n` 会原样渲染成硬回车；seo 则不该带换行进 meta。
  *
  * ## 为什么第 1 条不能靠「数一下相等」
  *
@@ -141,6 +143,26 @@ for (const full of walkFiles(CONTENT_ROOT, { ext: '.mdx' })) {
 	 */
 	if (entries[id] && !seo.trim())
 		problems.push({ kind: 'seo-empty', id, detail: 'seo 为空 → meta description 会是空白' })
+
+	/*
+	 * 判据 5：summary 不含换行。
+	 *
+	 * `Excerpt.astro` 的摘要块是 `white-space: pre-wrap`，所以 JSON 里的
+	 * `\n` 会**原样**渲染成硬回车 —— 同一页里只有这一条摘要是分段落的，
+	 * 与其余每条单段的视觉不一致。实测曾有 2 条中招（sickly-days-linux-run、
+	 * fedora-silverblue-…），后随摘要重写消失，但成因还在：模型完全可能
+	 * 在正文里换行，而现有的长度 / 非空判据一条都拦不住。
+	 *
+	 * `seo` 同理 —— 它要进 meta description，换行在那里没有意义。
+	 *
+	 * 归一化放在生成侧（`clampDescription` 附近），这里只拦结果：门禁要防的是
+	 * 「数据里出现了不该有的字符」，不是「谁写进去的」。
+	 */
+	if (typeof entries[id]?.summary === 'string' && /[\r\n]/.test(entries[id].summary))
+		problems.push({ kind: 'summary-newline', id, detail: 'summary 含换行 → 页面渲染成硬回车' })
+
+	if (/[\r\n]/.test(seo))
+		problems.push({ kind: 'seo-newline', id, detail: 'seo 含换行 → meta description 不该有换行' })
 }
 
 // 判据 1：多一个键（幽灵摘要）

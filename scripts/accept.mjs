@@ -147,6 +147,9 @@ const RELEASE_GATES = [
 	'check-critical-assets',
 	// 基础无障碍：导航态 aria-current 与路由一致，纯产物核对、无浏览器
 	'check-aria-current',
+	// 主题令牌对比度。改 --c-* 的明度看着只是「淡一点」，构建全绿、页面也正常，
+	// 但没有任何几何门禁量得出对比度——check-layout 只断言令牌「存在」。
+	'check-contrast',
 	// 依赖边界
 	'check-self-contained',
 	// 自检：门禁名单本身
