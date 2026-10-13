@@ -2,18 +2,32 @@
 /**
  * Collection 组件 —— 文章所属合集的折叠列表。
  *
- * 数据来源：`src/lib/content.ts` 的 `getByCollection()`（按 collection 过滤 + 日期升序）。
+ * 形态移植自 plumz.me 的 playlist 组件（`/archives/14734/` 那篇升级报告描述的
+ * 「合集」功能），但**不照搬它的实现**，两处有意保留本仓库的做法：
  *
+ * 1. **折叠用原生 `<details>`**，不用 `div + class` 切换。plumz 那版是
+ *    `<div onclick>`，不可聚焦、键盘不可达、没有 `aria-expanded`——那是缺陷不是设计。
+ *    原生 `<details>` 的键盘与无障碍由浏览器提供，且 `gamepad-focus.ts:251-260`
+ *    已经认识「未展开 details 内部不可选」，手柄侧无需额外接线。
+ * 2. **图标 / 主题色 / 描述留在 `COLLECTION_SETTINGS`**，不共用同一个书本图标。
+ *
+ * 数据来源：`src/lib/content.ts` 的 `getByCollection()`（按 collection 过滤 + 日期升序）。
  * 合集显示设置就住在下方的 COLLECTION_SETTINGS——这是全站唯一一处；
  * 未登记的 key 仍会正常展示，标题回退为 key 本身。
  *
  * 日期一律走 `util/Date.astro` 的默认形态（「4月1日」/「25年5月19日」），
  * 不要退回手写 `toLocaleDateString`：那会多出年份、丢掉 `<time>` 元素，
  * 破坏产物日期形状合同。
+ *
+ * 「当前项」的判定一律走 `currentPageHref`（它内部归一化尾斜杠），
+ * 不要写 `toPath(item) === Astro.url.pathname`：`build.format: 'directory'`
+ * 让 pathname 带尾斜杠而 `toPath()` 不带，那个比较**恒不成立**。
+ * 同一份判定同时喂 `aria-current` 与高亮类，两者因此不会分叉。
  */
 import Icon from '../Icon.astro'
 import UtilDate from '../util/Date.astro'
 import { getByCollection, toPath } from '../../lib/content'
+import { currentPageHref } from '../../lib/shared'
 
 interface CollectionSetting {
 	title: string
@@ -33,16 +47,42 @@ const COLLECTION_SETTINGS: Record<string, CollectionSetting> = {
 }
 
 interface Props {
-	/** 当前文章的 entry id */
+	/** 当前文章的 entry id。**不用于判定「当前项」**——那个判定统一走 currentPageHref，
+	 *  见下方注释；保留 prop 是因为调用方按「当前文章」的语义传值。 */
 	currentId: string
 	/** 当前文章 frontmatter 的 collection 字段 */
 	collectionKey?: string
 }
 
-const { currentId, collectionKey } = Astro.props
+const { collectionKey } = Astro.props
 
 const items = await getByCollection(collectionKey)
 const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
+
+/*
+ * 「当前项」的**唯一**判定。同时喂三处，故不可能分叉：
+ *   · 列表项的 `.current` 高亮类
+ *   · 那条链接的 `aria-current="page"`
+ *   · header 的位置计数
+ *
+ * 不用 `item.id === currentId` 单独判高亮：那是另一套语义，会在
+ * 「构建出来的 href 与当前路径不等价」时与 aria-current 说法不一致。
+ * `currentPageHref` 是 `BlogSidebar.currentMark` 用的同一个函数。
+ */
+const currentPath = Astro.url.pathname
+const isCurrent = item => Boolean(currentPageHref(toPath(item), currentPath))
+
+/*
+ * 「当前是第几篇 / 共几篇」。plumz 的 header 右侧是 `11 / 106` 这种位置计数，
+ * 它用一次点击前的成本回答「我在连载的哪一节」——这是站长的原始计数
+ * （`{items.length} 篇`）给不出的信息。
+ *
+ * 找不到当前篇时（`-1`）退化为纯总数，而不是显示 `0 / N`：
+ * 后者会让人以为列表漏了内容。
+ */
+const currentIndex = items.findIndex(isCurrent)
+const total = items.length
+const countLabel = currentIndex >= 0 ? `${currentIndex + 1} / ${total}` : `${total} 篇`
 ---
 
 {collectionKey && items.length > 0
@@ -54,28 +94,67 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 		 * 语义上正是「这一块自己是一站」。
 		 */
 		<section class="post-collection" data-gamepad-region="main">
-			{/* 原生折叠：无 JS 状态，键盘与无障碍支持由浏览器提供 */}
-			<details class="collection" open>
+			{/*
+			 * 默认折叠（对应 plumz 的初始态）。原生 `<details>` 无 JS 状态，
+			 * 键盘与无障碍支持由浏览器提供；`summary` 因此必须是**第一个**子元素。
+			 */}
+			<details class="collection">
 				<summary class="collection-header">
 					<Icon
 						class="collection-icon"
 						name={setting?.icon || 'tabler:folder'}
 						style={setting?.color ? `color: ${setting.color}` : undefined}
 					/>
+
 					<span class="header-text">
-						<strong class="title text-creative">{setting?.title || collectionKey}</strong>
+						<strong class="title text-creative">
+							<span class="prefix">合集 ·</span>
+							{setting?.title || collectionKey}
+						</strong>
 						{setting?.description && <span class="description">{setting.description}</span>}
 					</span>
+
+					{/*
+					 * 合集归档入口。plumz 那版是 `href="/search/{合集名}"` 的链接
+					 * （WordPress 搜索页），本仓库的搜索是弹层、没有那个路由，
+					 * 故改为复用 `layout-state` 的既有点击委托：`data-layout-toggle`
+					 * 被 `bindLayoutGlobals()` 全局消费，`data-search-seed` 由
+					 * SearchModal 在打开时读走并预填。
+					 *
+					 * **必须是 `<button>`**：它是动作（打开弹层）而非导航，
+					 * 且 `<a>` 无 href 不可聚焦；button 天然进 Tab 顺序与手柄候选。
+					 */}
+					{setting && (
+						<button
+							type="button"
+							class="collection-archive"
+							data-collection-archive
+							data-layout-toggle="search"
+							data-search-seed={setting.title}
+							aria-label={`在搜索中查看「${setting.title}」合集`}
+							title="搜索本合集"
+						>
+							<Icon name="tabler:dots-vertical" />
+						</button>
+					)}
+
 					<span class="separator" />
-					<span class="count">{items.length} 篇</span>
+
+					{/* 位置计数：`3 / 3` 而非 `3 篇`，见文件头 currentIndex 的注释 */}
+					<span class="count">{countLabel}</span>
 					<Icon class="chevron" name="tabler:chevron-down" />
 				</summary>
-				<div class="collection-body">
+
+				{/*
+				 * 列表容器：`max-height` + 内部滚动是 plumz 那版的关键取舍——
+				 * 106 篇的合集全渲染进 DOM，但展开只吃掉固定高度，不会把正文推走。
+				 */}
+				<div class="collection-body scrollcheck-y">
 					<ul class="collection-list">
-						{items.map(item => (
+						{items.map((item, index) => (
 							<li
 								class="collection-item"
-								class:list={{ current: item.id === currentId }}
+								class:list={{ current: isCurrent(item) }}
 							>
 								{/*
 								 * key 用**文章 id**（不是序号）：合集列表顺序由日期升序决定，
@@ -85,12 +164,23 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 								<a
 									class="collection-link"
 									href={toPath(item)}
+									aria-current={currentPageHref(toPath(item), currentPath)}
 									data-gamepad-focus
 									data-list-key={`collection:${item.id}`}
 								>
-									<span class="article-title text-creative">{item.data.title}</span>
+									{/*
+									 * 序号照 plumz：等宽、右对齐、定宽，让标题左缘对齐。
+									 * 小屏在 CSS 里整体隐藏（见 @media 段），
+									 * 与 plumz 的 `@media (max-width:480px)` 同处理。
+									 */}
+									<span class="item-index">{String(index + 1).padStart(2, '0')}</span>
+
+									<span class="item-title text-creative">
+										{item.data.title}
+										{isCurrent(item) && <span class="current-tag">(当前)</span>}
+									</span>
+
 									{item.data.date && <UtilDate class="date" date={item.data.date} />}
-									{item.id === currentId && <span class="current-tag">当前</span>}
 								</a>
 							</li>
 						))}
@@ -101,7 +191,84 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 	)
 	: null}
 
+<script>
+	/*
+	 * 归档入口：`preventDefault` + 种子的**瞬态搬运**。
+	 *
+	 * 两件事都在捕获阶段做：
+	 *
+	 * 1. `preventDefault`——按钮在 `<summary>` 内部，而 summary 的原生行为是
+	 *    「点哪里都折叠/展开」。不加拦截，点「⋮」想开搜索会顺手把列表开一下。
+	 *    捕获阶段拦默认行为，冒泡照常走，`bindLayoutGlobals()` 的
+	 *    `[data-layout-toggle]` 全局委托因此不受影响，不必自己再 toggle 一次。
+	 *
+	 *    用捕获而不是内联 `onclick`：本仓库没有内联事件处理器的先例，
+	 *    而 summary 的激活行为作用在**祖先**上，只有捕获阶段能先于它拿到事件。
+	 *
+	 * 2. 种子词搬运——按钮上的 `data-search-seed` 是**声明**（说明这个入口
+	 *    想搜什么），必须始终留在 DOM 里；而 SearchModal 读走之后要能清掉，
+	 *    否则之后从侧栏 / Ctrl+K 打开搜索时，这个种子会顶掉用户自己输入的词。
+	 *    所以真正的**传递**走 `document.documentElement` 上的一次性属性：
+	 *    这里写入，SearchModal 读取后立即删除。
+	 *
+	 *    手柄按 A 走的是 `element.click()`，同样触发本监听，无需额外接线。
+	 */
+	function initCollectionArchive(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.collectionArchiveReady)
+			return
+		root.dataset.collectionArchiveReady = '1'
+
+		/*
+		 * 归档入口：`preventDefault` + 种子的**瞬态搬运**。
+		 *
+		 * 两件事都在捕获阶段做：
+		 *
+		 * 1. `preventDefault`——按钮在 `<summary>` 内部，而 summary 的原生行为是
+		 *    「点哪里都折叠/展开」。不加拦截，点「⋮」想开搜索会顺手把列表开一下。
+		 *    捕获阶段拦默认行为，冒泡照常走，`bindLayoutGlobals()` 的
+		 *    `[data-layout-toggle]` 全局委托因此不受影响，不必自己再 toggle 一次。
+		 *
+		 *    用捕获而不是内联 `onclick`：本仓库没有内联事件处理器的先例，
+		 *    而 summary 的激活行为作用在**祖先**上，只有捕获阶段能先于它拿到事件。
+		 *
+		 * 2. 种子词搬运——按钮上的 `data-search-seed` 是**声明**（说明这个入口
+		 *    想搜什么），必须始终留在 DOM 里；而 SearchModal 读走之后要能清掉，
+		 *    否则从侧栏 / Ctrl+K 打开搜索时也会被这个种子覆盖掉用户自己输入的词。
+		 *    所以真正的**传递**走 `document.documentElement` 上的一次性属性：
+		 *    这里写入，SearchModal 读取后立即删除。
+		 *
+		 *    手柄按 A 走的是 `element.click()`，同样触发本监听，无需额外接线。
+		 */
+		root.addEventListener('click', (e) => {
+			const button = e.target.closest?.('[data-collection-archive]')
+			if (!button)
+				return
+			e.preventDefault()
+
+			const seed = button.getAttribute('data-search-seed')
+			if (seed)
+				document.documentElement.dataset.searchSeed = seed
+		}, { capture: true })
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('.post-collection'))
+			initCollectionArchive(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
 <style>
+/*
+ * 这个文件里有三处 `:global()`，全部是**子组件渲染的元素**，理由见各自就地注释：
+ * `.collection-icon` / `.chevron` 由 astro-icon 渲染（带它自己的 cid），
+ * `.iconify` 在 `Icon.astro` 里多包了一层 `<span>`（见该组件头注与 CLAUDE.md 坑位 1）。
+ */
 .post-collection {
 	margin: 2rem 0.5rem 0;
 	border: 1px solid var(--c-border);
@@ -149,7 +316,7 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 	> :global(.collection-icon) {
 		display: flex;
 		flex: none;
-		font-size: 1.6em;
+		font-size: 1.4em;
 	}
 
 	> .header-text {
@@ -159,15 +326,42 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 		min-width: 0;
 
 		> .title {
-			font-size: 1.1rem;
+			font-size: 1rem;
 			font-weight: 550;
 			color: var(--c-text);
+
+			/* 前缀比标题淡一档，与 plumz 的「合集 · xxx」层次同构 */
+			> .prefix {
+				color: var(--c-text-3);
+				font-weight: 400;
+			}
 		}
 
 		> .description {
 			font-size: 0.8rem;
 			line-height: 1.4;
 			color: var(--c-text-3);
+		}
+	}
+
+	/*
+	 * 归档入口。`margin-inline-start: 0` 让它在 header-text 之后自然贴合，
+	 * 而不是被 flex 的 gap 推成「和标题同级的按钮」。
+	 */
+	> .collection-archive {
+		display: flex;
+		flex: none;
+		padding: 0.25em;
+		border: none;
+		border-radius: 0.25em;
+		background: none;
+		color: var(--c-text-3);
+		font-size: 1.1em;
+		transition: all 0.2s;
+
+		&:hover {
+			background-color: var(--c-primary-soft);
+			color: var(--c-primary);
 		}
 	}
 
@@ -178,6 +372,7 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 	> .count {
 		flex: none;
 		font-size: 0.8em;
+		font-variant-numeric: tabular-nums;
 	}
 
 	> :global(.chevron) {
@@ -199,20 +394,36 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 	}
 }
 
+/*
+ * 显式声明折叠，不依赖浏览器对 `<details>` 内容的 UA 隐式隐藏——
+ * 与 plumz 的 `.playlist-body { display: none }` / `.expanded .playlist-body { display: block }`
+ * 同一手法（那里是 class 切换，这里是 details 的 open 属性）。
+ */
 .collection-body {
 	display: none;
-	padding: 0 1.25rem 1rem;
+	padding: 0 1rem 0.85rem;
 }
 
-/* 显式声明折叠，不依赖浏览器对 <details> 内容的 UA 隐式隐藏 */
 .collection[open] .collection-body {
 	display: block;
+}
+
+/*
+ * 长合集的收敛点。plumz 用 `max-height: 260px` + `overflow-y: auto`，
+ * 106 篇的合集也只吃固定高度；`scrollcheck-y` 负责细滚动条与边缘阴影
+ * （`src/styles/reusable.css`）。
+ *
+ * 260px ≈ 6 项（每项约 40px + gap），与 plumz 实测展开高度量级一致。
+ */
+.collection-body {
+	max-height: 260px;
+	overflow-y: auto;
 }
 
 .collection-list {
 	display: flex;
 	flex-direction: column;
-	gap: 0.15rem;
+	gap: 0.2rem;
 	margin: 0;
 	padding: 0;
 	list-style: none;
@@ -220,16 +431,18 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 
 .collection-item {
 	position: relative;
-	border-radius: 0.5em;
+	border-radius: 0.4em;
 
-	&.current::before {
-		content: "";
-		position: absolute;
-		inset-block: 20%;
-		inset-inline-start: 0.15rem;
-		width: 0.2rem;
-		border-radius: 999px;
-		background-color: var(--c-primary);
+	/*
+	 * 当前项整条高亮，照 plumz 的 `.playlist-item.active`
+	 * （底色 15% 主色 + 边框 40% 主色 + 文字主色）。
+	 *
+	 * **去掉了站长原版的左侧竖条**：它与 15% 底色同时出现会显得脏，
+	 * 而 plumz 用「整条高亮 + 文字变主色」已经足够指出当前项。
+	 */
+	&.current {
+		background-color: var(--c-primary-soft);
+		border: 1px solid var(--c-primary);
 	}
 
 	&.current .collection-link {
@@ -240,12 +453,32 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 .collection-link {
 	display: flex;
 	align-items: baseline;
-	gap: 0.8em;
-	padding: 0.45em 0.7em;
-	border-radius: 0.5em;
-	transition: background-color 0.2s;
+	gap: 0.6em;
+	padding: 0.5em 0.7em;
+	border: 1px solid transparent;
+	border-radius: 0.4em;
+	transition: background-color 0.2s, border-color 0.2s;
 
-	.article-title {
+	/* 非当前项悬停：底色 + 边框同时出现，照 plumz 的 `.playlist-item:hover` */
+	&:hover {
+		background-color: var(--c-bg-soft);
+		border-color: var(--c-border);
+	}
+
+	/*
+	 * 序号：等宽、右对齐、定宽，与 plumz 的 `.item-index` 同构
+	 * （`font-size: 13px; font-family: monospace; width: 20px; text-align: right; opacity: .5`）。
+	 */
+	.item-index {
+		flex: none;
+		width: 2ch;
+		font-family: var(--font-monospace);
+		font-size: 0.75em;
+		opacity: 0.5;
+		text-align: right;
+	}
+
+	.item-title {
 		flex: 1;
 		overflow: hidden;
 		min-width: 0;
@@ -253,22 +486,36 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 		text-overflow: ellipsis;
 	}
 
+	.current-tag {
+		/* 降级成纯文本后缀（原版是描边胶囊），长标题截断时不额外占宽 */
+		margin-inline-start: 0.3em;
+		font-size: 0.85em;
+		opacity: 0.8;
+	}
+
 	.date {
 		flex: none;
 		font-size: 0.8em;
 		color: var(--c-text-3);
 	}
+}
 
-	.current-tag {
-		flex: none;
-		padding: 0.05em 0.5em;
-		border: 1px solid var(--c-primary);
-		border-radius: 999px;
-		font-size: 0.7em;
+/*
+ * 小屏：隐藏序号，把宽度让给标题——照 plumz 的
+ * `@media screen and (max-width:480px) { .playlist-item .item-index { display: none } }`。
+ * 断点取本仓库的 480px 而不是另立一套。
+ */
+@media (max-width: 480px) {
+	.collection-header {
+		padding: 0.75rem 1rem;
 	}
 
-	&:hover {
-		background-color: var(--c-bg-soft);
+	.collection-link {
+		padding: 0.45em 0.5em;
+
+		.item-index {
+			display: none;
+		}
 	}
 }
 </style>

@@ -389,13 +389,35 @@ const locale = blogConfig.language
 				closeModalByKey('search')
 				return
 			}
-			// 选中文本直接作为搜索词（对应 useTextSelection().text.trim() || word）
+
+			/*
+			 * 两路「外部指定的初始搜索词」，优先级：选中文本 > 种子词。
+			 *
+			 * 种子词由 Collection 的合集归档入口「⋮」写入
+			 * `document.documentElement.dataset.searchSeed`。**必须在这里读**，
+			 * 而不是在调用点直接写 `input.value`——弹层是常驻 DOM 但未挂载语义的，
+			 * 调用点拿不到它内部的闭包状态（`word` / `activeIndex` / 已渲染的列表），
+			 * 只改 DOM 值会让输入框有字而列表空着。
+			 *
+			 * 载体是一次性属性：读走即删，否则之后从侧栏 / Ctrl+K 打开搜索时，
+			 * 这个种子会顶掉用户自己输入的词。按钮上的 `data-search-seed`
+			 * 只作声明、不参与传递，故**始终留在 DOM 里**（第二次点「⋮」照样有效）。
+			 *
+			 * Nuxt 侧没有对应物：那里归档入口是个真实路由 `/search/{词}`。
+			 */
 			const selection = String(window.getSelection?.() ?? '').trim()
-			if (selection && selection !== word) {
-				word = selection
-				input.value = selection
+			const carrier = document.documentElement
+			const seed = selection ? '' : String(carrier.dataset.searchSeed ?? '').trim()
+			if (carrier.dataset.searchSeed)
+				delete carrier.dataset.searchSeed
+
+			const next = selection || seed
+			if (next && next !== word) {
+				word = next
+				input.value = next
 				scheduleSearch()
 			}
+
 			openModal({ key: 'search', unique: true, duration: DURATION })
 		})
 

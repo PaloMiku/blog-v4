@@ -36,8 +36,8 @@ export async function getStaticPaths() {
 const { entry } = Astro.props
 const { Content, headings } = await render(entry)
 
-// 对齐线上：「所属系列」区块由 compat.hideCollectionBlock 统一压制，
-// 保留原因/证据/退出条件/复核日期见 src/config/compat.ts。
+// 「合集」区块的显隐由 compat.hideCollectionBlock 统一控制（2026-10-13 起已放开，
+// 作为产品行为上线）。开关语义与退出条件见 src/config/compat.ts。
 
 // 对应 Nuxt 的 useWidgets()：frontmatter 的 aside 决定侧栏挂哪些组件。
 // `meta-aside-*` 由 rehype-meta-slots 提取成 metaSlots，消费侧需去掉 `meta-` 前缀。
@@ -208,6 +208,16 @@ const jsonLd: Record<string, unknown>[] = [
 	></a>
 
 	{/*
+	 * 合集块：位于正文**之前**（移植自 plumz.me 的 playlist 位置——文章 meta 之后、
+	 * 正文之前），理由与那边相同：读者进正文前先知道「这是连载第几篇、前面还有什么」。
+	 *
+	 * 放在 `reading-anchor` **之后**是刻意的：那个锚点是正文阅读入口，
+	 * 手柄在阅读页靠 `data-gamepad-initial-focus` 命中它，而其余页型回落到
+	 * 「区域内 DOM 顺序第一项」——把合集插在它前面会顶掉那个兜底首选。
+	 */}
+	{!compat.hideCollectionBlock && <Collection currentId={entry.id} collectionKey={entry.data.collection} />}
+
+	{/*
 	 * `article` 只包正文本身，class 与基线一致。
 	 *
 	 * `data-gamepad-region="main"` 是**手柄大屏模式**的落点，不是样式钩子：
@@ -222,7 +232,6 @@ const jsonLd: Record<string, unknown>[] = [
 		<Content components={contentComponents} />
 	</article>
 
-	{!compat.hideCollectionBlock && <Collection currentId={entry.id} collectionKey={entry.data.collection} />}
 	{!entry.data.hideInfo
 		&& <PostFooter
 			title={entry.data.title}

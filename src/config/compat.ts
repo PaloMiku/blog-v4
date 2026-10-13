@@ -12,21 +12,23 @@
  */
 export const compat = {
 	/**
-	 * 压制文章内容页的「所属系列」（Collection）区块。
+	 * 压制文章内容页的「合集」（Collection）区块。
 	 *
-	 * 保留原因：线上产物从来没有这个区块。Nuxt 侧它因 `useNuxtData` payload
-	 * 缓存静默失效而一次都没渲染过；2026-10-03 切流要求视觉一致，Astro 侧
-	 * 顺手「修好」数据源反而多出线上没有的块。
+	 * 保留原因：**已解除压制**（2026-10-13）。原先的理由是「线上产物从来没有这个
+	 * 区块——Nuxt 侧因 `useNuxtData` payload 缓存静默失效而零渲染」，切流期要求
+	 * 视觉一致，故压掉。站长随后决定把它作为**新增产品行为**正式上线，并按
+	 * plumz.me 的 playlist 形态重做（默认折叠 + `当前/总数` 计数 + 内部滚动 +
+	 * 合集归档入口），位置从正文之后移到正文之前。
 	 *
-	 * 验证证据（63 页产物级核对，非推断）：带 `collection:` 的文章仅 4 篇；
-	 * Nuxt 基线产物 `post-collection` 出现 0 次，未关闭此开关的 Astro 产物
-	 * 出现 4 次；单页高度偏差 +249px（记录于 compare-ui-parity 的 ACCEPTED 名单）。
+	 * 验证证据（2026-10-13 本机，产物级）：带 `collection:` 的文章 4 篇，
+	 * 产物中 `post-collection` 出现 4 次，与源侧篇数相等。
 	 *
-	 * 退出条件：站长决定恢复该区块（属新增产品行为，需重新冻结线上基线并跑
-	 * `pnpm accept:parity` 确认偏差可接受）；届时把本开关改为 false，
-	 * Collection 组件与数据链路无需改动。
+	 * 退出条件：**已不是待退出的兼容点**——它是产品行为。若将来要重新压制，
+	 * 改回 `true` 即可，Collection 组件与数据链路无需改动；
+	 * ⚠️ 重新压制会让 `compare-ui-parity` 那 4 页重新出现高度偏差，
+	 * 届时需要重新冻结基线。
 	 *
-	 * 复核日期：2026-11。
+	 * 复核日期：不再需要。
 	 */
-	hideCollectionBlock: true,
+	hideCollectionBlock: false,
 } as const
