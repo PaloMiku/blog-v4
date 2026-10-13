@@ -197,13 +197,25 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 		 * 客户端按 key 取出对应 state 的那一枚克隆进 <menu>。
 		 */}
 		<template data-post-dataset>
-			{listCategorized.flatMap(entry => listStates.map(state => (
+			{listCategorized.flatMap(entry => listStates.map((state, index) => (
+				/*
+				 * `data-post-date` / `data-post-updated` 只在每组的**第一枚**上出现。
+				 *
+				 * 两枚 state 的这两个值恒等（实测 38 篇 × 2 枚全部相同：排序与日期
+				 * 是条目属性，与当前排的是哪个日期无关），而客户端 `initPostList`
+				 * 只按 key 建一次 `entries` map、同一个 key 的后到条目不会覆盖
+				 * 已存的值（见下面 byState 的写法）。所以第二枚再带一遍纯属重复——
+				 * 实测省掉约 10 KB 的属性文本。
+				 *
+				 * ⚠️ 反过来 `data-post-state` 必须**两枚都有**：客户端靠它把
+				 * `item.byState[state] = node` 填满，缺一个 state 就会取不到节点。
+				 */
 				<div
 					data-post-entry
 					data-post-key={toPath(entry)}
 					data-post-state={state}
-					data-post-date={entry.data.date ?? ''}
-					data-post-updated={entry.data.updated ?? ''}
+					data-post-date={index === 0 ? (entry.data.date ?? '') : undefined}
+					data-post-updated={index === 0 ? (entry.data.updated ?? '') : undefined}
 					data-post-category={entry.data.categories?.[0] ?? ''}
 				>
 					<Article
@@ -252,6 +264,25 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 	import { hoistIconSprites } from '../lib/icon-sprite'
 	import { compareValues, getPaginationIndicator } from '../lib/shared/pagination'
 
+	/**
+	 * 在同 key 的另一枚 entry 上回读排序字段。
+	 *
+	 * 数据集为了省体积只在每组第一枚上带 `data-post-date` / `data-post-updated`
+	 * （两枚的值恒等），正常路径读第一枚就够。这里只是兜底：万一生成侧调整了
+	 * 顺序，让第一枚恰好是缺属性的那枚，排序会静默退化成「全部相等」——
+	 * 而 `compareValues` 恒返回 0 是不会报错的。
+	 */
+	function findSiblingDate(dataset, key, attr) {
+		for (const node of dataset.content.querySelectorAll('[data-post-entry]')) {
+			if (node.dataset.postKey !== key)
+				continue
+			const v = node.dataset[attr]
+			if (v)
+				return v
+		}
+		return ''
+	}
+
 	function initPostList() {
 		const root = document.querySelector('[data-post-list]')
 		if (!(root instanceof HTMLElement) || root.dataset.postListReady)
@@ -295,8 +326,14 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 			let item = entries.get(key)
 			if (!item) {
 				item = {
-					date: node.dataset.postDate || '',
-					updated: node.dataset.postUpdated || '',
+					/*
+					 * 兜底而不是只在第一枚上取值：数据集里只有每组第一枚带
+					 * `data-post-date`，靠 DOM 顺序才读得到。万一将来生成侧换了
+					 * 顺序（比如按 state 反序输出），这里会静默读到空串——排序随即
+					 * 全部失效，且没有报错。所以缺值时回扫同 key 的另一枚。
+					 */
+					date: node.dataset.postDate || findSiblingDate(dataset, key, 'postDate'),
+					updated: node.dataset.postUpdated || findSiblingDate(dataset, key, 'postUpdated'),
 					category: node.dataset.postCategory || '',
 					byState: {},
 				}
