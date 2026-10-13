@@ -85,12 +85,15 @@ const showTitle = appConfig.component.slide?.showTitle ?? true
 		 * 底色、内边距、圆角、flex 居中全来自那一层，
 		 * `.carousel-action` 只负责定位与显隐。
 		 * 手写 `<button>` 只会让 `.carousel-action` 的定位生效，外观则全丢。
+		 *
+		 * ⚠️ 原版的 `tabindex="-1"` 不再保留：它让按钮只能被程序聚焦、Tab 到不了，
+		 * 而显形条件是 `:hover, :focus-within`——键盘用户因此永远看不到也用不了翻页。
+		 * 去掉后 `:focus-within` 分支正好让它聚焦即显形，无需额外 CSS。
 		 */}
 		<Button
 			class="carousel-action prev at-slide-hover"
 			aria-label="上一页"
 			icon="tabler:chevron-left"
-			tabindex="-1"
 			data-slide-prev
 		/>
 
@@ -98,7 +101,6 @@ const showTitle = appConfig.component.slide?.showTitle ?? true
 			class="carousel-action next at-slide-hover"
 			aria-label="下一页"
 			icon="tabler:chevron-right"
-			tabindex="-1"
 			data-slide-next
 		/>
 	</div>
@@ -118,10 +120,15 @@ const showTitle = appConfig.component.slide?.showTitle ?? true
 			import('embla-carousel-wheel-gestures'),
 		])
 
+		const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+		// 触屏不发 mouseenter，`stopOnMouseEnter` 在那里等于没有开关；
+		// 用户开了「减弱动态效果」时更是完全不该自己走。
+		const noAutoPlay = reducedMotion || !(window.matchMedia?.('(hover: hover)').matches ?? false)
+
 		const embla = EmblaCarousel(
 			root,
 			{ containScroll: false, loop: true, skipSnaps: true },
-			[Autoplay({ stopOnInteraction: false, stopOnMouseEnter: true }), WheelGestures()],
+			[Autoplay({ active: !noAutoPlay, stopOnInteraction: false, stopOnMouseEnter: true, stopOnFocusIn: true }), WheelGestures()],
 		)
 
 		// 原版在 wheel 上还叠了一层阈值判断：|delta| < 80 时不翻页

@@ -79,9 +79,13 @@ function initialIcon() {
 		}
 
 		el.addEventListener('click', write)
-		el.addEventListener('keypress', (e) => {
-			if (e.key === 'Enter')
-				write()
+		// 照 `partial/Toggle.astro` 的做法用 keydown：`keypress` 已被浏览器标记为废弃，
+		// 对非可编辑元素的 Enter 不再稳定触发，复制按钮对键盘用户会直接失效。
+		el.addEventListener('keydown', (e) => {
+			if (e.key !== 'Enter')
+				return
+			e.preventDefault()
+			write()
 		})
 	}
 
