@@ -273,6 +273,7 @@ const jsonLdText = JSON.stringify({ '@context': 'https://schema.org', '@graph': 
 		<link rel="stylesheet" href="https://s4.zstatic.net/npm/inter-ui@4.1.1/inter-variable.css">
 		<link rel="stylesheet" href="https://s4.zstatic.net/npm/inter-ui@4.1.1/inter.css">
 		<!-- LXGW WenKai 屏幕优化版；onload 走展开写法，避免被当成事件监听器解析 -->
+		<link rel="preconnect" href="https://s4.zstatic.net" crossorigin="">
 		<link
 			{...{
 				'rel': 'stylesheet',
@@ -283,6 +284,9 @@ const jsonLdText = JSON.stringify({ '@context': 'https://schema.org', '@graph': 
 		>
 		<!-- "Ephesis" 页脚签名, "JetBrains Mono", 思源黑体 "Noto Sans SC", 思源宋体 "Noto Serif SC" -->
 		<link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin="">
+		<link rel="preconnect" href="https://fonts.googleapis.cn" crossorigin="">
+		<!-- 自托管的霞鹜文楷屏幕版（17 KB）：唯一消费点是 .header-title，值首屏预载。 -->
+		<link rel="preload" as="font" type="font/woff2" href="/fonts/LXGWWenKai.woff2" crossorigin="">
 		<link rel="stylesheet" href="https://fonts.googleapis.cn/css2?family=Ephesis&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Noto+Sans+SC:wght@200..900&family=Noto+Serif+SC:wght@200..900&display=swap">
 		<!--
 			抖音美好体 "DOUYINSANSBOLD-GB" —— **非阻塞加载**（2026-10-07）。

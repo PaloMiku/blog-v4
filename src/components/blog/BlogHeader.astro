@@ -125,6 +125,12 @@ const ariaCurrent = currentPageHref(to, Astro.url.pathname)
 @font-face {
 	font-family: LXGWWenKai;
 	src: url("/fonts/LXGWWenKai.woff2");
+	/*
+	 * 缺这一行会回落到浏览器默认的 `auto`（约 3s block period）：
+	 * 字体到位前 `.header-title` 整块不可见，而它是首屏最显眼的标题。
+	 * 用 `swap` 让回退字形先渲染，避免标题凭空消失几秒。
+	 */
+	font-display: swap;
 }
 
 .header-title {
