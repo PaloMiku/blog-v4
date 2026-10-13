@@ -24,7 +24,8 @@
     "accept:maintenance": "node scripts/accept.mjs --profile maintenance",
     "accept:parity": "node scripts/accept.mjs --profile parity",
     "interaction-check": "node scripts/interaction-check.mjs",
-    "new": "node scripts/new-blog.ts"
+    "new": "node scripts/new-blog.ts",
+    "summary": "node --env-file-if-exists=.env --experimental-transform-types scripts/summary.ts"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "catalog:content",

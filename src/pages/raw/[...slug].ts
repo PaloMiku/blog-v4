@@ -49,7 +49,7 @@ function toMarkdown(entry: ContentEntry) {
 	if (entry.data.title)
 		head.push(`# ${entry.data.title}`)
 	// 基线恒有这一行：文章填摘要，独立页为空引用（`> `）
-	head.push(`> ${entry.data.description ?? ''}`)
+	head.push(`> ${entry.data.summary ?? ''}`)
 
 	const body = (entry.body ?? '').trim()
 	return `${[...head, body].filter(Boolean).join('\n\n')}\n`

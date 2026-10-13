@@ -1,0 +1,198 @@
+{
+  "$meta": {
+    "model": "deepseek/deepseek-flash",
+    "modelLabel": "Flash"
+  },
+  "entries": {
+    "2024/03/takagi": {
+      "summary": "从2022年暑假在B站偶然刷到《擅长捉弄的高木同学》视频开始，作者被这部作品深深吸引，成为高木粉。加入QQ频道后，因不满百度网盘分享与下载体验，作者用建站兴趣在2022年10月搭建了高木资源站，并在牧丰帮助下填充资源。2023年末又和南栀、WaterApple、Ice Year等朋友形成木创社雏形，建设高木Wiki站和社区项目。文章以漫画完结和《君と光》收束，认为高木与西片相遇的珍贵在于日常细节与一期一会，值得认真体悟。",
+      "seo": "高木圈资源站与社区建设记录：从B站偶遇《擅长捉弄的高木同学》到搭建高木资源站、参与木创社和高木Wiki，分享与高木圈朋友相遇的温暖故事。",
+      "sourceHash": "c9ff0303df95bac6"
+    },
+    "2024/08/docker-deploy-outline": {
+      "summary": "记录在服务器上通过 Docker Compose 部署 Outline 知识库，并用 GitHub OAuth 实现登录的完整流程。部署前需准备 Docker、Docker Compose 和域名，服务包含 Outline、PostgreSQL、Redis 与 Minio；流程分为部署 Minio 对象存储、配置 GitHub OAuth、部署 Outline 三部分。Minio 部分给出 docker-compose 与 .env 示例，并说明用 Nginx 反向代理、创建私有 outline bucket；GitHub 部分说明创建 OAuth App、设置回调地址并获取 Client ID/secret。Outline 部分给出多容器编排和环境变量配置，包括数据库、Redis、S3 存储及 OIDC 参数；若使用兼容 S3 的在线对象存储可跳过 Minio。",
+      "seo": "Docker部署Outline教程：使用Docker Compose搭建PostgreSQL、Redis、Minio，并通过GitHub OAuth配置Outline登录与S3对象存储，含反向代理和环境变量示例。",
+      "sourceHash": "537e35f654864a5f"
+    },
+    "2024/09/1panel-appstore-refused": {
+      "summary": "一位1Panel老用户为Ghost博客系统编写了可一键安装并自动配置MySQL/MariaDB的应用商店配置，本地测试通过后向官方仓库提交PR，希望降低国内用户的部署门槛。官方以Ghost可能与自家Halo博客形成竞争、建议支持Halo为由拒绝合并。作者认为该理由难以成立：Ghost国内生态薄弱，用户不会因此绕过Halo，且符合开源、官方镜像和高Star条件却遭拒，容易伤害贡献者，也显得格局偏小。补充中作者评价第三方商店较杂乱，计划自建更规范的仓库；更新提到官方已在2025年4月合并Ghost。",
+      "seo": "1Panel官方应用商店拒绝合并Ghost博客应用，作者提交的Docker配置因可能与Halo竞争被拒；文章复盘经过、理由与第三方商店现状，并更新官方已在2025年4月合并Ghost。",
+      "sourceHash": "7a50970ce43436e6"
+    },
+    "2024/10/shiroi-docker-deployment": {
+      "summary": "Shiroi 是 Mix-Space 的闭源前端，原作者未提供 Docker 镜像，在低于 2G 内存的服务器上直接构建极易爆内存。这里改用 GitHub Action 构建镜像并推送到 GitHub Packages（ghcr.io），既不用在服务器安装 Node.js、PM2、Sharp，也不必把 SSH 密钥存进仓库。工作流通过对比仓库中的哈希文件跳过重复构建，构建后回写哈希值以保持仓库活跃；使用前配置 GH_PAT 与 DOCKER_NAMESPACE 两个 Secret 并开放 Action 写权限。之后在服务器执行 docker login ghcr.io 登录私有仓库，即可用 compose 拉取镜像运行 Shiroi。",
+      "seo": "用 GitHub Action 自动构建 Shiroi Docker 镜像并推送到 GitHub Packages，靠哈希比对跳过重复构建，低配服务器也能在 docker login ghcr.io 后用 compose 部署 Mix-Space 前端。",
+      "sourceHash": "f368fc08e034af3e"
+    },
+    "2024/10/write-1panel-app": {
+      "summary": "1Panel 的应用商店以 Docker Compose 编排文件为核心，通过图形化模板实现一键部署，第三方应用仓库只需拉取即可使用。编写第三方程序需要准备 logo.png、根目录声明文件 data.yml、版本目录下的参数 data.yml 与 docker-compose.yml，并可用 1panel app init 初始化模板。声明文件负责定义 key、名称、标签和类型，参数文件的 formFields 负责生成安装表单，其中 envKey 会传入 Compose 环境变量，还可配置外部数据库依赖。掌握这些文件格式与字段含义后，就能制作并安装自定义应用。",
+      "seo": "面向 1Panel 用户说明编写 1Panel 应用商店第三方程序的方法，涵盖初始化模板、应用声明、参数表单和 Docker Compose 配置，便于把自定义应用接入应用商店实现一键部署。",
+      "sourceHash": "c6aa51b4dbbdc883"
+    },
+    "2024/12/break-change-2024": {
+      "summary": "作者记录了自己博客的又一次破坏性迁移：域名换到 blog 子域名，评论数据不保留，部分旧文章被删除或重订。原因是长期把时间花在站点架构、域名和服务器调整上。此次迁移后，服务器与域名均已续费到 2026 年 9 月，系统换成 Huawei Cloud EulerOS，因此承诺在此之前不再迁移，站点可保持稳定运行，文章更新仍会缓慢。",
+      "seo": "博客破坏型迁移记录：域名迁至 blog 子域名、评论与旧文不再保留，服务器改用 Huawei Cloud EulerOS，并承诺 2026 年 9 月前不再迁移，保证站点稳定。",
+      "sourceHash": "195a1a3c606146e8"
+    },
+    "2024/12/oyiso-tianligpt": {
+      "summary": "记录在 WordPress 的 Oyiso 主题上接入 TianliGPT 摘要功能的过程。做法是先安装 PostChat 插件并在后台填入 Key，只需要摘要时可关闭智能对话；再在主题的自定义代码中插入官方提供的 CSS 与 JS，把 tianliGPT_postSelector 指向文章内容容器、tianliGPT_key 换成自己的 Key，保存后即可生效。最终实现了文章自动生成 AI 摘要，无需人工干预，且再次生成不消耗额度。作者也提到升级版 PostChat 因按月收费暂未采用。",
+      "seo": "在 WordPress 的 Oyiso 主题中引入 TianliGPT 摘要：通过 PostChat 插件配置 Key，并在自定义代码里加入官方 CSS 与 JS，即可让文章自动生成 AI 摘要。",
+      "sourceHash": "ac7bd52d3a1579bd"
+    },
+    "2025/01/arch-aur-kazumi": {
+      "summary": "为在 Arch Linux 上安装基于 Flutter 的番剧采集程序 Kazumi，作者遇到官方只提供 Deb、tar.gz 和 Flathub 安装方式、Flathub 会带入整套 GNOME 组件、AUR 中已有的 kazumi-bin 长期未更新的问题，于是决定自行打包。查阅 Arch Wiki 的软件包构建与 AUR 提交资料后编写 PKGBUILD：以 GitHub Releases 的 tar.gz 为源，解压到 /opt/Kazumi，建立 /usr/bin 软链接，并生成 .desktop 文件与图标。构建出的 kazumi 包已提交至 AUR，用户执行 yay -S kazumi 即可安装，该安装方式还通过 PR 合并进了上游仓库。",
+      "seo": "从零构建并提交 Kazumi 的 AUR 包：以官方 tar.gz 为源编写 PKGBUILD，解决 Arch Linux 下 Flathub 需装 GNOME 组件、kazumi-bin 过期的问题，可用 yay -S kazumi 直接安装。",
+      "sourceHash": "2dbac49db241ad68"
+    },
+    "2025/05/clannad-zh-linux": {
+      "summary": "作者在朋友建议下决定游玩有年代感的《Clannad》，对比版本后选择了官方中文版。由于价格较高，暂时使用第三方学习版，并计划在史低时补票。在 Linux 系统上分别下载了 HD 官方中文版和 Full Voice 汉化版，使用 Steam 默认的 Proton 9.0-4 兼容层，两个版本均运行成功。",
+      "seo": "《Clannad》HD 官方中文版与 Full Voice 汉化版在 Linux 上通过 Proton 9.0-4 均可运行，作者分享了版本选择与运行测试经验。",
+      "sourceHash": "e37dd79c0aaef4a6"
+    },
+    "2025/05/fediverse": {
+      "summary": "作者回顾了自己从 2023 年经朋友推荐进入 Fediverse 的经历，先后使用过轻社区项目、纷语驿站、极光星、轻语湾、鸟白岛 Torishiro，最终与朋友联合维护基于 Sharkey 的 Circlari 实例。文章介绍了 Misskey、Firefish、Sharkey 三个基于 ActivityPub 协议的程序的开发背景与现状，指出 Misskey 部署和上手难度低于 Mastodon，Firefish 已于 2025 年 2 月停止维护，Sharkey 以兼容 Mastodon API 为特色。作者把 Fediverse 当作微博客使用并看重其去中心化特性，认为加入门槛低、实例之间可自由互通。结合 FediDB 数据，Mastodon 用户占比约 72.2%、Misskey 约 1.2%，作者对用户快速增长喜忧参半，实例管理中的黑名单也越来越长。",
+      "seo": "从个人使用经历出发，梳理 Fediverse 联邦宇宙的过往与现状，介绍 Misskey、Firefish、Sharkey 三个基于 ActivityPub 的实例程序及 FediDB 用户占比数据。",
+      "sourceHash": "0768cc509adc79ab"
+    },
+    "2025/05/gal-up": {
+      "summary": "作者从去年12月开始接触Galgame，今年3月以《爱上火车 Last Run!!》正式入坑，并使用Steam Deck游玩多部作品。随后体验了《苍之彼方的四重奏》《魔女的夜宴》《恋爱与选举与巧克力》，分别记录了角色偏好、线路感想与系统评价。其中《爱上火车》因E-mote动态立绘、铁路题材和良心内容获极高评价；《苍彼》中美咲线最受认可；《魔女夜宴》系统优秀、宁宁线为核心；《恋选》初印象“味重”但角色塑造成功。整体是一份2025年上半年的个人Galgame历程总结。",
+      "seo": "旮沓给木太好玩辣：2025年上半Gal历程个人总结，回顾《爱上火车 Last Run!!》入坑及《苍之彼方的四重奏》《魔女的夜宴》《恋爱与选举与巧克力》的游玩感想与角色评价。",
+      "sourceHash": "851eb99ffcb10f4d"
+    },
+    "2025/05/koichoco-psp": {
+      "summary": "作者在玩过《恋爱与选举与巧克力》高清重制版大部分线路后，为体验PC版没有的枝川希美线，用Steam Deck配合PPSSPP模拟器试玩了PSP携带版。携带版新增各女主事件与30张新CG，并把希美设为可攻略女主角，还带来设置界面全语音、千里立绘眼距修正、人物情绪细节更丰富等惊喜。虽然素材清晰度不如高清重制版，但综合体验更佳，作者认为携带版可能是这游戏的最佳体验方式，后续打算继续游玩并另写长文。",
+      "seo": "《恋爱与选举与巧克力》携带版试玩体验：PSP版独占枝川希美线，新增事件与30张CG，设置全语音、千里立绘修正、人物细节更丰富；对比高清重制版，携带版被认为更值得体验。",
+      "sourceHash": "05f366420bd53c95"
+    },
+    "2025/05/lxgw-wenkai-web": {
+      "summary": "霞鹜文楷是基于 Klee One 补全简繁常用字的开源中文字体，其屏幕阅读版 LXGW WenKai Screen 适合网页显示。更换流程包括在网页 head 中通过 Zstatic CDN 引入 lxgw-wenkai-screen-webfont 的样式文件，然后在站点 CSS 里把 body 的 font-family 设为 LXGW WenKai Screen。完成后动态博客需刷新并清除浏览器缓存，静态博客则要重启热开发服务器、清理本地缓存并重新构建，才能看到新字体生效。",
+      "seo": "使用霞鹜文楷屏幕阅读版（LXGW WenKai Screen）替换网站字体，只需 CDN 引入 CSS 并修改 font-family，附动态与静态博客的缓存与构建提示。",
+      "sourceHash": "15e65c1356d24176"
+    },
+    "2025/05/maitetsu-video-fix": {
+      "summary": "在 Arch Linux + GNOME 环境下用 Proton 9.0 运行 Steam 官方中文版《爱上火车 LastRun!!》时，人物线开场动画无法播放，改用 Proton GE 后反而黑屏卡死。参考 ProtonDB 上用户的建议，改用 Protontricks 为游戏容器安装缺失的 DirectShow 与 WMP9 组件；Flathub 用户还需用 Flatseal 开放文件系统权限，并可将源切换为上海交大或中科大镜像加速下载。修补完成后重启游戏，开场动画恢复正常播放，说明该方法能有效解决同类 Galgame 在 Proton 下视频组件缺失的问题。",
+      "seo": "《爱上火车》在 Linux 下开场动画黑屏、无法播放时，可用 Protontricks 为 Proton 容器安装 DirectShow 与 WMP9 组件修复，本文给出安装、Flatseal 权限配置与国内 Flathub 源切换的完整步骤。",
+      "sourceHash": "75086577de47586f"
+    },
+    "2025/05/misskey-sidebar": {
+      "summary": "文章以 Sharkey 2025.4.2-rc-stelpolva 为基准，逐一梳理 Misskey/Sharkey 侧边栏小工具的各类组件，包括个人资料、服务器信息、便签、通知、时间线、日历、RSS 阅读器、趋势、时钟、活动、照片、投稿窗口、服务器指标、作业队列、按钮、AiScript、小蓝、用户列表、搜索、聊天与联合等。每个组件均给出功能简介、示例截图与可调设置项，如 showHeader、height、transparent、url、refreshIntervalSec、maxEntries、fontSize、timezone、script 等，并标注默认值。结论是这些小组件覆盖信息展示、快捷操作与自定义扩展，配置灵活，能显著增强侧边栏的实用性。",
+      "seo": "Misskey/Sharkey 工具栏（侧边栏小工具）全组件详解：从个人资料、时间线、RSS 到 AiScript、小蓝，逐一说明功能、设置项与默认值，帮你在 Sharkey 2025.4.2 上自定义侧边栏。",
+      "sourceHash": "8800e808a8f70f46"
+    },
+    "2025/05/shr-misskey": {
+      "summary": "在 Fediverse 的 misskey.site 实例开分身账号后，重新体验了原版 Misskey，并与长期使用的 Sharkey 逐项对比。Misskey 缺少直接编辑帖子、单帖私密化和注册审批功能，发帖输入框高度也只能部分调整；而 Sharkey 额外提供 ListenBrainz 集成、Mastodon API 兼容、猫耳与猫语独立设置以及更方正的 UI 和字体自定义。作者认为这些差异源于分支定位，并非 Misskey 的缺陷，但个人仍更偏好 Sharkey 的编辑体验与界面风格。",
+      "seo": "对比 Misskey 与 Sharkey 的实际使用差异：Misskey 缺少直接编辑、单帖私密化和注册审批，Sharkey 则支持 Mastodon API、ListenBrainz 集成与 UI 自定义，供站长和用户选型参考。",
+      "sourceHash": "415f110e81a88e83"
+    },
+    "2025/06/decky-loader": {
+      "summary": "Decky Loader 是随 Steamdeck 出现的插件商店，通过插件为 Steam 及大屏幕模式添加美化与功能扩展，同时也适用于 Arch Linux 等 Linux 桌面 Steam 玩家。文章先说明适用条件：Linux 系统、手柄用户、基本英语能力与良好的 Github 网络环境，再给出两种安装方式，一是执行官方安装脚本（另附作者汉化的中文脚本），二是配合 SteamOS 手动使用 OhMyDeck 脚本，需依次启用开发者模式与 CEF 远程调试、切换到桌面模式、设置管理员密码、打开 Konsole 终端、禁用系统只读后执行安装命令。安装完成后回到游戏模式，按 Steamdeck 右侧三点按钮即可看到插件商店，作者认为这是 Linux 大屏幕手柄玩家的理想搭配。",
+      "seo": "Decky Loader 安装教程：面向 Steamdeck 与 Linux 大屏幕 Steam 玩家，介绍官方安装脚本、汉化脚本及 OhMyDeck 手动安装步骤，含开发者模式、终端命令与常见问题。",
+      "sourceHash": "8eb4682af43841eb"
+    },
+    "2025/06/self-fediverse-prepare": {
+      "summary": "自建 Fediverse 实例需要准备域名、服务器与对象存储三类资源。域名部分介绍了注册商选择与比价网站，推荐 Namesilo、Spaceship、Porkbun、Dynadot 等海外注册商，并建议使用海外 DNS 解析服务。服务器部分按 CPU、内存、硬盘、带宽、操作系统逐项给出配置建议，Misskey 建议 2 核 2G 起步，Mastodon 需更高配置，不建议使用 Windows Server。对象存储部分对比了 Hetzner、Backblaze B2、Cloudflare R2 等服务的 1TB 存储与流量成本，认为小实例用 R2 免费额度最划算。",
+      "seo": "自建 Fediverse 实例的完整准备清单：如何挑选域名与注册商、服务器 CPU 内存带宽配置建议，以及 Cloudflare R2 等对象存储的价格对比与选购方向。",
+      "sourceHash": "5139b777e3de64a4"
+    },
+    "2025/06/sickly-days-linux-run": {
+      "summary": "《痴情哥哥与病弱妹妹的乡间生活》Steam 版在 Linux/Steam Deck 上启动时会报错，原因是 Wine/Proton 对 Krkr2 引擎游戏兼容不佳，直接使用 Wine 运行同样可能崩溃。解决办法是先用 Protontricks 给该游戏安装 WMP11（或 WMP9）修补媒体组件，再从 vnwiki 下载 d2d1.dll 补丁放入游戏根目录，并在 Steam 启动项加入 WINEDLLOVERRIDES=\"d2d1.dll=n,b\" %command%。按此配置后游戏可正常启动运行，作者同时提醒 WMP 版本差异可能影响游戏内视频播放，并把相关经验与《爱上火车》的修复方法互相参照。",
+      "seo": "《痴情哥哥与病弱妹妹的乡间生活》Steam 版在 Linux 与 Steam Deck 上的运行修复教程：用 Protontricks 修补 WMP11 并配合 d2d1.dll 补丁解决 Krkr2 引擎报错。",
+      "sourceHash": "7e2655a2924cb28b"
+    },
+    "2025/08/kde-customization": {
+      "summary": "作者把主力系统从 CachyOS 换成 Fedora 43 KDE Plasma 版后，重新整理并分享了一套桌面美化方案。方案采用上下双面板布局，上方面板放置应用程序启动器、窗口列表、全局菜单、数字时钟与系统托盘，下方面板用图标任务管理器做成类 Dock 效果；借助 Panel-colorizer 插件分别为上下面板设置透明度和颜色，上面板基于 ChromeOS 预设并禁用 Color，下面板直接用 Translucent 预设。主题方面在全局设置中搭配 Fedora 全局主题、Moe 配色与 Plasma 样式、Breeze 窗口装饰、Colloid 图标、Hoshino Swimsuit 光标和 Redmi Clock 桌面时钟，所有插件与配色均可在 KDE 商店获取。合理布局可兼顾美观与效率。",
+      "seo": "分享 Fedora 43 KDE Plasma 6 桌面美化方案，包含上下双面板布局、Panel-colorizer 面板透明度设置、Fedora 与 Moe 全局主题搭配及 Redmi Clock 时钟插件，插件均可从 KDE 商店安装。",
+      "sourceHash": "8b124d7ac3d240ee"
+    },
+    "2025/10/affine-deploy": {
+      "summary": "Affine 是一款可自托管的类 Notion 知识库程序，相较 Outline 其官方文档更清晰，部署也更为简单。官方建议服务器至少 4 核 CPU、2GB 内存与 1.5GB 存储空间，小团队使用 2 核 CPU 也可应付。部署采用 Docker Compose，依次安装 Docker、创建数据目录、下载官方 docker-compose.yml 与 .env 文件，按需修改端口、域名和数据库等环境变量后执行 docker compose up -d 即可启动，通过 3010 端口访问。文章还提醒初始化后不要随意改动环境变量，整体体验表明 Affine 已适合作为团队自托管知识库。",
+      "seo": "Affine 部署教程：使用 Docker Compose 自托管类 Notion 知识库系统，包含存储、CPU、内存配置要求与完整环境变量配置步骤，并对比 Outline 给出选型建议。",
+      "sourceHash": "d91f8d51eb8fb8b3"
+    },
+    "2025/10/clarity-resource-list": {
+      "summary": "在 Clarity 博客主题（纸鹿修改版）的 /app/components/content/ 目录下新建 ResourceList.vue，即可获得一个资源列表与下载组件，用于替换部分页面组件并预留后续下载需求。组件通过 items 数组接收数据，每项支持 id、标题、副标题、摘要、标签、下载链接以及解压密码和下载密码，模板用 v-for 渲染卡片，有链接时显示可点击的下载按钮，无链接时按钮置灰禁用。样式基于 grid 与 flex 布局，窄屏自动转为纵向排列，配色沿用主题的 CSS 变量。在 Markdown 中用 ::resource-list 指令传入 items 的 YAML 配置即可调用，渲染出示例效果即表示接入成功。",
+      "seo": "为 Clarity 博客主题添加 ResourceList 资源列表组件的完整步骤：新建 Vue 组件、配置 items 数据字段、在 Markdown 中以 ::resource-list 指令调用，支持下载链接与解压、下载密码展示。",
+      "sourceHash": "45357f323d960c1f"
+    },
+    "2025/10/fnos-vps-started": {
+      "summary": "作者用性价比高的大盘鸡 VPS（2c2g、15G 系统盘加 500G 数据盘）做实验，借助开源项目 bin456789/reinstall 的 DD 脚本把基于 Debian 的国产 NAS 系统 FnOS 直接安装到 VPS 上。安装后通过 IP:5666 进入 WebUI 完成初始化，再从应用中心一键部署飞牛影视、下载管理器、Ani Rss 与 AutoBangumi，实现自动订阅、离线下载、刮削字幕并搭建个人影视库。体验结论是 FnOS 对硬件要求低、图形化管理省事，配合飞牛 APP 与 FN Connect 免费穿透可满足个人追番需求；但作为商业 IP 的 VPS，它无法自定义 Nginx 和 SSL 证书、不能给第三方应用绑定域名，网络管理偏弱，权限与影视库可定制性也不如 Emby 专业方案。",
+      "seo": "在低配大盘鸡 VPS 上用 DD 脚本安装 FnOS 个人 NAS 系统，配合飞牛影视与自动订阅下载打造动漫影视库，并总结其优缺点与适用场景。",
+      "sourceHash": "0bb0f94498644f2a"
+    },
+    "2025/10/lemmy-fediverse-deploy": {
+      "summary": "Lemmy 是 Fediverse 中类似 Reddit 或贴吧的链接聚合与讨论平台，由 Rust 编写，官方建议通过 Docker 部署且默认内存占用约 150 MB。文章给出安装 Docker、创建项目目录、下载 docker-compose.yml、lemmy.hjson、nginx_internal.conf 和 proxy_params 的步骤，并说明需将配置中的域名与 PostgreSQL 密码替换为实际值。发信部分建议移除默认 postfix 服务，改用外部 SMTP 参数，同时按示例调整 Nginx 内部配置。作者强调域名一旦部署不可更改，并注明本次仅为部署教程，尚未实际运行公共实例。",
+      "seo": "Lemmy 部署教程：基于 Rust 的 Fediverse 社区系统，使用 Docker 安装并配置域名、数据库密码、SMTP 邮箱和 Nginx，适合自托管链接聚合讨论平台。",
+      "sourceHash": "53d7dd71fa9766f4"
+    },
+    "2025/10/misskey-fediverse-deploy": {
+      "summary": "介绍在一台服务器上全量部署 Misskey 及其配套服务的完整流程。部署前需准备至少 2 核 4G 的服务器与域名，并强调因 ActivityPub 协议限制，实例启动后不可更换域名。操作上先用脚本安装 Docker，再用 Caddy 做反向代理并自动签发 HTTPS 证书，随后克隆 Misskey 仓库，复制并修改 default.yml、docker.env 与 compose.yml，配置实例 URL、3000 端口、PostgreSQL 与 Redis 连接。全文搜索引擎选用 sqlPgroonga 以获得更好的中文搜索支持，同时对读写分离、ID 生成算法等进阶选项作了说明。",
+      "seo": "一份 Misskey 自建部署教程，基于 Docker Compose 与 Caddy 反向代理，涵盖域名准备、PostgreSQL 与 Redis 连接、以及 sqlPgroonga 中文全文搜索等配置要点，助你搭建自己的联邦宇宙实例。",
+      "sourceHash": "ca80ae8cd2b995eb"
+    },
+    "2025/10/nukitashi-gv-end": {
+      "summary": "记录作者通关《拔作岛》第一部全部女主线并补完动画版后的个人感受。游戏虽挂着拔作标签，实质是围绕反抗岛上色情条例展开的热血剧情作，各线路风格差异极大：雏见线最为均衡、奈奈濑线最令人意难平、美岬线脑洞逆天、文乃线作为真结局燃到让人通宵难眠。动画版改编成功出圈，却也付出B站相关视频被全部下架的代价，剧情走向与游戏差异明显，令原作党始料未及。",
+      "seo": "《拔作岛》第一部游戏与动画的个人杂谈：从奈奈濑、雏见、美岬到文乃四条女主线的通关体验，到动画改编出圈后的得与失，聊聊这部披着拔作外皮的热血剧情作。",
+      "sourceHash": "8c708f60463c6346"
+    },
+    "2025/10/otterwiki-deploy": {
+      "summary": "OtterWiki 是一个基于 Python Flask 框架、使用 Markdown 的轻量自托管知识库，内存占用约 100MiB，还自带 Git HTTP 服务器，适合在低配设备上运行。部署流程为：先用 Linuxmirrors 脚本安装 Docker，再安装 Caddy 并配置反向代理，将 wiki.example.com 的请求转发到本地 8080 端口并启用 zstd/gzip 压缩，最后在 otterwiki 目录下编写 docker-compose.yml 启动 redimp/otterwiki:2 镜像并挂载 app-data 数据卷。配置域名解析后即可通过域名访问，首次注册的账户会自动成为管理员。",
+      "seo": "OtterWiki 是基于 Python Flask 的轻量自托管知识库，本文给出用 Docker 与 Caddy 反向代理部署 OtterWiki 的完整步骤，内存占用仅约 100MiB，支持 Markdown 与 Git 管理。",
+      "sourceHash": "2690fabaa2f1d317"
+    },
+    "2025/10/rust-waline-deploy": {
+      "summary": "Waline-Mini 是用 Rust 重写的 Waline 评论系统，由 jQiue 开发，官方称内存占用仅为 Node.js 版本的 1/25。通过 Zeabur 以 Docker 镜像方式部署，配置 DATABASE_URL、JWT_TOKEN、SITE_NAME、SITE_URL 等环境变量，并用 SQLite 做数据持久化，访问 /ui 注册的首个账号即为管理员。部署完成后台界面与 Waline 还原度接近 100%，实测平均内存占用约 3.48MB，验证了其极低的资源消耗。整体适合希望低成本自托管评论系统的用户尝试。",
+      "seo": "Waline-Mini 是基于 Rust 实现的高性能 Waline 评论系统，内存占用仅为 Node.js 版约 1/25。记录在 Zeabur 上用 Docker 部署的全过程，并实测其平均内存占用仅 3.48MB。",
+      "sourceHash": "aa39fca38bd7249c"
+    },
+    "2025/11/blog-1th-note": {
+      "summary": "作者回顾了从小学接触电脑、高中搭建资源站，到上大学后博客真正稳定产出的一年历程，先后使用过 WordPress、Typecho、Hexo、Hugo、Mix Space 等系统，因数据库效率、插件兼容和 Markdown 支持等问题最终转向纸鹿的 Nuxt 静态博客方案。期间完成 Nuxt 4 升级与站点功能改造，主力系统也从 Arch Linux 换到 Fedora Linux，并接触了 Galgame 与 Fediverse 自部署。结论是这些经验来自过往反复折腾与选择，希望今后仍能保持为学习探索而写博客的初心。",
+      "seo": "博客一周年随笔：回顾从 WordPress、Typecho、Hexo 到 Mix Space 再到 Nuxt 静态博客的更换历程，分析各系统取舍原因，记录一年来的技术成长与写作初心。",
+      "sourceHash": "174e75a722784ab5"
+    },
+    "2025/11/cachyos-handheld-chinese-input": {
+      "summary": "在 CachyOS Handheld（基于 Arch Linux 的 SteamOS 仿制发行版）上，游戏桌面默认缺失输入法支持，导致 Steam Input 中文输入无法使用。解决方式是先用 paru 安装 ibus、ibus-pinyin 与 ibus-anthy，再编辑 /usr/share/gamescope-session-plus/gamescope-session-plus，把 ibus-daemon 的启动参数改为使用 /usr/lib/kimpanel-ibus-panel 面板，重启后在游戏桌面添加中文键盘。若不降级 libxkbcommon，候选词会变成数字，因此需用 downgrade 将 libxkbcommon 回退到 1.11.0 并加入 IgnorePkg，重启即可正常输入中文。",
+      "seo": "CachyOS Handheld 上恢复 Steam Input 中文输入：安装 ibus 与拼音引擎、修改 gamescope-session-plus 启动参数，并降级 libxkbcommon 到 1.11.0 解决候选词显示为数字的问题。",
+      "sourceHash": "73bc45d5c36cc85b"
+    },
+    "2025/11/fedora-cosmic-beta": {
+      "summary": "在 Fedora KDE 版上通过 dnf group install 安装 Cosmic desktop Beta 1，并与 KDE 双持在 SDDM 切换登录，实测该桌面已达到基本日用程度但细节仍需打磨。安装方式为从 Fedora 官方仓库装 cosmic-desktop 与 cosmic-desktop-apps，预装 Fedora Cosmic Spin 则仍停留在 Alpha 且英文卡顿。实测 QQ、微信等国内应用无法跟随 125% 缩放，需手动设环境变量强制缩放，且 Wayland 与 XWayland 间不能拖放文件；中文输入 Fcitx5 配环境变量可用，iBus 暂不可用。结论是 Cosmic 处于可用但未完善的 Beta 阶段。",
+      "seo": "Fedora 上安装体验 Cosmic desktop Beta 1：用 dnf 装 cosmic-desktop 组与 KDE 双持，实测日用性、125% 缩放与输入法兼容问题。",
+      "sourceHash": "af74a2cc9ef6ea64"
+    },
+    "2025/11/piece-hy1": {
+      "summary": "重温《堀与宫村》及《piece》后，又看了《擅长捉弄的高木同学 剧场版》，借此回忆起自己的二次元入坑经历。高一假期在 QQ 空间发布高木动画动态，被高中同学留言认出同好，回校后两人因二次元熟络，对方成了自己的引路人。高木剧场版网络资源发布时，两人还在校，便约在凌晨一点半的宿舍同床共戴一副耳机看完 8G 片源。如今大学各奔东西，仍与几位高中兄弟偶尔相聚，最近一次是四人露营，那段时光令人怀念。",
+      "seo": "从《堀与宫村》《擅长捉弄的高木同学 剧场版》说起，回忆因高木与高中同学结缘、凌晨宿舍共看剧场版的二次元青春往事。",
+      "sourceHash": "185d6d8a258ef411"
+    },
+    "2025/11/riddle-joker": {
+      "summary": "柚子社第十作《Riddle Joker》以超能力都市与星幽使为背景，讲述主角在原晓与义妹七海潜入星幽使聚集的校园的故事。作者按个人偏好排出式部茉优、在原七海、三司绫濑、二条院羽月、壬生千咲五位女主顺位，逐条分析各线人设、星幽能力、角色歌花色隐喻与剧情表现，并指出学姐线男主自爆处理失当、绫濑线结局战斗表现力不足、羽月线戏份拉胯等问题。整体来看剧情对世界观铺垫偏单薄，人设与发糖部分尚能弥补，游戏系统相较魔宴进步明显。结论是作为废萌仍能提供情绪价值，但以魔宴为参照会感到失望，适合放空大脑游玩。",
+      "seo": "《Riddle Joker》柚子社超能力题材 Galgame 简评：盘点式部茉优、在原七海、三司绫濑、二条院羽月、壬生千咲五条个人线的人设与剧情优劣，说明为何剧情与人设都不足，并给出是否值得一推的评价。",
+      "sourceHash": "a2b7da336e697ac0"
+    },
+    "2025/12/fedora-silverblue-install-and-immutable-future": {
+      "summary": "从 Steam Deck 换用基于 Fedora Silverblue 的 Bazzite 后，作者重新体验了不可变 Linux，并记录了 Fedora Silverblue 的安装流程：官网或国内镜像站下载 ISO，用 Ventoy、Rufus 或 Fedora Media Writer 制作启动盘，经传统 Anaconda 安装器部署后首次开机执行 rpm-ostree update 并重启。配置上建议启用 Flathub，通过 Flatpak 安装应用，按需添加 GNOME 扩展，必要时才用 rpm-ostree 叠加软件包，并可借助 Distrobox 运行其他发行版应用。作者认为，采用 A/B 分区与只读系统、支持原子更新和回滚的不可变发行版，对不想折腾系统的大众桌面用户更安全合适，正逐渐成为 Linux 桌面的未来主流形态。",
+      "seo": "Fedora Silverblue 安装记录：从下载镜像、制作启动盘、Anaconda 安装到 rpm-ostree 更新、Flathub 与 Flatpak 应用配置，并附不可变 Linux 的使用体验与未来思考。",
+      "sourceHash": "6aa579feff803a90"
+    },
+    "2025/12/love-love-school-linux-chinese": {
+      "summary": "Love Love School Days 是一款 2023 年发行的 Unity 游戏，Steam 上无官方中文，B 站 UP 主提供了基于 BepInEx 和 Reipatcher 的汉化补丁。在 Fedora 43 与 Bazzite 43 上用 Proton 运行并覆盖补丁后游戏仍为英文，原因是 Proton/Wine 默认不加载游戏目录内的 dll，导致 UnityDoorstop 无法启动 BepInEx。解决办法是用 Protontricks 选中该游戏、进入 Wine 配置程序的“函数库”页，新增 winhttp 函数库顶替并保存退出，之后游戏即显示中文。也可在补丁已安装的前提下直接给 Steam 添加启动参数 WINEDLLOVERRIDES=\"winhttp=n,b\" %command%，效果与前者一致。",
+      "seo": "在 Linux 上用 Proton 玩 Love Love School Days 时，BepInEx 汉化补丁因 DLL 转发失效而不生效，可通过 Protontricks 添加 winhttp 函数库顶替或设置 WINEDLLOVERRIDES 启动参数解决。",
+      "sourceHash": "2d80a1e26a37db88"
+    },
+    "2025/12/oss-prepare-list": {
+      "summary": "以每月 100GB 标准存储加 100GB 出站流量为统一口径，按预付费资源包价格横向对比腾讯云 COS、阿里云 OSS、华为云 OBS、七牛云 Kodo、又拍云、雨云、缤纷云及 123 网盘直链等国内对象存储方案，并整理各家免费额度与计费规则，随后开始介绍 Cloudflare R2 等海外服务商。国内对比中雨云湖北十堰最低（约 20 元每月），七牛云、腾讯云中国大陆次之，华为云香港与阿里云偏高。结论是个人博客若对读写速度与稳定性没有硬性要求，选择海外对象存储或用 EdgeOne 反代更为划算。",
+      "seo": "国内外主流对象存储价格对比：以 100GB 存储加 100GB 流量为统一口径，汇总腾讯云 COS、阿里云 OSS、华为云 OBS、七牛云、雨云、缤纷云、Cloudflare R2 等资源包价格与免费额度，供个人站长选型参考。",
+      "sourceHash": "900dc1d6f432e075"
+    },
+    "2026/03/honorx16-ryzen-linux": {
+      "summary": "荣耀 X16 锐龙版（2024，R5-7640HS）装上 CachyOS 后出现两类问题：合盖睡眠后唤醒需 8 秒以上甚至睡死，以及 HDMI 外接显示器画面灰白发亮、KDE 中切换 RGB 与 YCbCr 色彩范围均无效。前者源于荣耀 BIOS 阉割了 S3、只剩 Modern Standby，通过在 UAFB 中打开 AMD RAID Mode 恢复正常秒唤醒；后者经排查无果，改用 USB-C 扩展坞走 DisplayPort 输出后色彩正常。作者认为该机 BIOS 精简过多、Linux 下问题难根治，不推荐 Linux 用户购买，但在 Windows 下表现良好。",
+      "seo": "荣耀 X16 锐龙版（2024）安装 Linux 后的睡眠唤醒慢与 HDMI 外接显示器色彩失真问题记录，含开启 AMD RAID Mode、改用 USB-C 转 DP 的解决办法与体验评价。",
+      "sourceHash": "de1990f491d4151d"
+    },
+    "2026/03/noctalia-plugin-process-reporter": {
+      "summary": "作者把主力机换成 Arch+Niri+Noctalia 后，用 GPT 5.3-Codex 的 Agent 能力开发了一个 Noctalia 插件 Process Reporter，用于把当前聚焦窗口信息和媒体播放状态合并上报到博客云函数。插件放在个人插件库 PaloMiku/noctalia-plugins 中，可通过自定义插件源安装更新，上报 JSON 包含窗口 appId、应用名、曲目标题、艺术家、封面与播放状态，并带 token 鉴权和限流防止滥用。经云函数处理后数据呈现在博客组件栏，实现实时在线状态展示。作者认为即使不熟悉 QT/QML 也能借 AI 配合文档写出功能完整的插件。",
+      "seo": "用 Codex 开发 Noctalia 插件 Process Reporter，在 Arch+Niri 环境下采集聚焦窗口与媒体播放信息，经云函数上报并展示到博客在线状态栏。",
+      "sourceHash": "cc21a556dfef24e8"
+    }
+  }
+}

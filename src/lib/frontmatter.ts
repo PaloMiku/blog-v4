@@ -40,7 +40,6 @@ export interface AdminFieldSpec {
 export const ADMIN_FIELDS: readonly AdminFieldSpec[] = [
 	{ key: 'title', label: '标题', kind: 'text', placeholder: '文章标题（列表与 RSS 用它）' },
 	{ key: 'subtitle', label: '副标题', kind: 'text', placeholder: '可选，显示在标题下方' },
-	{ key: 'description', label: '摘要', kind: 'textarea', placeholder: 'SEO 描述 / 列表摘要' },
 	{ key: 'date', label: '创建日期', kind: 'text', placeholder: 'YYYY-MM-DD HH:mm:ss' },
 	{ key: 'updated', label: '更新日期', kind: 'text', placeholder: '留空表示未更新' },
 	{ key: 'categories', label: '分类', kind: 'list', placeholder: '逗号分隔，取第一个作一级分类' },

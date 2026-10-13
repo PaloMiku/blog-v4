@@ -6,6 +6,7 @@ import Comment from '../components/post/Comment.astro'
 import Excerpt from '../components/post/Excerpt.astro'
 import PostFooter from '../components/post/PostFooter.astro'
 import PostHeader from '../components/post/PostHeader.astro'
+import PostRelated from '../components/post/PostRelated.astro'
 import PostSurround from '../components/post/PostSurround.astro'
 import Toc from '../components/widget/Toc.astro'
 import { contentComponents } from '../lib/content-components'
@@ -100,19 +101,18 @@ const canonicalUrl = new URL(`/${entry.id}`, siteUrl).toString()
 const imageUrl = entry.data.image ? new URL(entry.data.image, siteUrl).toString() : undefined
 
 /**
- * meta description：frontmatter 优先，缺省时**不要**让 22 个页面共用同一句站点简介。
+ * meta description：`seo` 优先，缺省时**不要**让 22 个页面共用同一句站点简介。
  *
- * 2026-10-03 实测：63 个 mdx 里有 20 个没有 `description`（全是 `content/games/`
+ * 2026-10-03 实测：63 个 mdx 里有 25 个没有摘要（全是 `content/games/`
  * 下的 galgame 条目），它们全部回落到 `blogConfig.description`，于是 25 个页面的
  * meta description 逐字相同。重复的 description 对这些页面没有任何区分度——
  * 它们能被抓到的关键词全在标题里，描述栏却写着一句跟本页无关的站点简介。
  *
  * 这里按「标题 + 站点名」合成一句：至少**逐页唯一**、含标题这个主检索词。
- * ⚠️ 这是**占位**，质量上限有限。真正的描述应该写进 frontmatter 的
- * `description:`（schema 已经是 `z.string().optional()`，加了直接生效），
- * 写了就以 frontmatter 为准。
+ * ⚠️ 这是**占位**，质量上限有限。games/ 下的条目没有写进 summaries.json，
+ * 要给它们正经描述得先补 JSON 条目。
  */
-const description = entry.data.description
+const seoDescription = entry.data.seo
 	?? `「${entry.data.title ?? entry.id}」——${blogConfig.title}`
 
 const jsonLd: Record<string, unknown>[] = [
@@ -120,7 +120,7 @@ const jsonLd: Record<string, unknown>[] = [
 		'@id': `${canonicalUrl}#blogposting`,
 		'@type': 'BlogPosting',
 		'headline': entry.data.title,
-		...(description ? { description } : {}),
+		...(seoDescription ? { description: entry.data.summary ?? seoDescription } : {}),
 		...(imageUrl ? { image: imageUrl } : {}),
 		...(toIsoDate(entry.data.date) ? { datePublished: toIsoDate(entry.data.date) } : {}),
 		...(toIsoDate(entry.data.updated ?? entry.data.date) ? { dateModified: toIsoDate(entry.data.updated ?? entry.data.date) } : {}),
@@ -140,7 +140,7 @@ const jsonLd: Record<string, unknown>[] = [
 		title={entry.data.title ?? entry.id}
 		hasAside={hasAside}
 		bigPicturePage={bigPicturePage}
-		description={description}
+		description={seoDescription}
 		image={entry.data.image}
 		ogType="article"
 		hasMath={entry.data.hasMath}
@@ -171,8 +171,8 @@ const jsonLd: Record<string, unknown>[] = [
 		/>
 	)}
 
-	{/* 对应 Nuxt 侧的 `<PostExcerpt v-if="excerpt">`：frontmatter 无 description 时不输出 */}
-	{entry.data.description && <Excerpt excerpt={entry.data.description} />}
+	{/* 无摘要条目（JSON 里没键）整块不输出 */}
+	{entry.data.summary && <Excerpt excerpt={entry.data.summary} model={entry.data.summaryModel} />}
 
 	{/*
 	 * 正文阅读入口。spec §按键语义 要求「正文阅读入口使用临时 `tabindex="-1"`，
@@ -241,6 +241,13 @@ const jsonLd: Record<string, unknown>[] = [
 			references={entry.data.references}
 		/>}
 	<PostSurround currentId={entry.id} />
+	{/*
+	 * 相关阅读：排在上下篇之后、评论之前。它是「读完这篇还能读什么」，
+	 * 而上下篇解决的是「按时间接着走」——两者是不同的意图，后者先答完。
+	 * 组件内部对非文章条目（游戏页、关于页）算出空候选时整块不输出，
+	 * 因此这里不需要条件渲染。
+	 */}
+	<PostRelated currentId={entry.id} />
 	<Comment />
 
 	<Fragment slot="aside">

@@ -22,30 +22,38 @@ import Icon from '../Icon.astro'
 import blogConfig from '../../config/blog'
 
 interface Props {
-	/** frontmatter 的 description，对应 Nuxt 侧的 `excerpt` computed */
+	/** 完整长摘要，来自 `src/data/summaries.json`（loader 注入的 `summary`） */
 	excerpt: string
+	/**
+	 * 徽章上显示的**短名**，构建期已由 `deriveModelLabel` 从完整模型 ID 推导好。
+	 * **空串 / 缺省时不渲染徽章**——没有可信的来源就不标，
+	 * 宁可空着也不显示一个猜的模型名。
+	 */
+	model?: string
 }
 
-const { excerpt } = Astro.props
+const { excerpt, model } = Astro.props
 
 /*
  * ⚠️ 同源内联，非重复定义：`app/app.config.ts` 的 `component.excerpt` 段
  * （该文件头部已注明 excerpt 尚未迁入 app-config.ts）。
- * animation / caret 是那里的硬编码默认值，label / badge 取自根 blog.config 的 excerpt 段。
+ * animation / caret 是那里的硬编码默认值，label 取自根 blog.config 的 excerpt 段，
+ * badge 是数据（`src/data/summaries.json` 的 `$meta.modelLabel`）由 prop 传入。
  * 待 `excerpt` 迁入 src/lib/app-config.ts 后，这里改读 appConfig.component.excerpt。
  */
 const excerptConfig = {
 	animation: true,
 	caret: '_',
 	label: blogConfig.excerpt?.label ?? '智能摘要',
-	badge: blogConfig.excerpt?.badge ?? 'Kimi·K2-Turbo',
+	/** 空串 ⇒ 徽章整块不输出 */
+	badge: model ?? '',
 }
 
 /** 折叠开关的长度条件，对应 Nuxt 版的 `excerpt.length > 80` */
 const collapsible = excerpt.length > 80
 ---
 
-{/* 对应原模板的 `v-if="excerpt"`，即 frontmatter 没有 description 时整块不输出 */}
+{/* 对应原模板的 `v-if="excerpt"`：JSON 里没有该条目的 summary 时整块不输出 */}
 {excerpt && (
 	<div
 		class="md-excerpt ai-excerpt"
@@ -60,7 +68,7 @@ const collapsible = excerpt.length > 80
 				</span>
 				<span class="ai-excerpt-label">{excerptConfig.label}</span>
 			</div>
-			<span class="ai-excerpt-badge">{excerptConfig.badge}</span>
+			{excerptConfig.badge && <span class="ai-excerpt-badge">{excerptConfig.badge}</span>}
 		</div>
 
 		{/*

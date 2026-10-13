@@ -75,13 +75,52 @@ const blogConfig = {
 		useRandomPremalink: false,
 		/** 隐藏基于文件路由（不是自定义链接）的 URL /post 路径前缀 */
 		hidePostPrefix: true,
+		/**
+		 * 页尾「相关阅读」（`PostRelated.astro` + `lib/content.ts` 的 `getRelated`）
+		 * 的候选数与打分权重。
+		 *
+		 * 站点是纯静态的，推荐结果只能在构建期算出来，读者之间**没有任何个性化信号**
+		 * （无点击、无浏览记录、无 cookie）。能用的只有文章自身的元数据，权重即
+		 * 「同属一类内容，在多大程度上算相关」。
+		 *
+		 * 取值理由（按信号强度递减）：
+		 * - `collection` 最高：同一合集是**作者显式声明**的系列关系，比任何自动推断都可靠；
+		 * - `category` 次之：分类是明确的主题归属，取 3 让「同分类」压过
+		 *   「同版式 + 同时间段」这种一堆弱信号；
+		 * - `tag` 再次：单个标签的题材重合不如分类明确（38 篇文章里 43 个唯一标签，
+		 *   很多只出现一次），所以每命中一个才 +2，两个共同标签才追平同分类；
+		 * - `type` 与 `recency` 是弱信号，只在题材打平时微调，不该主导排序。
+		 *
+		 * ⚠️ 权重是**站点可调项**，不是算法常量。改这里等于改「什么算相关」，
+		 * 别去组件里改分数、也别在 `getRelated` 内写死（见该函数顶部的判据）。
+		 */
+		related: {
+			/** 每篇推荐的文章数 */
+			limit: 4,
+			/** 同合集 */
+			collection: 4,
+			/** 命中任意一个共同分类 */
+			category: 3,
+			/** 每一个共同标签 */
+			tag: 2,
+			/** 同版式（tech / story） */
+			type: 1,
+			/** 发布日期在 recencyDays 天内 */
+			recency: 1,
+			/** recency 的天数窗口 */
+			recencyDays: 90,
+		},
 		/** 禁止搜索引擎收录的路径 */
 		robotsNotIndex: ['/preview', '/previews/*'],
 	},
 
+	/**
+	 * 摘要块（`Excerpt.astro`）的静态文案。
+	 * 生成来源徽章不在这里：它是数据，取自 `src/data/summaries.json` 的 `$meta.model`，
+	 * 由 loader 注入后作为 prop 传入（缺省则整块不渲染）。
+	 */
 	excerpt: {
 		label: '智能摘要',
-		badge: 'Qwen 3.7 Max',
 	},
 
 	/** 博客 Atom 订阅源 */

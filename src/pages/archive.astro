@@ -147,7 +147,7 @@ const listStates = ['date', 'updated'] as const
 							{yearGroup.map((article, index) => (
 								<Archive
 									title={article.data.title}
-									description={article.data.description}
+									description={article.data.summary}
 									date={article.data.date}
 									updated={article.data.updated}
 									categories={article.data.categories}
@@ -224,7 +224,7 @@ const listStates = ['date', 'updated'] as const
 			{list.flatMap(article => listStates.map(state => (
 				<Archive
 					title={article.data.title}
-					description={article.data.description}
+					description={article.data.summary}
 					date={article.data.date}
 					updated={article.data.updated}
 					categories={article.data.categories}

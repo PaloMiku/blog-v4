@@ -5,7 +5,8 @@ import assert from 'node:assert/strict'
 import { after, before, describe, it } from 'node:test'
 import { __resetCollection, __setCollection } from './stubs/astro-content.mjs'
 
-const { categorizeArticles, getByCollection, getPostsSorted, getRecommended, getSurroundings, sortArticles, toPath } = await import('../src/lib/content.ts')
+const { categorizeArticles, getByCollection, getPostsSorted, getRecommended, getRelated, getSurroundings, sortArticles, toPath } = await import('../src/lib/content.ts')
+const { default: blogConfig } = await import('../src/config/blog.ts')
 
 function e(id, data = {}) {
 	return { id, data: { isPost: false, ...data } }
@@ -134,5 +135,104 @@ describe('toPath', () => {
 	it('条目 id 加前导斜杠即 URL 路径', () => {
 		assert.equal(toPath(e('a/b')), '/a/b')
 		assert.equal(toPath(e('link')), '/link')
+	})
+})
+
+describe('getRelated', () => {
+	/*
+	 * 与共享夹具分开的一份：共享 FIXTURE 的字段太少（无 tags / 无 type），
+	 * 测不出权重之间的**相对**关系。权重来自 blogConfig.article.related，
+	 * 断言只依赖「谁该在谁前面」这个序，不钉死具体名次。
+	 */
+	const RELATED = [
+		// 当前：同合集 + 同分类 + Linux 标签
+		e('cur', { isPost: true, date: '2025-06-01', type: 'tech', categories: ['技术'], tags: ['Linux'], collection: 's' }),
+		// 只同分类同标签（无合集）
+		e('cat-tag', { isPost: true, date: '2025-05-01', type: 'tech', categories: ['技术'], tags: ['Linux'] }),
+		// 只同分类
+		e('cat-only', { isPost: true, date: '2025-04-01', type: 'story', categories: ['技术'] }),
+		// 同合集但别的都对不上
+		e('same-series', { isPost: true, date: '2025-03-01', type: 'story', categories: ['生活'], tags: ['日常'] }),
+		// 零重叠：靠 recommend / date 破平
+		e('zero-hot', { isPost: true, date: '2024-01-01', type: 'story', categories: ['杂谈'], recommend: 9 }),
+		e('zero-new', { isPost: true, date: '2026-01-01', type: 'story', categories: ['杂谈'] }),
+		// 草稿：任何时候都不该被推荐
+		e('draft-post', { isPost: true, date: '2025-06-01', draft: true, categories: ['技术'], tags: ['Linux'], collection: 's' }),
+		// 非文章：即便字段全中也不该进候选
+		e('about-page', { date: '2025-06-01', type: 'tech', categories: ['技术'], tags: ['Linux'], collection: 's' }),
+	]
+
+	function withFixture(fn) {
+		return async () => {
+			__setCollection(() => RELATED)
+			try {
+				await fn()
+			}
+			finally {
+				__setCollection(() => FIXTURE)
+			}
+		}
+	}
+
+	it('排除自己', withFixture(async () => {
+		const list = await getRelated('cur')
+		assert.ok(!list.some(x => x.id === 'cur'))
+	}))
+
+	it('草稿与非文章都不进候选（分数再高也不推）', withFixture(async () => {
+		const list = await getRelated('cur')
+		assert.ok(!list.some(x => x.id === 'draft-post'), '草稿被推荐了')
+		assert.ok(!list.some(x => x.id === 'about-page'), '非文章被推荐了')
+	}))
+
+	it('同合集 + 同分类 + 同标签排在最前', withFixture(async () => {
+		const list = await getRelated('cur')
+		assert.equal(list[0].id, 'cat-tag')
+	}))
+
+	it('同合集压过同分类：collection(4) > category(3) —— 作者显式声明的系列关系最可靠', withFixture(async () => {
+		const list = await getRelated('cur')
+		// cat-only 只有 category(3)；same-series 只有 collection(4)
+		assert.ok(list.findIndex(x => x.id === 'same-series') < list.findIndex(x => x.id === 'cat-only'))
+	}))
+
+	it('同分类 + 同标签压过只同分类', withFixture(async () => {
+		const list = await getRelated('cur')
+		assert.ok(list.findIndex(x => x.id === 'cat-tag') < list.findIndex(x => x.id === 'cat-only'))
+	}))
+
+	it('零分候选不丢弃：recommend 大的排前，同值则 date 新的排前', withFixture(async () => {
+		const list = await getRelated('cur')
+		// cur 的 2025-06-01 与 zero-hot / zero-new 都超出 recencyDays 之外可能命中，
+		// 故这两条只靠 recommend → date 破平：zero-hot(recommend 9) 先于 zero-new(无 recommend)
+		assert.ok(list.findIndex(x => x.id === 'zero-hot') < list.findIndex(x => x.id === 'zero-new'))
+	}))
+
+	it('limit 截断生效；limit<=0 返回空', withFixture(async () => {
+		assert.equal((await getRelated('cur', 2)).length, 2)
+		assert.deepEqual(await getRelated('cur', 0), [])
+	}))
+
+	it('候选不足 limit 时用 0 分文章填满，不渲染空块', withFixture(async () => {
+		// 8 个条目里：排除自己 / 草稿 / 非文章 → 5 个候选，用 limit=10 逼出全部
+		const list = await getRelated('cur', 10)
+		assert.equal(list.length, 5)
+	}))
+
+	it('当前 id 不存在（非文章页 / 未知 id）→ 空数组，组件整块不输出', withFixture(async () => {
+		assert.deepEqual(await getRelated('about-page'), [])
+		assert.deepEqual(await getRelated('nope'), [])
+	}))
+
+	it('缺 date 的条目参与排序而不抛错', withFixture(async () => {
+		__setCollection(() => [e('cur', { isPost: true, categories: ['技术'] }), e('no-date', { isPost: true, categories: ['技术'] })])
+		const list = await getRelated('cur')
+		assert.deepEqual(list.map(x => x.id), ['no-date'])
+		__setCollection(() => FIXTURE)
+	}))
+
+	it('limit 缺省取自 blogConfig.article.related.limit', async () => {
+		// 共享 FIXTURE 有 6 篇文章 → 排除自己后 5 个 ≥ W.limit
+		assert.equal((await getRelated('c-first')).length, blogConfig.article.related.limit)
 	})
 })

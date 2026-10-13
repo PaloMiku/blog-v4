@@ -23,6 +23,7 @@ pnpm typecheck               # tsc -p tsconfig.check.json
 pnpm lint                    # ESLint（含 CSS 规则）；本机 pnpm 可能 EBUSY，可改用 npx eslint
 pnpm test                    # node --test，纯逻辑直测，不构建
 pnpm new                     # 新建文章（写 src/content/posts/<年>/<名>.mdx）
+pnpm summary                 # 摘要增量预览（只列待生成，不写盘）；--write 才调模型并写盘
 pnpm accept                  # 发布档（release）：构建 + 发布必需门禁；清单只在 scripts/accept.mjs
 pnpm accept:maintenance      # 深度维护审计：发布档全量 + CSS/DOM/台账/CDN 等深度门禁
 pnpm accept:parity           # 迁移对拍档：基线/线上比较，耗时 20+ 分钟，仅切换 / 发布前跑
@@ -47,7 +48,10 @@ node scripts/probe-subtree.mjs --sel='<css>'  # 逐节点几何对比（诊断�
 - UI 组件全自研（`src/components/` 根下有 `Icon.astro` 与 `ModalHost.astro`，
   其下按 `blog/` `content/` `post/` `partial/` `popover/` `util/` `widget/` 分组），
   第三方仅 `astro-icon` 与 `embla-carousel`
-- **内容唯一真相源是 `src/content/**/*.mdx`**（篇数看 `pnpm build` 日志或数文件）
+- **内容唯一真相源是 `src/content/**/*.mdx`**（篇数看 `pnpm build` 日志或数文件）；
+  **摘要的真相源是 `src/data/summaries.json`**（不在 frontmatter，坑位 34）
+- **零 LLM 依赖**：`pnpm summary` 的模型调用是裸 fetch（`scripts/lib/llm.mjs`），
+  打 OpenAI 兼容端点，配置在 `.env`（坑位 36）
 - 三层配置分工：内容/分类/友链 → `src/config/blog.ts`；导航/页脚/交互默认值 →
   `src/lib/app-config.ts`；内容 schema 与 loader → `src/content.config.ts`；构建 →
   `astro.config.mjs`
@@ -304,6 +308,67 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
     要在门禁里自己推导成 `.output/public`（`check-critical-assets` 初版就这么写，
     本机一路绿、推上去自我放弃）。
     **好消息**：这类失效由 skip 策略机制抓住，说明判据做对了。
+33. **⚠️ 删 YAML 键时，块标量（`key: |` / `key: >`）不是「一行」。**
+    正则 `/^description:[ \t]*(?:.*\n(?:[ \t]+.*\n?)*)?/m` 只吃掉 `description: |` 那一行，
+    把**缩进的多行正文留在 frontmatter 里**。YAML 会把那段缩进当成前一个键的续行或
+    后续内容——实测 `date: 2025-12-10 05:00:00` 被污染成 `2025-12-11T20:00:00Z`，
+    而**几何 / DOM 门禁全部看不出来**（date 变了但盒子没变）。只有 `check-dates`
+    与 `check-summaries` 这类**内容层**门禁抓到。
+    **判据**：批量改 frontmatter 后必须跑 `check-dates`（它比 source↔产物时刻），
+    且改动前后 `pnpm summary` 的 `unchanged` 计数应当保持不变（`sourceHash` 整段排除
+    frontmatter，所以**只修 frontmatter 不该让任何条目变成待生成**——若变了说明正文被动过）。
+    同族：`description:` 若出现在**正文代码块**里（如 1Panel 应用声明模板），
+    按全文 grep 的门禁会误报——判据必须限定在 frontmatter 边界内，见 `check-summaries`。
+34. **摘要真相源是 `src/data/summaries.json`，不在 frontmatter。** `summary`（完整长摘要，供
+    Excerpt / JSON-LD / Atom / llms.txt / 列表卡片）与 `seo`（≤150 字，供 meta / og）是两个
+    字段，刻意分开：SEO 结果摘要在 155~160 字处截断，长摘要进 meta 是白占权重。
+    键 = 条目 id（`content-id.ts` 的 URL 合同）。生成来源是**全局单值** `$meta.model`，
+    **为空则徽章不渲染**——没有可信来源就不标，别显示一个猜的模型名。
+    徽章显示的是它推导出的短名（坑位 37），不是完整 ID。
+    `sourceHash`（正文 sha256 前 16 位）是增量判据：**正文没变就不重生成**，
+    人工润色也不会被覆盖（要重写用 `pnpm summary --force` / `--only <id>`）。
+    一条不变量由 `check-summaries` 守着：键集合 == `posts/` 下的条目 id 集合，多一个少一个都红。
+    **`seo` 另有三条判据**（≤150 / 非空 / frontmatter 无残留），因为空 `seo` 的后果是
+    meta description 空白：`??` 对空串不生效，loader 的 `if (rec?.seo)` 又会挡掉它。
+    红绿双向自检是 `scripts/check-summaries-red.mjs`（注入幽灵键 / 缺键 / seo 超长 /
+    seo 空串 / frontmatter 残留，逐条断言真门禁会变红，再断言还原后回绿；
+    同时用 `write-1panel-app.mdx` 验证正文代码块里的 `description:` 不误报）。
+    约 1 秒，**单跑**，不进发布档——与坑位 22 的 `tab-panels-red.mjs` 同一约定。
+35. **⚠️ 生成失败时必须让那个键「完全没被碰过」，尤其不能盖新的 `sourceHash`。**
+    `applyEntry` 在解析失败 / 调用失败时直接 return 是一条硬要求，不是优化：
+    盖上哈希 ⇒ 下次 `hashSource(src) === rec.sourceHash` 成立 ⇒ 判成 `unchanged`
+    ⇒ 那篇文章的摘要**永远不会再生成**，而 `pnpm summary` 报「已同步」、
+    `check-summaries` 报绿、门禁全红绿。**一次网络抖动变成永久静默丢失，且零信号**
+    ——坑位 29 的假绿，触发条件只是「写回时顺手把 hash 一起存了」。
+    同族：`--only` 必须压过 `--force`（`ONLY ? id === ONLY : FORCE || …`），
+    写成 `FORCE || ONLY === id` 会让 `--force --only x` 静默变成全量重算 38 篇。
+    副作用也要显式：写回后逐条打印新旧字数，让人看见「人工润色被覆盖了几条」。
+36. **模型配置在 `.env`，读法是 node 原生的 `--env-file-if-exists`**（见
+    `package.json` 的 `summary` 脚本），**不装 dotenv**——全仓库维持零 LLM 依赖，
+    `scripts/lib/llm.mjs` 是裸 fetch。`LLM_MODEL` 有两个身份：请求用的模型，
+    与写进 `$meta.model` 的徽章署名，**两者必须是同一个值**，否则 38 篇文章会署一个
+    不是它们来源的名字。`$meta.model` 只在**真的生成过东西**时更新：
+    跑个 no-op 就把全站署名改掉是另一种撒谎。
+    密钥唯一的读取点是 `authHeaders`，错误路径只抛状态码与 provider 的 message，
+    **不打 request body / headers**（日志会进 issue 与 CI artifact）。
+    `seo` 在生成侧恒过一遍 `clampDescription`（缺失 / 空串 / 超长一并覆盖），
+    门禁侧另有非空判据——两侧都堵，比只在渲染期截断便宜。
+37. **⚠️ 别在代码里硬编码「厂商 slug → 展示名」映射表。** 徽章要显示短名
+    （`deepseek/deepseek-flash` 是 21 字符，而徽章是 `0.75rem` 胶囊），
+    最省事的做法是抄一张 `VENDOR_NAMES` 表——**那是把开放集合写进代码**：
+    加个厂商就得改一行代码，而漏改的后果很隐蔽（`Moonshotai Kimi K2` 那种冗余）。
+    实测**不需要任何厂商知识**也能全部推对：`moonshotai/kimi-k2` → `Kimi K2`、
+    `anthropic/claude-sonnet-4.5` → `Claude Sonnet 4.5`、`x-ai/grok-4` → `Grok 4`。
+    规则只有两条：标签**只由型号段构成**（厂商 slug 是路由命名空间，读者不认识），
+    外加**厂商首词 == 型号首词时剥掉首词**（`deepseek/deepseek-flash`）。
+    ⚠️ 去重判据必须限定在**首词**：早先按「厂商各词 × 型号任意词求交集」，
+    `meta-llama` 的 `llama` 命中了 `llama-4-70b` 的首词，整个型号被剥成 `4 70b`
+    ——只剩版本号碎片，比显示长名字糟得多。
+    唯一无法推导的大小写例外是 `gpt`/`llm` 这类型号自带的品牌词，
+    那两张小集合是**拼写**不是厂商知识，可以留。
+    完整 ID 始终留在 `$meta.model`（复现调用需要那个字符串），
+    `$meta.modelLabel` 是可选的显式短名（`--model-label`），缺省即自动推导。
+    实测产物：`$meta.model = "deepseek/deepseek-flash"` ⇒ 38 页徽章渲染为 `Flash`。
 
 ## 开放项
 

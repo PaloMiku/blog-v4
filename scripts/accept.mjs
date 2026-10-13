@@ -131,6 +131,8 @@ const RELEASE_GATES = [
 	'check-prose-layer',
 	'check-content-preservation',
 	'check-dates',
+	// 摘要 JSON 与内容一一对应（键集合 / seo 长度 / frontmatter 无残留 description）
+	'check-summaries',
 	'check-mdc-eval',
 	'check-heading-ids',
 	'check-feeds',

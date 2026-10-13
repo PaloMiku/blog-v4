@@ -43,10 +43,10 @@ function getUrl(path: string | undefined) {
 	return new URL(path ?? '', blogConfig.url).toString()
 }
 
-function renderContent(post: { path: string, image?: string, title?: string, description?: string }) {
+function renderContent(post: { path: string, image?: string, title?: string, summary?: string }) {
 	return [
 		post.image && `<img src="${post.image}" alt="${post.title}" />`,
-		post.description && `<p>${post.description}</p>`,
+		post.summary && `<p>${post.summary}</p>`,
 		`<a class="view-full" href="${getUrl(post.path)}" target="_blank">点击查看全文</a>`,
 	].join(' ')
 }
@@ -78,7 +78,7 @@ export const GET: APIRoute = async () => {
 			path: toPath(entry),
 			title: entry.data.title,
 			image: entry.data.image,
-			description: entry.data.description,
+			summary: entry.data.summary,
 			updated: entry.data.updated,
 			// Nuxt 侧是 `post.author || blogConfig.author.name`；Astro 的 content schema
 			// 没有 author 字段，且全库 63 篇内容无一在 frontmatter 里声明 author，
@@ -100,7 +100,7 @@ export const GET: APIRoute = async () => {
 			$: renderContent(post),
 		},
 		link: { $href: getUrl(post.path) },
-		summary: post.description,
+		summary: post.summary,
 		category: { $term: post.categories?.[0] },
 		published: formatIsoDate(post.published),
 	}))

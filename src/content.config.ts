@@ -10,7 +10,6 @@ import { withArticleMeta } from './loaders/with-article-meta'
 export interface ArticleSchema {
 	title?: string
 	subtitle?: string
-	description?: string
 	date?: string
 	updated?: string
 	published?: string
@@ -78,7 +77,6 @@ export const collections = {
 		schema: z.object({
 			title: z.string().optional(),
 			subtitle: z.string().optional(),
-			description: z.string().optional(),
 			date: dateLike,
 			updated: dateLike,
 			published: dateLike,
@@ -124,6 +122,20 @@ export const collections = {
 			 * 挂在共享布局里，等于 68 页里有 67 页为一个公式页扛关键路径。
 			 */
 			hasMath: z.boolean().optional(),
+
+			/**
+			 * 摘要相关字段，全部由 withArticleMeta loader 从 `src/data/summaries.json`
+			 * 按条目 id 注入，**frontmatter 里不再有 `description`**。
+			 *
+			 * - `summary`：完整长摘要，Excerpt / JSON-LD / Atom / llms.txt / 列表卡片
+			 * - `seo`：≤150 字，meta description 与 og:description
+			 * - `summaryModel`：全局单值的生成来源，空串表示「暂无来源可标」，徽章不渲染
+			 *
+			 * 三个都 optional：非文章条目（games/* 等 25 条）在 JSON 里没有键。
+			 */
+			summary: z.string().optional(),
+			seo: z.string().optional(),
+			summaryModel: z.string().optional(),
 		}),
 	}),
 }

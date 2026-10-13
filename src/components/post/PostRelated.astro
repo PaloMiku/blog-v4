@@ -1,0 +1,233 @@
+---
+/**
+ * PostRelated 组件 —— 阅读页尾部的「相关阅读」。
+ *
+ * 位置在 `PostSurround`（上一篇 / 下一篇）之后、`Comment` 之前：读者已经读完正文、
+ * 也拿到了导航，接下来的问题是「还有哪些值得读」，而不是「上一篇文章在哪」。
+ *
+ * 候选与排序全在 `src/lib/content.ts` 的 `getRelated()`（构建期纯函数），
+ * 打分权重在 `blogConfig.article.related`。本组件只负责**呈现**：
+ * 任何「什么算相关」的判断都不该出现在这里——它不是展示层能回答的问题。
+ *
+ * ## 形态
+ * 紧凑列表、不带图，与 `Collection.astro` 的列表行同一套读法（序号 + 标题 + 日期）。
+ * 不用 `post/Article.astro` 那张卡片：卡片的主体是封面图，推荐位没有图的占位，
+ * 4 张卡片会在正文宽度下退化成两行图文，版面代价与信息量不成比例。
+ *
+ * **容器本身是透明的**（无边框、无底色、无阴影），只有一道顶部渐隐细线分隔。
+ * 理由与具体取舍见 `<style>` 段开头：这块夹在作者卡片与评论区两个实体块之间，
+ * 任何容器化的处理都会让它被读成「又一个模块」。
+ *
+ * 行内**不带分类色点**。色点那套在 `Article.astro` / `Archive.astro` 里成立是因为
+ * 那两处同时有封面图与分类文字，色点是图与字之外的第三重冗余；这里两者都没有，
+ * 而本块的算法本来就偏好同题材，加上去 38 个块里有 30 个会渲染成四个同色的点。
+ * 详见 `.related-index` 上方的注释。
+ *
+ * ## 日期
+ * 一律走 `util/Date.astro` 的默认形态（「4月1日」/「25年5月19日」），
+ * 不要退回手写 `toLocaleDateString`：那会多出年份、丢掉 `<time>` 元素，
+ * 破坏产物日期形状合同（同 `Collection.astro` 的约定）。
+ *
+ * ## 「当前项」的判定不适用
+ * 本块渲染时当前页就是**别处**来的文章，没有「自己」这一项，
+ * 因此不需要 `currentPageHref` / `aria-current`——那套是合集列表在同一页内
+ * 标「读到哪一篇」用的，这里每一条都是跳转，不存在同页高亮。
+ */
+import Icon from '../Icon.astro'
+import UtilDate from '../util/Date.astro'
+import { getRelated, toPath } from '../../lib/content'
+
+interface Props {
+	/** 当前文章的 entry id */
+	currentId: string
+}
+
+const { currentId } = Astro.props
+
+const items = await getRelated(currentId)
+---
+
+{items.length > 0 && (
+	/*
+	 * `data-gamepad-region="main"`：本块是阅读页正文流的收尾（不是侧栏、不是弹层），
+	 * 自成一个区域后手柄可以整体跳到「相关阅读」再上下选条目。
+	 * 不标的话整块在手柄下**不可达**——`gamepad-focus.ts` 判定「不在任何区域里的
+	 * 元素不是候选」（该文件 :13-16），且静态扫描只看属性在不在，看不见这层语义。
+	 * 同 `Collection.astro` / `Pagination.astro` / `OrderToggle.astro` 的处理。
+	 */
+	<section class="post-related" data-gamepad-region="main" aria-labelledby="post-related-title">
+		<h2 id="post-related-title" class="related-heading">
+			<Icon name="tabler:sparkles" />
+			相关阅读
+		</h2>
+
+		<ul class="related-list">
+			{items.map((item, index) => (
+				<li class="related-item">
+					{/*
+					 * key 用**文章 id** 而不是序号：候选顺序随文章增删会整体位移，
+					 * 而 id 是「同一个东西」的稳定凭据。手柄模式退出再进入要靠 key
+					 * 认回同一项（`gamepad-focus.ts` 的 `list:` 命名空间），
+					 * 用序号会让焦点跳到读者没选过的那一条上。
+					 * 与 `Collection.astro` 同一理由。
+					 */}
+					<a
+						class="related-link"
+						href={toPath(item)}
+						data-transition-key={toPath(item)}
+						data-gamepad-focus
+						data-list-key={`related:${item.id}`}
+					>
+						{/* 序号与 Collection 列表同形：等宽、右对齐、定宽，标题左缘对齐 */}
+						<span class="related-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+
+						<span class="related-title text-creative">{item.data.title}</span>
+
+						{item.data.date && <UtilDate class="related-date" date={item.data.date} />}
+					</a>
+				</li>
+			))}
+		</ul>
+	</section>
+)}
+
+<style>
+/*
+ * ═══ 存在感：这块是**路牌**不是**内容** ═══
+ *
+ * 它排在正文与评论区之间，读者滚到这里时文章已经读完。给它一块不透明底 +
+ * 1px 实边框，视觉重量等同于正文里的一个章节头——那是错的重量：
+ * 上一屏是作者卡片（同样带边框的实体块），下一屏是评论区（同样带边框），
+ * 三块连续出现时中间这块被读成「又一个模块」，而不是「顺手可以点的四个链接」。
+ *
+ * 因此这里**去框、去底、只留字**：
+ * - 没有 `border`、没有 `background-color`、没有 `box-shadow`；
+ * - 上边缘一道 alpha 渐隐细线，且从中间向两端淡出，读作「分隔」而非「边框」；
+ * - 标题降到 `--c-text-2`，靠权重差而非容器差来区分层级。
+ *
+ * ⚠️ **不要**给这块加 `backdrop-filter`。`--c-bg-a50` 之类的半透明底在这个页面
+ * 没有任何东西可透：正文列的背景是 `:root` 的 `--c-bg-1`，它是块之后**铺满**的
+ * 不透明色。半透明 + blur 叠在不透明同色底上，结果与直接写同色背景**完全一致**，
+ * 白付一次合成开销（移动端还可能触发新的合成层）。`BlogSidebar` / `BlogPanel`
+ * 那些真的用 blur 的地方，背后是能看见内容的页面底图，情形不同，别照抄。
+ */
+.post-related {
+	margin: 3.5rem 0.5rem;
+	/*
+	 * alpha 渐隐线：用 `transparent` → `currentcolor` → `transparent` 的对称渐变，
+	 * 配 `--c-text-3` 降到约 12% 视觉浓度。渐变里必须出现 `transparent` 字面量
+	 * （而不是 `rgba(...0)`）才能获得无灰边的插值，这是 `reusable.css` 里
+	 * `--start/--end` 那套渐变同源的做法。
+	 */
+	background-image: linear-gradient(to right, transparent, var(--c-border) 20%, var(--c-border) 80%, transparent);
+	background-repeat: no-repeat;
+	background-size: 100% 1px;
+	background-position: 0 0;
+}
+
+.related-heading {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 0 0 0.6rem;
+	padding-top: 0.9rem;
+	font-size: 0.85rem;
+	font-weight: 550;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	color: var(--c-text-3);
+}
+
+.related-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.1rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.related-item {
+	position: relative;
+	border-radius: 0.4em;
+}
+
+.related-link {
+	display: flex;
+	align-items: baseline;
+	gap: 0.6em;
+	padding: 0.4em 0.6em;
+	border-radius: 0.4em;
+	color: var(--c-text-2);
+	transition: background-color 0.2s, color 0.2s;
+
+	/*
+	 * 交互反馈是这一块**唯一**的视觉事件，所以它必须比容器本体更明确：
+	 * 去掉 hover 时的 border（原本是给有边框的块用的），改为「底色 + 文字转主色」。
+	 * 键盘焦点走 `gamepad-focus.ts` 的 `.gamepad-focus` 与浏览器默认 outline，不在此处理。
+	 */
+	&:hover {
+		background-color: var(--c-bg-soft);
+		color: var(--c-text);
+	}
+
+	/*
+	 * ⚠️ 这里原来还有一列「分类色点」（`.related-dot`，取首分类的登记色），
+	 * 已删除，理由见文件头注释。**别再加回来**：本块的算法本来就偏好同题材
+	 * （同合集 +4 / 同分类 +3 / 同标签 +2），实测 38 个推荐块里有 30 个的
+	 * 四个点颜色完全相同，只有 8 块出现 2~3 种色——读者扫过去只看到四个同色的点，
+	 * 既区分不了条目也读不出任何关于目标文章的信息。
+	 *
+	 * 那套色点在 `Article.astro` / `Archive.astro` 里有意义是因为它们同时有封面图
+	 * 和分类文字标签，色点是图与字之间的第三重冗余编码；这里的紧凑列表两者都没有，
+	 * 加上它就是纯装饰。要表达「这四篇是什么类别」，只有分类文字能做到。
+	 *
+	 * 序号的定宽写法（等宽、右对齐、2ch）在这里仍然必要：它是标题左缘对齐的基准。
+	 */
+	.related-index {
+		flex: none;
+		width: 2ch;
+		font-family: var(--font-monospace);
+		font-size: 0.75em;
+		opacity: 0.5;
+		text-align: right;
+	}
+
+	/*
+	 * 标题保持 `--c-text-1`（比容器 heading 的 `--c-text-3` 深两档）：
+	 * 唯一的链接就是标题，**标题必须是列表里最好读的那件东西**，
+	 * 否则整块降权会把链接一起降掉——那一层弱化是给 heading 用的。
+	 */
+	.related-title {
+		flex: 1;
+		overflow: hidden;
+		min-width: 0;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: var(--c-text-1);
+	}
+
+	/*
+	 * `.related-date` 的 `<time>` 由 `util/Date.astro` 渲染、带着**它自己的** cid，
+	 * 父选择器 `.related-link` 由本组件渲染，两者的 scoped 编译结果 cid 不同，
+	 * 写 scoped 会永不匹配 ⇒ 日期的样式整条失效。必须 `:global()`。
+	 * 见 `Collection.astro` 的 `.date` 与 git: a4603b0^:docs/astro-phase1-findings.md §50。
+	 */
+	> :global(.related-date) {
+		flex: none;
+		font-size: 0.8em;
+		color: var(--c-text-3);
+	}
+}
+
+@media (max-width: 480px) {
+	.related-link {
+		padding: 0.4em 0.45em;
+
+		/* 小屏隐藏序号，把宽度让给标题（同 Collection 的取舍） */
+		.related-index {
+			display: none;
+		}
+	}
+}
+</style>

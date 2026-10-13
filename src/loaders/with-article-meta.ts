@@ -1,9 +1,11 @@
 import type { Loader } from 'astro/loaders'
+import { fileURLToPath } from 'node:url'
 import { createProcessor } from '@mdx-js/mdx'
 import readingTimeOf from 'reading-time'
 import remarkGFM from 'remark-gfm'
 import remarkMath from 'remark-math'
 import remarkMDC, { parseFrontMatter } from 'remark-mdc'
+import { deriveModelLabel, readSummaries } from '../lib/shared/summaries'
 
 /**
  * 取文本规则必须逐字对齐 `remark-reading-time@2.1.0`：
@@ -41,6 +43,22 @@ const mdxProcessor = createProcessor({ jsx: true })
 	.use(remarkMath)
 	.use(remarkMDC)
 	.freeze()
+
+/**
+ * 摘要真相源。每次 load 读一次（构建期，开发时会热更到读新内容）。
+ * 键 = 条目 id，与 `content-id.ts` 的 `generateId` 同源。
+ */
+const SUMMARIES_PATH = fileURLToPath(new URL('../data/summaries.json', import.meta.url))
+const summaries = readSummaries(SUMMARIES_PATH)
+/**
+ * 徽章显示用的短名，**构建期**算好，不进 schema 也不进组件。
+ *
+ * 模型 ID 是路由标识不是产品名（`moonshotai/kimi-k2-0905-preview` 31 字符），
+ * 原样塞进 `0.75rem` 的胶囊里既占地方又读不懂。完整 ID 仍留在 JSON 里
+ * （复现调用需要那个字符串），界面只显示这个短名。推导规则见
+ * `scripts/lib/summary-core.mjs` 的 deriveModelLabel。
+ */
+const summaryModelLabel = deriveModelLabel(summaries.$meta.model ?? '', summaries.$meta.modelLabel ?? '')
 
 interface MdastNode {
 	type?: string
@@ -117,9 +135,16 @@ function toPlainTextByRegex(body: string): string {
  * 背景：Astro 7.3 的 glob loader 没有 transform 钩子，collection 上的 `transform`
  * 会被静默忽略，因此只能在 loader 外层包一层。
  *
- * 补齐两个字段：
+ * 补齐两类字段：
  * 1. `readingTime` —— 对应 Nuxt 的 `remark-reading-time` 插件
  * 2. `isPost`     —— 对应 Nuxt 的 `stem LIKE 'posts/%'` 查询条件
+ * 3. `summary` / `seo` / `summaryModel` —— 来自 `src/data/summaries.json`
+ *
+ * 关于摘要：它**不在 frontmatter 里**（真相源唯一，见 summaries.json 顶部语义），
+ * 所以与其他派生字段不同，它与正文解析无关、在跳过分支之前就挂上。
+ * 仍要过 digest 比对，是为了让「只改了 JSON 没改正文」时产物也能跟着变——
+ * 否则增量存储会判定条目未变更，摘要改动永远传不到产物（与本函数末尾
+ * 「同步刷新 digest」同源的理由）。
  *
  * 关于 `isPost`：条目的 `id` 已被 `generateId` 剥掉 `/posts` 前缀
  * （`hidePostPrefix` 生效），因此**无法从 id 判断是否文章**。
@@ -146,8 +171,25 @@ export function withArticleMeta(inner: Loader): Loader {
 			await inner.load(context)
 
 			for (const entry of context.store.values()) {
-				if (entry.data.isPost !== undefined && entry.data.readingTime && entry.data.hasMath !== undefined)
+				const id = entry.id
+				const rec = summaries.entries[id]
+				// summary / seo 与正文无关（来自 JSON），但仍要在 continue 之前注入：
+				// 跳过分支会跳过整个循环体，摘要只在这里挂一次的话会漏。
+				const withSummary: Record<string, unknown> = { ...entry.data }
+				if (rec?.summary)
+					withSummary.summary = rec.summary
+				if (rec?.seo)
+					withSummary.seo = rec.seo
+				withSummary.summaryModel = summaryModelLabel
+
+				if (entry.data.isPost !== undefined && entry.data.readingTime && entry.data.hasMath !== undefined) {
+					// 派生字段齐了，但摘要仍要写盘——JSON 可能变了而正文没变。
+					// 用 generateDigest(合并后的 data) 比对，摘要变了就落库，没变就跳过。
+					const digest = context.generateDigest(withSummary)
+					if (entry.digest !== digest)
+						context.store.set({ ...entry, data: withSummary, digest })
 					continue
+				}
 
 				const isPost = /[\\/]posts[\\/]/.test(entry.filePath ?? '')
 
@@ -158,7 +200,7 @@ export function withArticleMeta(inner: Loader): Loader {
 					? analyzeBody(entry.body)
 					: { text: '', hasMath: false }
 
-				const data: Record<string, unknown> = { ...entry.data, isPost, hasMath }
+				const data: Record<string, unknown> = { ...withSummary, isPost, hasMath }
 				if (text && !entry.data.readingTime)
 					data.readingTime = readingTimeOf(text)
 

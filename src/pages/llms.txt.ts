@@ -42,7 +42,7 @@ export const GET: APIRoute = async () => {
 			date: entry.data.date,
 			path: toPath(entry),
 			title: entry.data.title || '',
-			description: entry.data.description || '',
+			description: entry.data.summary || '',
 		}))
 		.sort((a, b) => {
 			if (a.date !== b.date)

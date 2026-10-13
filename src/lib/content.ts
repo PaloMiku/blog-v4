@@ -1,5 +1,6 @@
 import type { CollectionEntry } from 'astro:content'
 import { getCollection } from 'astro:content'
+import blogConfig from '../config/blog'
 
 /**
  * 站点内容查询辅助层。
@@ -59,6 +60,106 @@ export async function getByCollection(key: string | undefined): Promise<ContentE
 		return []
 	const list = await getCollection('content')
 	return list.filter(e => e.data.collection === key).sort(byDateAsc)
+}
+
+/**
+ * 页尾推荐文章。
+ *
+ * ## 为什么只有元数据可用
+ * 站点是纯静态的（`build.format: 'directory'`，产物直接发 CDN），**没有服务端、
+ * 没有用户态**：推荐结果在构建期就必须算完并冻进 HTML。对比之下 Nuxt 侧原本可以做
+ * 「读请求再算」，能拿到的东西多得多——但那不是本仓库的形态，不要按那个假设设计。
+ * 于是可用信号只剩文章自身的 frontmatter，这也意味着**推荐结果对所有读者完全一致**，
+ * 它是「相关阅读」而不是「猜你喜欢」。别在注释或文案里写成后者。
+ *
+ * ## 打分
+ * 权重与条目数全部来自 `blogConfig.article.related`，理由见那里的注释。
+ * 这里只负责**实现**判据，不定义「什么算相关」。
+ *
+ * ## 破平与「零分候选」
+ * 分数相同时依次比 `recommend`（大者前，缺省视为 0，与 `getRecommended` 同一约定）
+ * → `date`（新者前）。第三键 date 是必须的：38 篇文章里有 23 篇的 top1 是并列的
+ * （同分类的文章大量共享首分类），不破平的话同一个输入会拿到任意顺序，
+ * 「同一篇文章的推荐每次构建都一样」这条性质就不成立了。
+ *
+ * 排序**不设门槛**：分数为 0 的候选不是被丢弃，而是排在有分的之后，
+ * 于是 `limit` 个位置总能填满。实测 38 篇文章里有 3 篇与**所有**其它文章零重叠
+ * （既不同分类、也无共同标签、不在合集里），若把 0 分当不合格，这三篇的推荐块
+ * 会渲染成空的——空块比「勉强相关的几篇」更糟，它让读者以为站内没有更多内容。
+ * 它们最终拿到的是最近发布的文章，因为 0 分组内部仍按 recommend → date 破平。
+ */
+export async function getRelated(currentId: string, limit = blogConfig.article.related.limit): Promise<ContentEntry[]> {
+	const posts = await getPostsSorted()
+	const current = posts.find(e => e.id === currentId)
+	if (!current || limit <= 0)
+		return []
+
+	const weights = blogConfig.article.related
+
+	/*
+	 * 草稿排除。与 `stats.ts` 的 `includePaths` 语义对齐（`lib/frontmatter.ts:52`
+	 * 写的是「勾选后不进入列表与订阅源」）：推荐块是「站内还有这些」，把草稿推给
+	 * 读者等于提前泄露未发布内容。
+	 */
+	const candidates = posts.filter(e => e.id !== currentId && !e.data.draft)
+
+	const scored = candidates
+		.map((entry) => {
+			const score
+				= (current.data.collection && entry.data.collection === current.data.collection ? weights.collection : 0)
+					+ overlap(current.data.tags, entry.data.tags) * weights.tag
+					+ (overlap(current.data.categories, entry.data.categories) > 0 ? weights.category : 0)
+					+ (current.data.type && current.data.type === entry.data.type ? weights.type : 0)
+					+ (withinDays(entry.data.date, current.data.date, weights.recencyDays) ? weights.recency : 0)
+
+			return { entry, score }
+		})
+		// 单次排序完成「打分 → 破平 → 0 分兜底」三件事，末尾的 slice(0, limit)
+		// 因此总能填满（见函数头注释的「零分候选」）
+		.sort((a, b) => (b.score - a.score)
+			|| ((b.entry.data.recommend ?? 0) - (a.entry.data.recommend ?? 0))
+			|| byDateAsc(b.entry, a.entry))
+
+	return scored.slice(0, limit).map(x => x.entry)
+}
+
+/** 两个字符串数组的交集大小（去重后计，前端 frontmatter 可能带重复项） */
+function overlap(a: readonly string[] | undefined, b: readonly string[] | undefined): number {
+	if (!a?.length || !b?.length)
+		return 0
+	const set = new Set(a)
+	return b.reduce((n, item) => (set.has(item) ? n + 1 : n), 0)
+}
+
+/** 两篇文章的发布日期是否在 days 天之内；任一日期缺失或不可解析时返回 false */
+function withinDays(a: string | undefined, b: string | undefined, days: number): boolean {
+	if (!a || !b)
+		return false
+	const gap = Math.abs(daysBetween(a, b) ?? Number.POSITIVE_INFINITY)
+	return gap <= days
+}
+
+/**
+ * 两个 `YYYY-MM-DD hh:mm:ss` 墙钟串相隔的天数（绝对值向下取整），
+ * 任一串缺失或不可解析时返回 null。
+ *
+ * ⚠️ frontmatter 的日期是**裸墙钟**（无时区），schema 已把它还原成字符串原样
+ * （见 `content.config.ts` 的 `toDateStringFromUtc`）。这里只做「日期字符串之间」的
+ * 相减，两侧都不带时区，相减结果与真实时间差一致，因此**不需要**也不能引入
+ * 时区转换——`Temporal` 在这里只会引入构建机时区依赖，正是 PostFooter 注释里
+ * 记的那次 2026-10-03 事故的成因。
+ */
+function daysBetween(a: string | undefined, b: string | undefined): number | null {
+	if (!a || !b)
+		return null
+	const [y1, m1, d1] = a.split(/[- ]/).map(Number)
+	const [y2, m2, d2] = b.split(/[- ]/).map(Number)
+	if (!y1 || !m1 || !d1 || !y2 || !m2 || !d2)
+		return null
+	const MS_PER_DAY = 86400000
+	const t1 = Date.UTC(y1, m1 - 1, d1)
+	const t2 = Date.UTC(y2, m2 - 1, d2)
+	return Math.floor(Math.abs(t1 - t2) / MS_PER_DAY)
 }
 
 function byDateAsc(a: ContentEntry, b: ContentEntry): number {
