@@ -23,14 +23,21 @@
 	scrollbar-color: var(--c-text-3) transparent;
 	font-variant-alternates: styleset(open-digits, disambiguation, round-quotes-and-commas);
 	-webkit-tap-highlight-color: var(--c-primary-soft);
-
-	&:dir(rtl) {
-		--start: right;
-		--end: left;
-		--transform-start-far: translateX(100%);
-		--transform-end-far: translateX(-100%);
-	}
 }
+
+/*
+ * ⚠️ 本站**不支持 RTL**，`--start` / `--end` 恒为 left / right。
+ *
+ * 这里原先有一段 `&:dir(rtl) { … }` 把它们镜像，但它永远不会命中：
+ * 全站没有任何代码设置 `dir="rtl"`（`<html>` 的 dir 也从未输出）。留着它
+ * 会让人以为站点是双向的，而实际上 src/ 下还散着二十来处 `margin-left` /
+ * `text-align: left` 这类物理属性——那些才是 RTL 下真会断裂的地方，
+ * 且断裂只在切到 RTL 时才显形，本地测不出来。
+ *
+ * 要接上 RTL，顺序是：先清掉物理属性改用逻辑属性（`margin-inline-start`、
+ * `text-align: start`），再给 `<html>` 一个可切换的 `dir`，最后才把这段
+ * 镜像加回来。三个条件缺一个，接上去就是半坏的界面。
+ */
 
 * {
 	margin: 0;
@@ -91,9 +98,12 @@ button, input, textarea {
 	vertical-align: sub;
 }
 
-.rtl-flip:dir(rtl) {
-	transform: scaleX(-1);
-}
+/*
+ * `.rtl-flip` 目前是**悬空类名**：`BlogPanel` / `Pagination` / `PostSurround`
+ * 共 5 个元素仍带着它，但对应规则已随上面的 RTL 说明一并删除（本站不支持
+ * RTL）。类名留着是为了标记「这些图标是有方向的」，成本是零；真要接上 RTL，
+ * 把 `transform: scaleX(-1)` 连同上面的令牌镜像一起加回来即可。
+ */
 
 /*
  * 图标解析失败时的降级占位。**住在这里而不是 `src/components/Icon.astro`
