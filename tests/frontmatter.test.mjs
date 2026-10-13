@@ -1,22 +1,20 @@
 /* eslint-disable test/no-import-node-test -- 与其余纯逻辑测试一致：钉死用 Node 内置 node:test（vitest 不在依赖里，见 package.json 的 test 脚本）。 */
-// `src/lib/admin.ts` 的直测：frontmatter 往返、YAML 标量转义、列表解析、会话校验。
+// `src/lib/frontmatter.ts` 的直测：frontmatter 往返、YAML 标量转义、列表解析、slug 生成。
 // 本模块刻意不 import `astro:*`，因此测试进程无需 stub 内容层，可直接引入。
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
 	composeMdx,
-	draftKey,
 	estimateReading,
 	formatListInput,
 	formatYamlValue,
-	isValidSession,
 	needsYamlQuote,
 	parseListInput,
 	resolveExportSlug,
 	serializeFrontMatter,
 	splitFrontMatter,
 	toFileSlug,
-} from '../src/lib/admin.ts'
+} from '../src/lib/frontmatter.ts'
 
 describe('splitFrontMatter：只拆开头的围栏', () => {
 	it('拆出 frontmatter 与正文', () => {
@@ -183,17 +181,16 @@ describe('resolveExportSlug：空标题拒绝导出 + 重名去重', () => {
 	})
 })
 
-describe('会话与草稿键', () => {
-	it('draftKey 对空 id 回退 new', () => {
-		assert.equal(draftKey(''), 'blog-admin:draft:new')
-		assert.equal(draftKey('abc'), 'blog-admin:draft:abc')
+describe('toFileSlug：把标题压成安全的文件名', () => {
+	it('转小写并把非法字符折叠成连字符', () => {
+		assert.equal(toFileSlug('Hello: World?'), 'hello-world')
+		assert.equal(toFileSlug('  前后空白  '), '前后空白')
+		assert.equal(toFileSlug('a/b'), 'a-b')
+		assert.equal(toFileSlug('Hello World'), 'hello-world')
 	})
 
-	it('isValidSession 只接受 { email, at }', () => {
-		assert.equal(isValidSession({ email: 'a@b.c', at: 1 }), true)
-		assert.equal(isValidSession({ email: '', at: 1 }), false)
-		assert.equal(isValidSession({ email: 'a@b.c' }), false)
-		assert.equal(isValidSession('nope'), false)
-		assert.equal(isValidSession(null), false)
+	it('空串回退 untitled，不产出空文件名', () => {
+		assert.equal(toFileSlug(''), 'untitled')
+		assert.equal(toFileSlug('   '), 'untitled')
 	})
 })

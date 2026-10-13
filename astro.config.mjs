@@ -91,7 +91,7 @@ export default defineConfig({
 			//     `/previews/*`（复数）。少一个 s 就会把两个演示页放进 sitemap。
 			filter: (page) => {
 				const { pathname } = new URL(page)
-				return !/^(?:\/admin(?:\/|$)|\/previews?(?:\/|$))/.test(pathname) && !/^\/favicon\.ico(?:\/|$)/.test(pathname)
+				return !/^\/previews?(?:\/|$)/.test(pathname) && !/^\/favicon\.ico(?:\/|$)/.test(pathname)
 			},
 		}),
 		// 图标：构建期渲染内联 SVG，零客户端 JS。

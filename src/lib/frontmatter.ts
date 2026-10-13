@@ -1,20 +1,23 @@
 /**
- * 后台（/admin）共用的纯逻辑。
+ * MDX frontmatter 的读写纯逻辑：解析、序列化、YAML 转义、slug 生成、阅读时长估算。
  *
  * ## 为什么单独一个模块
- * 后台的几块 UI（列表的搜索/筛选、编辑器的 frontmatter 往返、草稿与会话的存取键）
- * 都是**与框架无关的纯函数 / 纯数据**。把它们从 Astro 组件里抽出来，
- * 一是组件只留渲染与事件绑定，二是纯逻辑可以被 `node --test` 直测
- * （见 `tests/admin.test.mjs`；本模块刻意不 import `astro:*`，
- * 以便测试进程无需 stub 内容层）。
+ * 这些都是**与框架无关的纯函数 / 纯数据**。抽出它们是为了能被 `node --test` 直测
+ * （见 `tests/frontmatter.test.mjs`）——本模块刻意不 import `astro:*`，
+ * 以便测试进程无需 stub 内容层。
  *
- * ## 本站的形态（决定了后台能做什么）
- * 站点是**纯静态 SSG**（`astro.config.mjs` 的 `output: 'static'`，无 server adapter）。
- * 因此不存在「登录后端」与「写内容的 API」：
- *   - 登录  = 一次本地会话门禁（sessionStorage），**不是安全边界**；
- *   - 保存  = 浏览器本地草稿（localStorage），跨设备不同步；
- *   - 发布  = 导出 `.mdx` 文件，由作者提交进 `src/content/**`，走正常构建。
- * 这是没有后端时唯一诚实的实现方式，故 UI 上也据实说明，不假装有服务端。
+ * ## 谁在用
+ * 目前**没有生产调用方**。留着是因为任何写内容的工具（编辑器、脚手架、
+ * 批量脚本）都要先把「YAML 标量何时必须加引号」「围栏怎么拆」这些坑踩一遍，
+ * 而这些判据只有实测过才知道（见 `needsYamlQuote` 的注释）。
+ * 约定：本模块与 `src/content.config.ts` 的 schema 形状对齐，
+ * 改动 schema 时一并复核这里的 `ADMIN_FIELDS`。
+ *
+ * ## 与内容层的一致性约定
+ * - `splitFrontMatter` 的围栏正则与 `remark-mdc` 的 `parseFrontMatter` 对齐；
+ * - 序列化时**跳过空字符串与空数组**，不写 `title: ''` 这类噪声；
+ * - 数组用流式语法 `[a, b]`（与仓库现有 MDX 一致），
+ *   不用 YAML 块序列——后者会让 diff 变得难读。
  */
 
 /** frontmatter 里允许的标量类型（对齐 `src/content.config.ts` 的 schema 形状） */
@@ -255,28 +258,4 @@ export function resolveExportSlug(input: {
 	while (taken.has(`${baseSlug}-${n}`))
 		n++
 	return { slug: `${baseSlug}-${n}`, deduplicated: true }
-}
-
-/* ------------------------------------------------------------------ *
- * 本地存储键（浏览器端；本模块不直接访问 storage，故可单测）
- * ------------------------------------------------------------------ */
-
-/** 登录会话在 sessionStorage 里的键 */
-export const ADMIN_SESSION_KEY = 'blog-admin:session'
-
-/** 草稿在 localStorage 里的键前缀，后接文章 id（或 `new`） */
-export const ADMIN_DRAFT_PREFIX = 'blog-admin:draft:'
-
-/** 某篇文章的草稿键 */
-export function draftKey(id: string): string {
-	return `${ADMIN_DRAFT_PREFIX}${id || 'new'}`
-}
-
-/** 是否是合法的 session 值（避免把任意字符串当会话） */
-export function isValidSession(value: unknown): value is { email: string, at: number } {
-	return !!value
-		&& typeof value === 'object'
-		&& typeof (value as { email?: unknown }).email === 'string'
-		&& (value as { email: string }).email.length > 0
-		&& typeof (value as { at?: unknown }).at === 'number'
 }

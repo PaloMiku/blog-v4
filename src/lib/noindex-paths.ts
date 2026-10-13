@@ -27,10 +27,6 @@
  *
  * - `/preview` 与 `/previews/*` 是**两个不同的路径**（单数页 + 复数目录），
  *   少写一个 `s` 就会漏掉两个演示页。
- * - 后台 `/admin`（含其下全部子路由）同样纳入：后台是给作者自己用的编辑台，
- *   里面的文章列表、草稿、导出入口都不该出现在搜索结果里。
- *   它是**前缀**而非精确路径，故写作 `/admin(?:\/|$)`——`startsWith('/admin')`
- *   会连 `/administrator` 之类一起误伤。
  * - sitemap 里的 URL 带**尾斜杠**，判定若用 `startsWith('/preview')` 之外的
  *   精确匹配很容易失配；这里统一用「路径段」正则，两种写法都覆盖。
  *
@@ -38,7 +34,7 @@
  * 各写一份（那边也用捕获组，`regexp/no-unused-capturing-group` 会报）。
  * 两处应收敛到本模块，但那个文件正在被别的任务改，等其交付后再合并。
  */
-const NOINDEX_PATTERN = /^(?:\/admin(?:\/|$)|\/previews?(?:\/|$))/
+const NOINDEX_PATTERN = /^\/previews?(?:\/|$)/
 
 /**
  * 该路径是否应输出 `noindex, nofollow`。
