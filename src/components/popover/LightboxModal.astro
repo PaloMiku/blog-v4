@@ -33,7 +33,7 @@ const DURATION = 200
  * 约定：SSR 期不输出该属性，客户端脚本用 `toggleAttribute` 加/删。
  * CSS 侧另加 `:not([data-show="false"])` 兜底。
  */}
-<div class="lightbox-modal" data-modal="lightbox" role="dialog" aria-modal="true" aria-hidden="true" tabindex="-1">
+<div class="lightbox-modal" data-modal="lightbox" role="dialog" aria-modal="true" aria-label="图片预览" aria-hidden="true" tabindex="-1">
 	<button class="lightbox-close" type="button" data-modal-close data-modal-autofocus aria-label="关闭">
 		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
 			<path d="M18 6 6 18M6 6l12 12" />

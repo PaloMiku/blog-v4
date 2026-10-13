@@ -215,6 +215,9 @@ const jsonLdText = JSON.stringify({ '@context': 'https://schema.org', '@graph': 
 
 		<meta name="author" content={author}>
 		<meta name="color-scheme" content="light dark">
+		<!-- 对应 color.css 的 --c-bg-1：浏览器地址栏与底部工具栏跟随主题，避免深色下的白边。 -->
+		<meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)">
+		<meta name="theme-color" content="#17191c" media="(prefers-color-scheme: dark)">
 		<!-- 此处为元数据的生成器标识，不建议修改 -->
 		<meta name="generator" content={`${pascalCase(themeName)} ${themeVersion}`} data-github-repo={themeHomepage}>
 		<meta name="mobile-web-app-capable" content="yes">
