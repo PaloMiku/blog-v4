@@ -36,11 +36,53 @@ interface CollectionSetting {
 	color?: string
 }
 
-/** 合集显示设置：全站唯一定义处（标题/描述/图标/主题色），新合集在这里登记 */
+/**
+ * 合集显示设置：全站唯一定义处（标题/描述/图标/主题色），新合集在这里登记。
+ *
+ * `color` 只影响 header 里那个图标（`Collection.astro` 的 `.collection-icon`
+ * 拿它作内联 style）。刻意不把它扩散到「当前项」高亮——那用的是主题色
+ * `--c-primary`，跟着配色方案走；写死一个色会在深色/大屏模式下失配。
+ */
 const COLLECTION_SETTINGS: Record<string, CollectionSetting> = {
+	'blog-building': {
+		title: '博客建设',
+		description: '本站从迁移到现在的成长记录',
+		icon: 'tabler:template',
+		color: '#7c9',
+	},
+	fediverse: {
+		title: '联邦宇宙',
+		description: 'Fediverse 入坑、实例搭建与平台对比',
+		icon: 'tabler:topology-star-3',
+		color: '#89f',
+	},
+	'self-hosting': {
+		title: '自托管服务',
+		description: '把服务搬回自己机器上的那些记录',
+		icon: 'tabler:server-2',
+		color: '#6bc',
+	},
+	'linux-tinkering': {
+		title: 'Linux 折腾',
+		description: '在特定硬件上跑 Linux 并解决问题',
+		icon: 'tabler:brand-ubuntu',
+		color: '#fb7',
+	},
+	'panel-appstore': {
+		title: '1Panel 应用商店',
+		description: '从编写第三方应用到被拒绝合并',
+		icon: 'tabler:apps',
+		color: '#9c7',
+	},
+	'galgame-linux': {
+		title: 'Galgame 运行',
+		description: '让 Galgame 在 Linux 上正常跑起来',
+		icon: 'tabler:tool',
+		color: '#c9f',
+	},
 	'galgame-notes': {
-		title: 'Galgame',
-		description: 'Galgame 相关合集测试',
+		title: 'Galgame 感想',
+		description: '通关之后的剧情感想与评价',
 		icon: 'tabler:device-gamepad-2',
 		color: '#f6a',
 	},
