@@ -251,7 +251,7 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 /* ===== 边框包装器样式 ===== */
 .has-border {
 	padding: 1.2em;
-	border: 1px solid var(--c-border);
+	border: 1px solid var(--c-border-strong);
 	border-radius: 0.8em;
 	background-color: var(--ld-bg-card);
 }
@@ -331,7 +331,7 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 	min-width: 140px;
 	max-width: 100%;
 	padding: 0.4em 0.7em;
-	border: 1px solid var(--c-border);
+	border: 1px solid var(--c-border-strong);
 	border-radius: 0.5em;
 	box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
 	background-color: var(--ld-bg-card);
@@ -393,7 +393,7 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 	left: 0;
 	min-width: 100%;
 	max-width: 100%;
-	border: 1px solid var(--c-border);
+	border: 1px solid var(--c-border-strong);
 	border-radius: 0.6em;
 	box-shadow: 0 8px 20px rgb(0 0 0 / 12%);
 	background-color: var(--ld-bg-card);
@@ -405,7 +405,7 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 	align-items: center;
 	gap: 0.4em;
 	padding: 0.4em 0.5em;
-	border-bottom: 1px solid var(--c-border);
+	border-bottom: 1px solid var(--c-border-strong);
 	background-color: var(--c-bg-soft);
 }
 

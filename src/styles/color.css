@@ -12,6 +12,12 @@
 	--c-bg-3: hsl(var(--hue-theme) 10% 92%);
 	--c-bg-soft: hsl(var(--hue-theme) 20% 20% / 10%);
 	--c-border: hsl(var(--hue-theme) 10% 91%);
+	/*
+	 * 控件边界专用。`--c-border` 同时兼任装饰底色（图片 fallback、分隔线、
+	 * 分页 hover），压暗它会一起变脏；而 WCAG 1.4.11 只要求**控件边界**达 3:1。
+	 * 拆开：边界走本 token（白底 3.42:1），装饰仍用 `--c-border`。
+	 */
+	--c-border-strong: hsl(var(--hue-theme) 10% 56%);
 	--c-bg-a50: hsl(var(--hue-theme) 20% 98% / 50%);
 	--c-bg-a80: hsl(var(--hue-theme) 20% 98% / 80%);
 	--c-primary: hsl(var(--hue-theme) 100% 55%);
@@ -43,6 +49,7 @@
 	--c-bg-3: hsl(var(--hue-theme) 10% 18%);
 	--c-bg-soft: hsl(var(--hue-theme) 100% 95% / 15%);
 	--c-border: hsl(var(--hue-theme) 10% 20%);
+	--c-border-strong: hsl(var(--hue-theme) 10% 48%);
 	--c-bg-a50: hsl(var(--hue-theme) 10% 10% / 50%);
 	--c-bg-a80: hsl(var(--hue-theme) 10% 10% / 80%);
 	--c-primary: hsl(var(--hue-theme) 100% 70%);
