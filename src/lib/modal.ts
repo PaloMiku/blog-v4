@@ -91,9 +91,36 @@ const timers = new Set<number>()
 const subscribers = new Set<(stack: readonly ModalEntry[]) => void>()
 
 function emit() {
+	syncPageInert()
 	// 复制一份再遍历：回调里可能会退订自己
 	for (const fn of [...subscribers])
 		fn(stack)
+}
+
+/**
+ * 栈非空时把页面主体设为 `inert`，挡住背景的 Tab 顺序与读屏可达性。
+ *
+ * 背景没被隔离时，搜索框里按 Tab 会跳出弹窗、落进侧栏或页脚，读屏用户会以为
+ * 弹窗已经关闭（WCAG 2.4.3 焦点顺序）。`inert` 同时解决可聚焦与可点击，
+ * 不需要另写 Tab 循环拦截。
+ *
+ * 目标是 `#blog-root` 下**除 `#modal-root` 以外**的所有直接子元素：
+ * `#modal-root` 本身就在 `#blog-root` 之内（见 `Blog.astro`），整块 inert 会
+ * 连弹窗一起禁用。按子元素逐个处理，不依赖 `#modal-root` 的位置先后。
+ */
+function syncPageInert() {
+	const root = document.getElementById('blog-root')
+	if (!root)
+		return
+	const shouldInert = stack.length > 0
+	for (const child of root.children) {
+		if (child.id === 'modal-root')
+			continue
+		if (shouldInert)
+			child.setAttribute('inert', '')
+		else
+			child.removeAttribute('inert')
+	}
 }
 
 /**
