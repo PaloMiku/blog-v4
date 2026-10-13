@@ -187,10 +187,9 @@ const listStates = ['date', 'updated'] as const
 		{/*
 		 * archive.vue:101-119 的密度面板。
 		 *
-		 * ⚠️ `class="archive-tuning card"` + `hidden` 是**不够的**：
-		 * `src/styles/reusable.css:2` 的 `.card { display: block }` 是作者级样式，
-		 * 优先级高于 UA 的 `[hidden] { display: none }`，于是面板会一直占位可见——
-		 * 这正是当初把它删掉时记下的那个坑。故本文件在 <style> 里显式压回 `display: none`。
+		 * `hidden` 的坑已在 `.card` 自身收口（reusable.css 里
+		 * `&:not([hidden])` + `&[hidden]` 配对），本文件 `.archive-tuning`
+		 * 另有一条同特异度覆盖兜底，理由见该处的注释。
 		 * 滑杆的 min/max/step/springMin/springMax/list 与 Nuxt 逐字一致。
 		 */}
 		<div
@@ -524,10 +523,12 @@ const listStates = ['date', 'updated'] as const
 	bottom: min(2em, 5%);
 
 	/*
-	 * 必须显式压住 `hidden`。`src/styles/reusable.css:2` 的
-	 * `.card { display: block }` 是作者级样式，优先级高于 UA 的
-	 * `[hidden] { display: none }`——面板会一直占位可见。
-	 * （`prose.css` 为同一类问题已经付过一次 2036px 的代价。）
+	 * `.card` 现在自带 `&[hidden] { display: none }`（见 reusable.css）。
+	 * 这条派生覆盖按理可以删，但两处特异度相同（`.card[hidden]` 对
+	 * `.archive-tuning[hidden][cid]`），胜负取决于样式表先后——而
+	 * `.card` 属于 reusable.css、这里属于本页内联 `<style>`，顺序会随
+	 * 打包方式变。留着它零成本（`display: none` 幂等），删掉它换来一个
+	 * 「面板一直占位可见」的回归风险，不划算。
 	 */
 	&[hidden] {
 		display: none;
