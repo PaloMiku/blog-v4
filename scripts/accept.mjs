@@ -131,6 +131,9 @@ const RELEASE_GATES = [
 	'check-prose-layer',
 	'check-content-preservation',
 	'check-dates',
+	// 断点收在已知集合内，且 layout-state 与 CSS 侧同源。check-layout 只断言
+	// 1080px / 768px「存在」，抓不到新引入的第七个断点，也抓不到两侧取值漂移。
+	'check-breakpoints',
 	// 摘要 JSON 与内容一一对应（键集合 / seo 长度 / frontmatter 无残留 description）
 	'check-summaries',
 	'check-mdc-eval',
