@@ -597,6 +597,62 @@ describe('DOM：永不可选的元素', () => {
 		assert.equal(page.manager.getCurrent()?.getAttribute('href'), '/probe')
 	})
 
+	/*
+	 * `opacity: 0` 与 `visibility: hidden` 是两套机制：前者**盒子还在**、仍可命中测试，
+	 * 所以 `rect.width > 0` 那条拦不住它。实测代价：`prose.css` 的「引用整段到评论区」
+	 * 按钮是 `display:inline-flex; opacity:0`（悬停才显形）且运行期被摘掉 `hidden`，
+	 * 于是 `/games` 的手柄首焦落在它上面，用户看到的是「按了 A 什么都没发生」。
+	 * 这条测试钉住「不可见的按钮不得成为焦点落点」。
+	 */
+	it('opacity: 0 不可选（元素自身透明）', () => {
+		const page = createPage((root) => {
+			root.append(el('main', { [REGION_ATTRIBUTE]: 'main' }, [
+				el('button', { style: 'opacity: 0' }, ['看不见的按钮']),
+				probeLink(),
+			]))
+		})
+		page.manager.focusInitial('main')
+		assert.equal(
+			page.manager.getCurrent()?.getAttribute('href'),
+			'/probe',
+			'透明按钮有盒子但不是可达目标，首焦必须越过它',
+		)
+	})
+
+	it('opacity: 0 不可选（祖先透明也生效，且是累乘语义）', () => {
+		const page = createPage((root) => {
+			root.append(el('main', { [REGION_ATTRIBUTE]: 'main' }, [
+				// 自己没写 opacity，由父级决定
+				el('div', { style: 'opacity: 0' }, [el('button', {}, ['父级透明的按钮'])]),
+				// 累乘到 0：0.5 × 0 = 0
+				el('div', { style: 'opacity: 0.5' }, [
+					el('div', { style: 'opacity: 0' }, [el('button', {}, ['累乘为 0 的按钮'])]),
+				]),
+				probeLink(),
+			]))
+		})
+		page.manager.focusInitial('main')
+		assert.equal(
+			page.manager.getCurrent()?.getAttribute('href'),
+			'/probe',
+			'父级透明时子元素也不可选',
+		)
+	})
+
+	it('opacity: 0.5 的可见元素仍可选（只拦「完全不透明为 0」，不是拦所有非 1）', () => {
+		const page = createPage((root) => {
+			root.append(el('main', { [REGION_ATTRIBUTE]: 'main' }, [
+				el('button', { 'style': 'opacity: 0.5', 'data-list-key': 'half' }, ['半透明按钮']),
+			]))
+		})
+		page.manager.focusInitial('main')
+		assert.equal(
+			page.manager.getCurrent()?.getAttribute('data-list-key'),
+			'half',
+			'半透明仍是可见目标，不得被误杀',
+		)
+	})
+
 	it('被裁剪祖先挡住的元素不可选（轮播里当前不可见的卡片靠这条落法）', () => {
 		const page = createPage((root, nodes) => {
 			const track = el('div', { style: 'overflow: hidden', [REGION_ATTRIBUTE]: 'main' })

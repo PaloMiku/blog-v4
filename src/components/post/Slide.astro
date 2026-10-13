@@ -36,7 +36,18 @@ const { list = [] } = Astro.props
 const showTitle = appConfig.component.slide?.showTitle ?? true
 ---
 
-<div class="z-slide">
+<!--
+	手柄大屏模式标记（契约见 src/lib/gamepad-focus.ts 头部与 gamepad-navigation.ts 的
+	`FocusRegion`）。**只加属性，不动 class / 结构 / 几何**：
+
+	- 轮播整块声明 `data-gamepad-region="main"`：它是首页正文区的一部分。区域取
+	  「最近的祖先」，所以这块单独声明不会把 `<menu data-post-menu>` 一起圈进来
+	  （后者由 index.astro 自己声明）。
+	- 每张卡片 `data-gamepad-focus`：`<a href>` 本来就是可选中的语义元素，这里显式声明是
+	  为了表达意图而不是靠标签推断；`data-list-key` 用轮播序号拼上 `slide:` 前缀——
+	  契约要求 key 带命名空间，否则 `data-list-key="0"` 会与别处的序号撞成同一个身份。
+-->
+<div class="z-slide" data-gamepad-region="main">
 	<div class="z-slide-header">
 		<span class="title text-creative">精选文章</span>
 		<div class="at-slide-hover">
@@ -48,7 +59,14 @@ const showTitle = appConfig.component.slide?.showTitle ?? true
 	<div class="z-slide-body" dir="ltr" data-slide-root>
 		<div class="slide-list">
 			{list.map((article, index) => (
-				<a class="slide-item" title={article.description} href={article.path} data-slide-index={index}>
+				<a
+					class="slide-item"
+					title={article.description}
+					href={article.path}
+					data-slide-index={index}
+					data-gamepad-focus
+					data-list-key={`slide:${article.path}`}
+				>
 					{article.image && <img class="cover" src={article.image} alt={showTitle ? '' : (article.title ?? '')} loading="lazy" decoding="async" />}
 
 					{showTitle && <div class="stable-info text-creative">{article.title}</div>}

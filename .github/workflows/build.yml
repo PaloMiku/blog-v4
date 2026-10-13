@@ -116,7 +116,7 @@ jobs:
       # --skip-build：产物就是上面那一步 build 的，不重建。
       #
       # interaction-check.mjs 仍然不在这里：它在流水线里不可靠而单跑可靠，
-      # 理由与实测数据见 docs/astro-phase1-findings.md。单跑：
+      # 理由与实测数据见 git: a4603b0^:docs/astro-phase1-findings.md。单跑：
       #   node scripts/interaction-check.mjs
       - name: Acceptance gates
         run: node scripts/accept.mjs --skip-build

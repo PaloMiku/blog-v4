@@ -11,6 +11,7 @@ import Toc from '../components/widget/Toc.astro'
 import { contentComponents } from '../lib/content-components'
 import blogConfig from '../config/blog'
 import { compat } from '../config/compat'
+import type { BigPicturePage } from '../lib/big-picture-state'
 
 // 对应 Nuxt 侧的 app/pages/[...slug].vue + content:file:afterParse 的 path 改写。
 // 条目 id 已由 content.config.ts 的 generateId 处理（permalink 优先，其次去 /posts 前缀）。
@@ -43,6 +44,40 @@ const { Content, headings } = await render(entry)
 const asideNames = (entry.data.aside as string[] | undefined) ?? ['toc']
 const hasAside = asideNames.length > 0
 const tocHeadings = asideNames.includes('toc') ? headings : []
+
+/**
+ * 本页的大屏页面类型（spec §模式与布局状态）。
+ *
+ * ## 为什么按**内容身份**判，而不是按 URL 前缀判
+ * 这个兜底路由同时承载文章、游戏档案、关于页等多种条目，它们的 URL 由
+ * `generateId` 决定：frontmatter 的 `permalink` **优先于**磁盘路径，
+ * 且 `hidePostPrefix` 会把 `/posts/foo` 显示成 `/foo`（见 `lib/shared/content-id.ts`）。
+ * 也就是说 `/[…slug]` 渲染出来的路径与「它是什么」并非一一对应：
+ * 一篇 permalink 写成 `/games/xxx` 的文章，按 URL 前缀会被判成游戏页；
+ * 反过来一条 `games/` 下的条目把 permalink 指到别处，按前缀就漏判。
+ * 按 URL 前缀判等于把「路由长什么样」当成语义，一旦有人改 permalink 就静默失配。
+ * 所以这里只读**构建期就已确定的身份**：schema 字段 `isPost` 与条目 id 的栏目归属。
+ *
+ * ## 判据顺序
+ * 1. `entry.data.isPost` —— 由 `withArticleMeta` loader 按真实 `filePath` 的
+ *    `posts/` 段算出（id 已剥前缀，**不能**用 id 反推，见 `loaders/with-article-meta.ts:124`）；
+ * 2. 游戏栏目：内容 id 为 `games` 或以 `games/` 开头（`games/index.mdx` 经 `generateId`
+ *    塌缩成 `games`，所以两种都要覆盖）；
+ * 3. 关于页：id 恰为 `about`；
+ * 4. 其余一律 `'off'`——`drive`、`link`（正文由专用路由合并渲染）、`previews/*`
+ *    都没有对应页型，缺省停用增强是安全缺省（会话意图仍保留，回核心页面自动恢复）。
+ *
+ * 注：`'links'` 与 `'archive'` / `'home'` 不在此处——它们由各自专用路由声明，
+ * 这里出现的任何条目都不该被判成那三种页型。
+ */
+const bigPicturePage: BigPicturePage
+	= entry.data.isPost
+		? 'reading'
+		: entry.id === 'games' || entry.id.startsWith('games/')
+			? 'games'
+			: entry.id === 'about'
+				? 'reading'
+				: 'off'
 
 /**
  * 内容页的 BlogPosting 结构化数据。
@@ -104,6 +139,7 @@ const jsonLd: Record<string, unknown>[] = [
 <Blog
 		title={entry.data.title ?? entry.id}
 		hasAside={hasAside}
+		bigPicturePage={bigPicturePage}
 		description={description}
 		image={entry.data.image}
 		ogType="article"
@@ -138,8 +174,51 @@ const jsonLd: Record<string, unknown>[] = [
 	{/* 对应 Nuxt 侧的 `<PostExcerpt v-if="excerpt">`：frontmatter 无 description 时不输出 */}
 	{entry.data.description && <Excerpt excerpt={entry.data.description} />}
 
-	{/* `article` 只包正文本身，class 与基线一致 */}
-	<article class={`article md-${entry.data.type || 'tech'}`}>
+	{/*
+	 * 正文阅读入口。spec §按键语义 要求「正文阅读入口使用临时 `tabindex="-1"`，
+	 * 只供程序聚焦」。这里渲染成一个**真链接**（`href="#main-content"`），理由如下。
+	 *
+	 * ⚠️ **`tabindex="-1"` 本身就会让它成为手柄目标，光去掉 `data-gamepad-focus` 不够。**
+	 * `gamepad-focus.ts:81-90` 的 `FOCUS_SELECTOR` 里含 `[tabindex]`，而
+	 * `isSelectable()`（:342-353）只额外要求「有非零盒子 + 未被 hidden/inert/aria-hidden」。
+	 * 所以只要这个 span 带 `tabindex="-1"` 且有自己的盒子，它就是**候选目标**；
+	 * 在没有 `data-gamepad-initial-focus` 的页型上（`/games`、`/about`），
+	 * `chooseRegionTarget()` 会按 DOM 顺序挑到它 ⇒ 手柄一进模式就停在一个
+	 * **按 A 什么都不做**的死停靠点上。实测正是这一条让 `/games` 的 A 键失效。
+	 *
+	 * 修法不是把它藏起来，而是**让它真的可点**：`#main-content` 由 `Blog.astro`
+	 * 稳定提供（每页都有），所以渲染成 `<a href="#main-content">`——
+	 * 按 A 是真实的站内跳转（跳到正文开头），与「阅读入口」的语义一致，
+	 * 也不再是一个假停靠点。
+	 *
+	 * ⚠️ 它还必须**自带一个非零盒子**：见上，`rect.width > 0 && rect.height > 0`
+	 * 是入选前提；空 inline 元素的矩形是 0×0，会静默出局。故样式见
+	 * `big-picture.css` 的 `.reading-anchor`（`display:block` + 1px 高）。
+	 *
+	 * `data-gamepad-initial-focus` 带页型条件：本路由同时服务文章、游戏页与关于页，
+	 * 只有真正的阅读页才把「正文入口」当首选；其余页型回落到它们自己的首选项。
+	 */}
+	<a
+		class="reading-anchor"
+		href="#main-content"
+		data-gamepad-initial-focus={bigPicturePage === 'reading' ? '' : undefined}
+		data-list-key="reading:anchor"
+		tabindex="-1"
+		aria-label="跳到正文"
+	></a>
+
+	{/*
+	 * `article` 只包正文本身，class 与基线一致。
+	 *
+	 * `data-gamepad-region="main"` 是**手柄大屏模式**的落点，不是样式钩子：
+	 * `gamepad-focus.ts` 的判据是「元素必须落在某个已注册区域内」，落在任何区域
+	 * 之外的元素**根本不是候选**（该文件 :13-16）。少了这个属性，整页正文在手柄下
+	 * 不可达——而静态扫描只看属性是否存在，看不见「有属性但没标记区域」这层。
+	 * 本页（阅读/游戏/关于）由 `#main-content` 承载正文，故区域标在这里；
+	 * 不标在 `Blog.astro` 的 `#main-content` 上，是因为那个布局文件被所有页面共用，
+	 * 而 region 是**页面级**声明（首页与归档各自标在 `.post-list` / `.archive`）。
+	 */}
+	<article class={`article md-${entry.data.type || 'tech'}`} data-gamepad-region="main">
 		<Content components={contentComponents} />
 	</article>
 

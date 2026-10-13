@@ -4,8 +4,9 @@
  * 规则：任何「为了对齐旧 Nuxt 行为而存在」的布尔开关都住在这里，
  * 每个开关必须写全四样：**保留原因、验证证据、退出条件、预计复核日期**。
  * 页面主流程只引用本模块，不再就地藏 `const PARITY_x = true`。
- * 全量兼容点清单（含不属于「开关」的 URL 合同类条目）见
- * `docs/plan/analysis/engineering-inventory.md` §4；验证命令：`pnpm accept:parity`。
+ * 散落在各文件、无法用开关表达的 URL/SEO 合同类条目（标题锚点 slugger、
+ * `hidePostPrefix`、`smartypants: false`、robots 静态名单等）各有就地注释说明
+ * 保留理由与退出条件，不在此重复。验证命令：`pnpm accept:parity`。
  *
  * 能通过产品行为修复的兼容点，不继续用这里的开关隐藏问题。
  */

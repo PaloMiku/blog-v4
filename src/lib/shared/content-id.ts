@@ -1,5 +1,5 @@
 // 条目 id 即 URL 合同（Nuxt→Astro 迁移期定型，此后改动会断开线上既有链接，
-// 属产品规则而非临时兼容分支；历史背景见 docs/plan/analysis/engineering-inventory.md §4）：
+// 属产品规则而非临时兼容分支）：
 //   1. frontmatter.permalink 优先，直接作为条目 id
 //   2. `index` 表示所在目录本身：`games/index` → `games`
 //   3. blogConfig.article.hidePostPrefix 去掉 /posts 前缀

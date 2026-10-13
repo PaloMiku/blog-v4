@@ -38,8 +38,9 @@ import { remarkTabPanels } from './src/plugins/tab-panels'
 //    KaTeX 输出里的链接不应该再套一层 z-link 与域名图标。
 // 7. rehypeNuxtHeadingIds 排最前：Astro 内建的 heading id 排在**所有**用户插件之后，
 //    但它尊重已存在的 string id，所以「前置写好 id」是唯一可行解。
-//    **标题锚点 id 规则是线上 URL 合同，勿改**；背景见
-//    docs/plan/analysis/engineering-inventory.md §4。另见 src/plugins/heading-ids.ts。
+//    **标题锚点 id 规则是线上 URL 合同，勿改**：线上全部标题锚点按 Nuxt slugger
+//    的后处理规则生成，改它等于全站断链（TOC、搜索片段、外链一起失效）。另见
+//    src/plugins/heading-ids.ts 与 src/lib/slug.ts。
 // 8. smartypants: false —— `remark-smartypants` 默认开着（Astro 侧判断的是
 //    `smartypants !== false`），它把 `"…"` 写成 `“…”`、`...` 写成 `…`。
 //    换的是标点**字形**不是盒子，页高与计算样式类门禁全部看不见；而正文的字面
@@ -90,7 +91,7 @@ export default defineConfig({
 			//     `/previews/*`（复数）。少一个 s 就会把两个演示页放进 sitemap。
 			filter: (page) => {
 				const { pathname } = new URL(page)
-				return !/^\/previews?(?:\/|$)/.test(pathname) && !/^\/favicon\.ico(?:\/|$)/.test(pathname)
+				return !/^(?:\/admin(?:\/|$)|\/previews?(?:\/|$))/.test(pathname) && !/^\/favicon\.ico(?:\/|$)/.test(pathname)
 			},
 		}),
 		// 图标：构建期渲染内联 SVG，零客户端 JS。

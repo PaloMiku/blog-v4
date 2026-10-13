@@ -28,6 +28,14 @@ const target = !link.startsWith('#') && isExtLink(link) ? '_blank' : undefined
  * 这行是零风险的补齐（与 LinkCard / Badge 的实测 20 / 11 处不同）。
  */
 const relValue = target === '_blank' ? 'noopener noreferrer' : undefined
+/*
+ * 手柄大屏模式（Task 7 Step 5）：横幅是友链页 / 关于页的主要控制，显式声明可选。
+ *
+ * key 用 `list:` 命名空间 + 链接本身：友链横幅的 `link` 是内容里的稳定事实，
+ * 而标题可能重复（多个站点同名）。`#锚点` 形态的 link 也照样能当 key——
+ * 它在这里只是身份串，不参与跳转解析。
+ */
+const focusKey = `link-banner:${link}`
 ---
 
 <a
@@ -37,6 +45,8 @@ const relValue = target === '_blank' ? 'noopener noreferrer' : undefined
 	title={joinWith([title, description, link])}
 	target={target}
 	rel={relValue}
+	data-gamepad-focus
+	data-list-key={focusKey}
 >
 	{banner && <img class="link-banner-bg" src={banner} alt="" />}
 	<div class="link-banner-header" />

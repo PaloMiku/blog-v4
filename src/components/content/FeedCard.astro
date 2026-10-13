@@ -83,6 +83,15 @@ const target = to && !to.startsWith('#') && isExtLink(to) ? '_blank' : undefined
 ---
 
 <span data-v-tippy role="link" data-feed-card>
+	{/*
+	 * 手柄可达标记。`data-list-key` 用 **link**（不是 index）：FeedGroup 的排序
+	 * 脚本会 `orderBy(shuffle(...))` 重排这些卡片，序号每点一次「随机排序」就变一次，
+	 * 只有 link 是稳定身份（`gamepad-focus.ts` 的列表恢复正是按这个键找回落点）。
+	 *
+	 * 无订阅源（`error`）时 `Target` 是 `<span>`，没有 `href` 也没有点击行为——
+	 * 那种卡片**故意不加** `data-gamepad-focus`：加了会造出一个按 A 什么都不做的停靠点。
+	 * 它仍留在 `data-feed-entry` 里，供排序脚本定位。
+	 */}
 	<Target
 		class="feed-card gradient-card"
 		href={to}
@@ -90,6 +99,8 @@ const target = to && !to.startsWith('#') && isExtLink(to) ? '_blank' : undefined
 		target={target}
 		data-error={error}
 		data-transition-enter
+		data-gamepad-focus={to ? '' : undefined}
+		data-list-key={to ? `feed:${to}` : undefined}
 	>
 		<div class="avatar" title={feed ? undefined : '无订阅源'}>
 			<img class="round-cobblestone" src={avatar} alt={author} loading="lazy" />

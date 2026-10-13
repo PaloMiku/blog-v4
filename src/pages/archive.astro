@@ -83,11 +83,11 @@ if (!isAscending)
 const listStates = ['date', 'updated'] as const
 ---
 
-<Blog title="归档" hasAside description={`${blogConfig.title}的所有文章归档。`}>
+<Blog title="归档" hasAside description={`${blogConfig.title}的所有文章归档。`} bigPicturePage="archive">
 	{/* 不要在这里再套 `<main>`：`Blog.astro` 已提供 `<main id="main-content">`，
 	    嵌套 main 是无效 HTML。基线产物里 #main-content 的子元素就是
 	    `div.archive.proper-height`，没有多余层级。 */}
-	<div class="archive proper-height">
+	<div class="archive proper-height" data-gamepad-region="main">
 		{/*
 		  本页按设计没有可见的页面级标题（外壳承担），产物里因此一个 `<h1>` 都没有。
 		  Nuxt 基线同样如此，所以**不能**补可见 h1——那会让 `/archive/` 页高偏离基线。
@@ -122,7 +122,12 @@ const listStates = ['date', 'updated'] as const
 							'--archive-item-column': column,
 						}}
 					>
-						<div class="archive-title" data-list-key={`year:${year}`}>
+						<div
+							class="archive-title"
+							data-list-key={`year:${year}`}
+							data-gamepad-focus
+							data-gamepad-key={`year:${year}`}
+						>
 							<h2 class="archive-year">{year}</h2>
 
 							{birthYear > 0 && (
@@ -159,6 +164,18 @@ const listStates = ['date', 'updated'] as const
 									data-updated={article.data.updated ?? article.data.date ?? ''}
 									data-category={article.data.categories?.[0] ?? ''}
 									data-words={article.data.readingTime?.words ?? 0}
+									/*
+									 * 归档页的首选焦点 = **全页第一条**条目，即第一个年份组
+									 * （`groups` 的 0 号；降序时它是最新的年份）里的第一项。
+									 * 只在那一处盖章：`data-gamepad-initial-focus` 是
+									 * 「首选项」，多盖会让结果退化成「谁在 DOM 里靠前」。
+									 *
+									 * ⚠️ 盖章对象是**组件根 `<li>`**，而 `Archive.astro`
+									 * 会把首选项转落到行内 `<a>` 上（那里才是可点元素）。
+									 * 运行时重排走的是同一条规则（本文件 `apply()`），
+									 * 两处必须一致，否则首次进入与重排后的落点会不一样。
+									 */
+									data-gamepad-initial-focus={year === groups[0]?.[0] && index === 0 ? '' : undefined}
 								/>
 							))}
 						</menu>
@@ -279,6 +296,8 @@ const listStates = ['date', 'updated'] as const
 			let item = pool.get(key)
 			if (!item) {
 				item = {
+					/* 身份要留在 item 上：下面决定「谁是真·第一条」时按 key 回认 */
+					key,
 					date: row.dataset.date || '',
 					updated: row.dataset.updated || '',
 					category: row.dataset.category || '',
@@ -312,6 +331,39 @@ const listStates = ['date', 'updated'] as const
 			const state = order === 'updated' ? 'updated' : 'date'
 			const dir = ascending ? 1 : -1
 
+			/*
+			 * 段序：升序时年份升序，降序时倒序。**先算出来**，因为下面决定
+			 * 「哪一条是全页第一项」要用它——首选项得是**视觉上的第一行**，
+			 * 不是 DOM 里的第一个 `<section>`（`groups` 是构建期顺序，
+			 * 用户切到升序之后段序会反过来）。
+			 */
+			const sortedGroups = [...groups].sort((a, b) =>
+				dir * compareValues(a.dataset.year || '', b.dataset.year || ''))
+
+			/*
+			 * 全页第一条**可见**条目。`hidden`（分类筛选）掉的条目不算——
+			 * 把首选项盖在一条被隐藏的行上，等于开局没有任何首选，焦点会退化成
+			 * 「随便挑一个」，而这正是本任务要消除的那种不可推理状态。
+			 */
+			let firstKey = null
+			for (const g of sortedGroups) {
+				const entry = layout.find(l => l.group === g)
+				if (!entry)
+					continue
+				const sorted = entry.keys
+					.map(k => pool.get(k))
+					.filter(Boolean)
+					.filter(item => !category || item.category === category)
+					.sort((a, b) => {
+						const p = compareValues(a[order] || '', b[order] || '')
+						return p !== 0 ? p * dir : compareValues(a.date, b.date) * dir
+					})
+				if (sorted.length) {
+					firstKey = sorted[0].key
+					break
+				}
+			}
+
 			for (const { group, menu, keys } of layout) {
 				if (!(menu instanceof HTMLElement))
 					continue
@@ -331,14 +383,35 @@ const listStates = ['date', 'updated'] as const
 					// getFixedDelay(index * 0.03)
 					row.style.setProperty('--delay', `${(index * 0.03).toFixed(2)}s`)
 					row.hidden = Boolean(category) && item.category !== category
+					/*
+					 * 手柄标记在**克隆之后**补，理由同 index.astro 的 `render()`：
+					 * 这些行是 `cloneNode` 出来的，没有构建期的 `data-astro-cid`
+					 * （CLAUDE.md 坑位 4），模板里写的属性也不保证跟得上运行时语义。
+					 *
+					 * ⚠️ 标记要落在 **`<a>`** 上，不是这一行 `<li>`：
+					 * `data-gamepad-focus` 写在 `<li>` 上时，按 A 调的是 `<li>.click()`，
+					 * 不导航也没有任何 DOM 变化 ⇒ 实测「A 在归档页无可观察效果」。
+					 * 可操作元素是行内的 `<a>`（`Archive.astro` 里已标）。
+					 *
+					 * 这里只补首选项：
+					 *   - `data-gamepad-initial-focus`：**每次重排后重新裁决**——
+					 *     首选项永远落在「当前第一条可见条目」上。旧的先摘掉，
+					 *     否则换排序之后用户进入大屏模式会对着一行不在首位的条目。
+					 */
+					const anchor = row.querySelector('a.article-link')
+					if (anchor) {
+						anchor.setAttribute('data-gamepad-focus', '')
+						anchor.removeAttribute('data-gamepad-initial-focus')
+						if (firstKey === item.key)
+							anchor.setAttribute('data-gamepad-initial-focus', '')
+					}
+					row.removeAttribute('data-gamepad-initial-focus')
 					return row
 				}).filter(Boolean)
 				menu.replaceChildren(...rows)
 			}
 
-			// 段序：升序时年份升序，降序时倒序
-			const sortedGroups = [...groups].sort((a, b) =>
-				dir * compareValues(a.dataset.year || '', b.dataset.year || ''))
+			// 段序：用上面已算好的 `sortedGroups`（首选项的裁决也读它，不能算两遍）
 			for (const g of sortedGroups)
 				root.appendChild(g)
 		}

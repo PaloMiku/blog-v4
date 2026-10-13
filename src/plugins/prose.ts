@@ -17,8 +17,7 @@
  * ═══ 结构合同 ═══
  * `main.css` 里 `.shiki > .line` 一类规则要求 `.line` 是 `pre` 的**直接子元素**，
  * 所以这里必须把 Astro shiki 产出的 `<code>` 包裹拆掉；类名与嵌套形状是线上一致
- * 的内容合同（CSS、客户端脚本、门禁都按它匹配），勿单方面改动——背景见
- * docs/plan/analysis/engineering-inventory.md §4。
+ * 的内容合同（CSS、客户端脚本、门禁都按它匹配），勿单方面改动。
  *
  * 本插件的 rehype 阶段跑在 Astro 内建 shiki **之后**（证据：追加的
  * `shiki scrollcheck-x` 排在 `one-dark-pro` 之后，且拆掉的 `<code>`
@@ -437,7 +436,7 @@ function buildCodeFigure(pre: HastNode, metas: CodeMeta[]): HastNode {
 	/*
 	 * 图注里的行数 / 字符数 / 字节数按「围栏原文」口径算：闭合围栏前那个换行
 	 * 也算进去，所以补 `${source}\n`。这个口径与线上图注数字一致（内容合同，
-	 * 背景见 engineering-inventory §4），几何门禁按图注文本配对——改口径会连锁红。
+	 * 与线上一致），几何门禁按图注文本配对——改口径会连锁红。
 	 */
 	const untrimmed = `${source}\n`
 

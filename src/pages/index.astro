@@ -115,18 +115,35 @@ const slideList = listRecommended.map(entry => ({
 const previewCount = all.filter(entry => entry.id.startsWith('previews/')).length
 ---
 
-<Blog title="" hasAside>
+<Blog title="" hasAside bigPicturePage="home">
 	<BlogHeader class="hide-above-mobile" to="/" tag="h1" />
 
 	<Slide list={slideList} />
 
+	<!--
+		手柄大屏模式标记（契约见 src/lib/gamepad-focus.ts 头部 10-30 行）。
+		**只加属性**：class / 结构 / 事件委托 / 普通模式几何一概不动。
+
+		`data-gamepad-region="main"` 落在 `.post-list` 而不是 `<main id="main-content">` 上：
+		后者由 `Blog.astro` 拥有（不在本任务范围内），而且区域取「最近的祖先」，
+		标在这里同样把这个子树圈进 main 区。`<Slide>` 与 `<Pagination>` 各自也声明了
+		`main`（见那两个组件），它们是 `.post-list` 的**兄弟**，不在这个区域的子树里。
+	-->
 	<div
 		class="post-list"
 		data-post-list
+		data-gamepad-region="main"
 		data-per-page={perPage}
 		data-default-order={sortOrder}
 		data-default-ascending={String(isAscending)}
 	>
+		{/*
+		 * ⚠️ 这一块曾在手柄标记的改动中被**整段删掉**（发生在一次「编辑失手」之后，
+		 * 当时只核对了列表结构、没有核对兄弟节点是否还在）。后果是：
+		 * `previewCount` 变成算了没人用的死变量，预览入口 `<Secret>` 从首页消失。
+		 * 判据不是「文件还编译得过」——它编译得过，只是少了一块内容。
+		 * 恢复时按 HEAD 逐字还原，只额外保留手柄属性。
+		 */}
 		<OrderToggle categories={categories}>
 			{previewCount > 0 && (
 				<Secret>
@@ -138,9 +155,14 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 			)}
 		</OrderToggle>
 
+		{/*
+			首页文章列表：右手摇杆的默认滚动容器。`BigPictureShell.astro:746` 读的就是
+			`[data-gamepad-scroll]`。列表长度超过视口时页面本身在滚，这里声明的是
+			「滚这块」，Shell 会优先用它而不是 `document.scrollingElement`。
+		*/}
 		<ListTransition>
 			{/* 基线里 PostArticle 是 <menu> 的直接子元素，没有 <li> 包裹 */}
-			<menu class="proper-height" data-post-menu>
+			<menu class="proper-height" data-post-menu data-gamepad-scroll>
 				{listPaged.map((entry, index) => (
 					<Article
 						title={entry.data.title}
@@ -154,6 +176,14 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 						useUpdated={sortOrder === 'updated'}
 						delay={index * 0.05}
 						data-list-key={toPath(entry)}
+						/*
+						 * 首屏第一张卡 = 进入大屏模式时的首选焦点。
+						 * 只有 `index === 0` 带它：`data-gamepad-initial-focus`
+						 * 是「首选项」而不是「可选」标记，多标几个只会让规则变成
+						 * 「谁在 DOM 里更靠前」这种不可推理的结果。
+						 * 动态重排后由 index.astro 的 `render()` 重新盖章（见脚本）。
+						 */
+						data-gamepad-initial-focus={index === 0 ? '' : undefined}
 					/>
 				))}
 			</menu>
@@ -332,6 +362,14 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 			for (const p of arr) {
 				const btn = document.createElement('button')
 				btn.className = 'pagination-num'
+				/*
+				 * 手柄标记在**创建处**盖，不能只靠 `Pagination.astro` 的模板：
+				 * 这些节点是这里 createElement 出来的，既没有构建期的
+				 * `data-astro-cid`（CLAUDE.md 坑位 4），也不会带上组件模板里的属性。
+				 * 漏了这一句的症状是「翻页 / 换分类之后页码按钮从焦点网里静默消失」，
+				 * 页高与计算样式两道门禁都看不见。
+				 */
+				btn.setAttribute('data-gamepad-focus', '')
 				if (p === -1) {
 					btn.disabled = true
 					btn.textContent = '…'
@@ -341,6 +379,8 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 					btn.setAttribute('aria-label', `第${p}页`)
 					btn.classList.toggle('active', p === page)
 					btn.textContent = String(p)
+					// key 与构建期同一命名空间（`page:<n>`），刷新后才认得回同一项
+					btn.setAttribute('data-list-key', `page:${p}`)
 				}
 				pager.insertBefore(btn, next)
 			}
@@ -367,6 +407,22 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 				const card = source.firstElementChild.cloneNode(true)
 				// getFixedDelay(index * 0.05)
 				card.style.setProperty('--delay', `${(index * 0.05).toFixed(2)}s`)
+				/*
+				 * 首选焦点必须在**每次重排之后**重新裁决，不能只在构建期写一次。
+				 *
+				 * 卡片是从 `<template data-post-dataset>` 克隆来的，克隆会**原样带上**
+				 * 源节点上的属性；而构建期只有首页第一张卡盖了 `data-gamepad-initial-focus`
+				 * （见上面的模板）。换排序 / 换分类 / 翻页之后，「第一张可见卡」换人了，
+				 * 旧的那枚继续带着首选项、新的没有 ⇒ 进入大屏模式时焦点落在一个
+				 * 用户根本不在看的卡片上，且没有任何报错。
+				 *
+				 * 所以这里先摘掉克隆继承来的标记，再只给 index 0 盖上。
+				 * `dataset` 的键是 `gamepadInitialFocus`（连字符转驼峰），用
+				 * `removeAttribute` 而不是 `delete dataset.*` 是为了同时清掉两种来源。
+				 */
+				card.removeAttribute('data-gamepad-initial-focus')
+				if (index === 0)
+					card.setAttribute('data-gamepad-initial-focus', '')
 				return card
 			}).filter(Boolean)
 			menu.replaceChildren(...cards)

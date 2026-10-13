@@ -24,7 +24,7 @@ import path from 'node:path'
  *   node scripts/accept.mjs --print-policies       # 只打印门禁的跳过策略矩阵，不跑门禁
  *   ACCEPT_FORCE_CI=1 node scripts/accept.mjs      # 本机按 CI 判定跑（验 CI 行为，见下）
  *
- * 分档原则（EC-003，分类依据见 docs/plan/analysis/engineering-inventory.md）：
+ * 分档原则（EC-003；分类依据是「这道门禁依赖不依赖基线或外网」——不依赖才进 CI）：
  *   release      —— 决定一次提交能否发布。快、稳、与当前 Astro 直接相关；CI 只跑这一档。
  *   maintenance  —— 全量 DOM/CSS 域审计、豁免台账到期审计、CDN 合同、Windows 专属自测。
  *                   包含 release 的全部内容，发布前深度检查跑它。

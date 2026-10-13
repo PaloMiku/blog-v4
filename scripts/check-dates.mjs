@@ -17,7 +17,7 @@
  * 内容管线用 JS 的 Date 构造函数解析这个非 ISO 字符串，**按构建机的时区**解释它，
  * 再序列化成 UTC。所以这道门禁必须用同一套解释方式——代价是：结论只在**跑门禁的机器
  * 和构建机器时区一致**时成立。因此摘要里会把当前 UTC 偏移打出来，时区对不上时是可诊断的，
- * 而不是玄学。同一类约束见 docs/astro-phase1-findings.md 26 的字体基线：基线的有效性
+ * 而不是玄学。同一类约束见 git: a4603b0^:docs/astro-phase1-findings.md 26 的字体基线：基线的有效性
  * 建立在一条被明说的前提上，而不是建立在检查上。
  *
  * （PowerShell 原版靠 `AssumeUniversal` + `AdjustToUniversal` 让产物侧那个 `Z` 真的是 UTC；

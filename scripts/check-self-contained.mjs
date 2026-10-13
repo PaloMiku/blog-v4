@@ -26,7 +26,7 @@
  *      旧判据管不到它，因为那时 `baseline/` 还不存在。
  *
  * 这个脚本**必须真的会失败**——一个从没被看见失败过的检查不构成任何证据（见
- * `docs/astro-phase1-findings.md` §62.4）。改动本脚本后，请照下面「如何自证」
+ * git: a4603b0^:docs/astro-phase1-findings.md §62.4）。改动本脚本后，请照下面「如何自证」
  * 一节临时制造一次越界 import，确认它变红，再还原。
  *
  * 用法：node scripts/check-self-contained.mjs
@@ -127,7 +127,7 @@ const SPECIFIER_RE = /(?<![\w$.-])(?:from|import|require)\s*(?:\(\s*)?['"]([^'"\
  * **构建直接 ENOENT 失败**。词法门禁全程报「0 越界引用」。
  *
  * 也就是说：只扫 import 说明符的自包含检查，对运行时读文件**完全失明**。
- * 这正是 `docs/astro-phase1-findings.md` §35 记过的 `import.meta.url` 少算一层
+ * 这正是 git: a4603b0^:docs/astro-phase1-findings.md §35 记过的 `import.meta.url` 少算一层
  * 那个老坑的第二次出现。
  *
  * 覆盖两种写法：
@@ -144,7 +144,7 @@ const SPECIFIER_RE = /(?<![\w$.-])(?:from|import|require)\s*(?:\(\s*)?['"]([^'"\
  * 第一版把捕获组写在了前引号之前，于是整条规则**匹配不到任何东西**——
  * 而它报出来的结果是「0 越界引用」，看上去完全正常。
  * 是靠「注入真实缺陷后必须变红」这个负控才发现的：
- *   没有负控的门禁等于没有门禁（docs/astro-phase1-findings.md §62.4）。
+ *   没有负控的门禁等于没有门禁（git: a4603b0^:docs/astro-phase1-findings.md §62.4）。
  */
 // eslint-disable-next-line prefer-regex-literals -- 见上方说明：字面量里的裸引号会打断 stripComments
 const RUNTIME_URL_RE = new RegExp(

@@ -97,7 +97,9 @@ Astro 7 项目结构（站点根即仓库根）：
 │   │   ├── posts # 正式文章
 │   │   ├── previews # 草稿文章，仅可被站内搜索
 │   │   └── games # 游戏页
-│   ├── lib # 框架无关共享层（app-config.ts 导航/页脚/交互默认值）
+│   ├── lib # 框架无关共享层（app-config.ts 导航/页脚/交互默认值；
+│   │        手柄大屏相关：gamepad-input / gamepad / gamepad-navigation /
+│   │        gamepad-focus / big-picture-state / big-picture-session / layout-state）★
 │   ├── loaders # 内容加载器
 │   ├── pages # 文件路由与端点（atom.xml / llms.txt / search-index / raw/*.md）
 │   ├── plugins # remark/rehype 管线（component-fence / heading-ids / math-code / prose）
@@ -168,13 +170,15 @@ typecheck + build + `node scripts/accept.mjs --skip-build`（release 档全部�
 - 订阅源需要绝对地址：自托管时把 `src/config/site-meta.ts` 的站点地址设为实际访问地址，
   协议、主机保持一致。
 - `pnpm accept` 是唯一验收入口（`scripts/accept.mjs`），也是门禁名单的**唯一事实源**：
-  默认跑 release 档（15 道发布必需门禁），一次构建加门禁，零外网、只连 localhost。
+  默认跑 release 档，一次构建加门禁，零外网、只连 localhost。
   CI 跑的是同一条命令。门禁因内存不足或网络不可达而**自己跳过**时，汇总里单列成
   `skipped`、不计入通过——「全绿」不包括它们。
+  **门禁道数与成员不要在本文复述**（这里的数字漂过不止一次），
+  运行 `node scripts/accept.mjs --print-policies` 打印的就是权威版本，含每道门的跳过策略。
 - `pnpm accept:maintenance` = release 档全量 + 深度维护审计（CSS 域、豁免台账、CDN
-  合同、Windows 专属自测等 16 道）。发布前深度检查跑它。
+  合同、Windows 专属自测等）。发布前深度检查跑它。
 - `pnpm accept:parity` = 迁移对拍档（`compare-urls` / `live:sitemap` / `live:ui-parity`），
-  **约 20–25 分钟**（大头是 `live:ui-parity`，68 页 × 两侧）。切换上线前与发布前各跑
+  **约 20–25 分钟**（大头是 `live:ui-parity`，逐页 × 两侧）。切换上线前与发布前各跑
   一次；日常改动不必跑。基线不在 checkout 里时显示 `NOT-RUN`（不可运行），不计通过。
 - 运行、部署项目时 Node.js 版本需遵照 `package.json` 的 engines 限制。
 

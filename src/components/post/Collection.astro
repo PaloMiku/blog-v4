@@ -47,7 +47,13 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 
 {collectionKey && items.length > 0
 	? (
-		<section class="post-collection">
+		/*
+		 * `data-gamepad-region="main"`：合集块是阅读页正文流的一部分（不是侧栏、
+		 * 不是弹层），自成一个区域后手柄可以整体跳到「合集」再上下选项。
+		 * 最近祖先区域生效，所以这里的声明会盖过外层可能存在的同区标记，
+		 * 语义上正是「这一块自己是一站」。
+		 */
+		<section class="post-collection" data-gamepad-region="main">
 			{/* 原生折叠：无 JS 状态，键盘与无障碍支持由浏览器提供 */}
 			<details class="collection" open>
 				<summary class="collection-header">
@@ -71,7 +77,17 @@ const setting = collectionKey ? COLLECTION_SETTINGS[collectionKey] : undefined
 								class="collection-item"
 								class:list={{ current: item.id === currentId }}
 							>
-								<a class="collection-link" href={toPath(item)}>
+								{/*
+								 * key 用**文章 id**（不是序号）：合集列表顺序由日期升序决定，
+								 * 同一天新增文章会整体位移；而 id 是「同一个东西」的稳定凭据。
+								 * `list:collection:<id>` 与其它命名空间不会撞。
+								 */}
+								<a
+									class="collection-link"
+									href={toPath(item)}
+									data-gamepad-focus
+									data-list-key={`collection:${item.id}`}
+								>
 									<span class="article-title text-creative">{item.data.title}</span>
 									{item.data.date && <UtilDate class="date" date={item.data.date} />}
 									{item.id === currentId && <span class="current-tag">当前</span>}

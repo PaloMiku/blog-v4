@@ -267,6 +267,7 @@ function insideClosedDetails(element: Element): boolean {
 interface ComputedStyleView {
 	readonly visibility: string
 	readonly overflow: string
+	readonly opacity?: string
 	readonly getPropertyValue?: (property: string) => string
 }
 
@@ -286,6 +287,49 @@ function visibilityOf(element: Element): string {
 	// 计算样式本身已经继承了祖先的 visibility；元素自己写 `visible` 时也会覆盖回来，
 	// 这正是 CSS 的语义，这里不做二次推断
 	return style.visibility || 'visible'
+}
+
+/**
+ * 元素是否**实际不可见**（不透明度累乘为 0）。
+ *
+ * ## 为什么必须单独判 `opacity`
+ *
+ * `opacity` 与 `visibility` 是两套机制：`opacity: 0` 的元素**仍然有渲染盒**
+ * （`getBoundingClientRect()` 非零）、**仍然可以命中测试**、也**不继承新的值**——
+ * 它是把整棵子树的绘制结果按比例混合，父级 `opacity: 0.5` 与子级 `opacity: 0.5`
+ * 的**有效**不透明度是 0.25（累乘，不是覆盖）。所以只看元素自身的 `opacity`
+ * 会漏掉「父级透明、子级不写」这一大类。
+ *
+ * ## 实测的代价（不判它的后果）
+ *
+ * `prose.css` 给「引用整段到评论区」按钮（`src/lib/prose-enhance.ts`）写的是
+ * `display: inline-flex; opacity: 0`，只在悬停/聚焦时才显形；而
+ * `prose-enhance` 会在运行期把它的 `hidden` 摘掉。于是它**盒在、可点、但看不见**。
+ * 本函数不判 `opacity` 时，手柄在 `/games` 的首选焦点就落在它上面——
+ * 用户看到的是「按了 A 什么都没发生」（实测由 `pnpm interaction-check` 抓到）。
+ *
+ * ## 为什么用累乘而不是「只看自己」
+ *
+ * 走到根为止累乘，任何一层为 0 即判定不可见。这既符合 CSS 的实际语义，
+ * 也避免了「祖先透明但自己没有 opacity 声明」时的漏判。
+ *
+ * 取不到计算样式（脱离文档的节点、裸对象夹具）时返回「看得见」——判据退化为不拦，
+ * 与 `visibilityOf` 的取向一致：宁可选到一个可疑目标，也不要让整个焦点层静默失效。
+ */
+function isFullyTransparent(element: Element): boolean {
+	for (let node: Element | null = element; node; node = node.parentElement) {
+		const style = styleOf(node)
+		if (!style)
+			return false
+		// 空串 / 非法值一律按 1 处理：宁可放过，不要因为解析不出来就判死
+		const raw = style.opacity
+		if (raw === undefined || raw === '')
+			continue
+		const value = Number.parseFloat(raw)
+		if (Number.isFinite(value) && value <= 0)
+			return true
+	}
+	return false
 }
 
 /**
@@ -346,6 +390,9 @@ function isSelectable(element: Element): boolean {
 		return false
 	const visibility = visibilityOf(element)
 	if (visibility === 'hidden' || visibility === 'collapse')
+		return false
+	// `opacity: 0` 的盒子仍在、仍可命中测试，但用户看不见它 ⇒ 不能作为焦点落点
+	if (isFullyTransparent(element))
 		return false
 	const rect = element.getBoundingClientRect()
 	if (!(rect.width > 0) || !(rect.height > 0))

@@ -51,11 +51,25 @@ const { totalPages, expandPages = 2, sticky = false, avoid = false, value = 1 } 
 const pageArr = getPaginationIndicator(value, totalPages, expandPages)
 ---
 
+<!--
+	手柄大屏模式标记（契约见 src/lib/gamepad-focus.ts 头部）。**只加属性**。
+
+	- `data-gamepad-region="main"`：分页条在正文流里，归属 main 区。
+	- prev / next 与页码按钮都是原生 `<button>`（prev/next 由 `Button.astro` 渲染），
+	  本来就在发现选择器里；`data-gamepad-focus` 显式声明意图。
+	- ⚠️ **页码按钮会被重建。** `pages/index.astro` 的 `syncPager()` 用
+	  `document.createElement('button')` 摘掉旧的、插入新的页码按钮，
+	  那些节点是运行时造的——不仅没有 `data-astro-cid`，**也不会有这里的属性**
+	  （本文件是构建期模板，管不到 createElement）。所以重建处必须自己补
+	  `data-gamepad-focus` 与 `data-list-key`，否则翻页 / 换分类之后页码按钮
+	  从焦点网里**静默消失**：手柄摇杆走着走着少一排目标，而任何门禁都看不见。
+-->
 <nav
 	class:list={['pagination', { sticky }]}
 	aria-label={`第${value}页，共${totalPages}页`}
 	style={{ '--collapsed-width': `${pageArr.length * 2 + 6}em` }}
 	data-pagination-root
+	data-gamepad-region="main"
 	data-value={String(value)}
 	data-total-pages={totalPages}
 	data-avoid={avoid ? '' : undefined}
@@ -86,6 +100,7 @@ const pageArr = getPaginationIndicator(value, totalPages, expandPages)
 		aria-label="上一页"
 		disabled={value <= 1}
 		data-page-prev
+		data-gamepad-focus
 	/>
 
 	{pageArr.map((i) => (
@@ -96,6 +111,8 @@ const pageArr = getPaginationIndicator(value, totalPages, expandPages)
 					class:list={{ active: i === value }}
 					aria-label={`第${i}页`}
 					data-page-num={i}
+					data-gamepad-focus
+					data-list-key={`page:${i}`}
 				>
 					{i}
 				</button>
@@ -112,6 +129,7 @@ const pageArr = getPaginationIndicator(value, totalPages, expandPages)
 		aria-label="下一页"
 		disabled={value >= totalPages}
 		data-page-next
+		data-gamepad-focus
 	/>
 </nav>
 {/* 占位锚点：用于判断分页条是否进入视口（复现 useElementVisibility） */}

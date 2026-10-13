@@ -678,3 +678,30 @@
 		transition: none;
 	}
 }
+
+/*
+ * 正文阅读锚点（`src/pages/[...slug].astro` 的 `.reading-anchor`）。
+ *
+ * 它存在的唯一理由是「给阅读页一个可被手柄选中的正文入口」。两个硬约束：
+ *
+ * 1. `gamepad-focus.ts` 的可见性判据是 `rect.width > 0 && rect.height > 0`（:350-351），
+ *    空 inline 元素的矩形是 0×0 ⇒ 判为「没有渲染盒」被淘汰。属性齐全却永远选不中，
+ *    **任何静态扫描都看不出来**——本仓库反复吃亏的那一类静默失效。
+ *    所以给它一个真实盒子：撑满一行、1px 高的占位。
+ *
+ * 2. 它是 `<a href="#main-content">`，即**真的可点**（见该文件的注释：`[tabindex]`
+ *    在 `FOCUS_SELECTOR` 里，光去掉 `data-gamepad-focus` 拦不住它成为手柄目标，
+ *    于是必须让它按 A 有真实效果）。因此这里**不能**写 `pointer-events: none`
+ *    ——那会拦掉鼠标点击，与「它是个链接」矛盾。
+ *
+ * 刻意不写 `color`/`background`：它不该被看见，也不该改变正文几何
+ * （负外边距抵掉 1px 占位对行的影响）。只在模式内生效：普通模式下这条规则不命中。
+ */
+:root[data-big-picture] .reading-anchor {
+	display: block;
+	width: 100%;
+	height: 1px;
+	margin-block: -1px 0;
+	text-decoration: none;
+	color: inherit;
+}

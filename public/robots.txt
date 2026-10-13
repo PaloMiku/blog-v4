@@ -2,6 +2,8 @@
 # 规则照抄源项目 `.output/public/robots.txt`（由 app/modules/robots.ts 生成），
 # 仅 sitemap 地址改为 Astro 实际产物：dist 根目录下的 sitemap-index.xml。
 User-agent: *
+Disallow: /admin
+Disallow: /admin/
 Disallow: /preview
 Disallow: /previews/*
 

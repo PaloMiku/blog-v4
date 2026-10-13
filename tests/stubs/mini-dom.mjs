@@ -285,6 +285,11 @@ function parseStyle(text) {
 /**
  * 计算样式：`visibility` 按 CSS 继承（元素自身写 `visible` 可以覆盖祖先的 `hidden`），
  * 其余属性不继承。
+ *
+ * `opacity` **不继承、但按累乘生效**（父 0.5 × 子 0.5 = 有效 0.25）。这里如实返回
+ * **元素自身声明**的值（未声明时是空串，与真 CSSStyleDeclaration 一致），
+ * 累乘由消费方 `gamepad-focus.ts` 的 `isFullyTransparent()` 沿祖先链自行完成——
+ * 把累乘放进 stub 会变成「替生产代码做判断」，测的就不再是生产逻辑。
  */
 function computedStyle(element) {
 	const own = parseStyle(element.getAttribute('style'))
@@ -306,6 +311,7 @@ function computedStyle(element) {
 		'overflow': overflow,
 		'overflow-x': own['overflow-x'] ?? overflow,
 		'overflow-y': own['overflow-y'] ?? overflow,
+		'opacity': own.opacity ?? '',
 	}
 	// 真 CSSStyleDeclaration 没设某属性时返回**空串**，不是 undefined。生产代码若用
 	// `??` 兜底，裁剪判定会在真实浏览器里整条静默失效；这里如实复刻这个形状
@@ -316,6 +322,7 @@ function computedStyle(element) {
 		'overflow': declarations.overflow,
 		'overflow-x': declarations['overflow-x'],
 		'overflow-y': declarations['overflow-y'],
+		'opacity': declarations.opacity,
 	}
 }
 

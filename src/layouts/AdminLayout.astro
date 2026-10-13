@@ -1,0 +1,333 @@
+---
+/**
+ * 后台外壳：左侧导航 + 顶栏 + 内容区。
+ *
+ * ## 与前台外壳的关系
+ * 后台**不复用** `Blog.astro` 的三栏布局：前台是「正文优先」的阅读外壳，
+ * 后台是「工具优先」的操作台（窄侧栏 + 宽工作区），二者信息架构不同。
+ * 但**文档外壳仍走 `Base.astro`**——主题（color-mode）、字体、`<head>`、
+ * 页脚脚本都靠它，后台不该另起一套，否则会出现两套主题实现。
+ *
+ * ## noindex
+ * 后台整站不进搜索：Base 的 `noindex` prop 由布局统一打开，
+ * 同时把 `/admin` 加进 `robots.txt` 与 sitemap 过滤（见 noindex-paths.ts 注释）。
+ *
+ * ## 会话门禁（重要，且请勿误读为安全边界）
+ * 本站是**纯静态 SSG**，没有服务端，因此**不可能**有真正的登录校验。
+ * 这里只是把「未登录就跳回 /admin/login」的行为做在客户端
+ * （sessionStorage 标记，见 `lib/admin.ts`）。它挡的是误入，不是攻击者——
+ * 任何人都能绕过。真正的访问控制必须由部署层（EdgeOne 规则 / 反向代理 Basic Auth）
+ * 在**服务器**上做。见 `/admin/login` 页与交付说明。
+ */
+import Base from './Base.astro'
+import Icon from '../components/Icon.astro'
+import blogConfig from '../config/blog'
+
+interface Props {
+	title: string
+	/** 当前导航项的高亮 key，见下方 nav */
+	active: 'dashboard' | 'posts' | 'editor'
+}
+
+const { title, active } = Astro.props
+
+// @keep-sorted
+const nav = [
+	{ key: 'dashboard', href: '/admin/', icon: 'tabler:layout-dashboard', label: '概览' },
+	{ key: 'posts', href: '/admin/posts/', icon: 'tabler:file-text', label: '文章' },
+	{ key: 'editor', href: '/admin/posts/editor', icon: 'tabler:pencil', label: '写文章' },
+] as const
+---
+
+<Base title={title} noindex>
+	<div class="admin-shell" data-admin-root>
+		<aside class="admin-sidebar">
+			{/*
+			  品牌链接在「概览」页上指向的就是当前页，必须带 `aria-current="page"`；
+			  其它页上它指向别的页面，就不能带（门禁 check-aria-current 双向都查）。
+			  `active === 'dashboard'` 恰好等价于「当前页是 /admin/」——
+			  概览只由 admin/index.astro 渲染，没有第二个入口。
+			*/}
+			<a
+				class="admin-brand"
+				href="/admin/"
+				aria-current={active === 'dashboard' ? 'page' : undefined}
+			>
+				<Icon name="tabler:hexagon-letter-m" />
+				<span class="admin-brand-text">
+					<strong>{blogConfig.title}</strong>
+					<small>管理后台</small>
+				</span>
+			</a>
+
+			<nav class="admin-nav" aria-label="后台导航">
+				{nav.map(item => (
+					<a
+						href={item.href}
+						class="admin-nav-link"
+						class:list={{ active: item.key === active }}
+						aria-current={item.key === active ? 'page' : undefined}
+					>
+						<Icon name={item.icon} />
+						<span>{item.label}</span>
+					</a>
+				))}
+			</nav>
+
+			<div class="admin-sidebar-foot">
+				<a class="admin-nav-link" href="/">
+					<Icon name="tabler:external-link" />
+					<span>查看站点</span>
+				</a>
+				<button type="button" class="admin-nav-link" data-admin-logout>
+					<Icon name="tabler:logout" />
+					<span>退出登录</span>
+				</button>
+			</div>
+		</aside>
+
+		<div class="admin-main">
+			<header class="admin-topbar">
+				<h1 class="admin-page-title">{title}</h1>
+				<div class="admin-topbar-right">
+					<span class="admin-user" data-admin-user hidden>
+						<Icon name="tabler:user" />
+						<span data-admin-user-email />
+					</span>
+				</div>
+			</header>
+
+			<main class="admin-content" id="admin-content">
+				<slot />
+			</main>
+		</div>
+	</div>
+</Base>
+
+<script>
+	import { ADMIN_SESSION_KEY, isValidSession } from '../lib/admin'
+
+	function readSession() {
+		try {
+			const raw = sessionStorage.getItem(ADMIN_SESSION_KEY)
+			if (!raw)
+				return null
+			const parsed = JSON.parse(raw)
+			return isValidSession(parsed) ? parsed : null
+		}
+		catch {
+			return null
+		}
+	}
+
+	function initAdminShell() {
+		const root = document.querySelector('[data-admin-root]')
+		if (!(root instanceof HTMLElement) || root.dataset.adminReady)
+			return
+		root.dataset.adminReady = '1'
+
+		// 门禁：没有会话就送回登录页，并带上回跳地址。
+		// ⚠️ 静态站没有服务端，这只是本地门禁（详见文件头注释）。
+		const session = readSession()
+		if (!session) {
+			const next = encodeURIComponent(`${location.pathname}${location.search}`)
+			location.replace(`/admin/login?next=${next}`)
+			return
+		}
+
+		const user = root.querySelector('[data-admin-user]')
+		const email = root.querySelector('[data-admin-user-email]')
+		if (user instanceof HTMLElement)
+			user.hidden = false
+		if (email)
+			email.textContent = session.email
+
+		root.querySelector('[data-admin-logout]')?.addEventListener('click', () => {
+			sessionStorage.removeItem(ADMIN_SESSION_KEY)
+			location.href = '/admin/login'
+		})
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAdminShell)
+	else
+		initAdminShell()
+	document.addEventListener('astro:page-load', initAdminShell)
+</script>
+
+<style>
+.admin-shell {
+	display: grid;
+	grid-template-columns: 15rem 1fr;
+	min-height: 100vh;
+	background: var(--c-bg-1);
+	color: var(--c-text);
+}
+
+/* ---------- 侧栏 ---------- */
+.admin-sidebar {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	padding: 1.2rem 0.9rem;
+	border-inline-end: 1px solid var(--c-border);
+	background: var(--c-bg);
+	position: sticky;
+	top: 0;
+	height: 100vh;
+}
+
+.admin-brand {
+	display: flex;
+	gap: 0.6rem;
+	align-items: center;
+	padding: 0.4rem 0.6rem 1rem;
+	color: inherit;
+	text-decoration: none;
+	border-bottom: 1px solid var(--c-border);
+	margin-bottom: 0.6rem;
+
+	.admin-brand-text {
+		display: flex;
+		flex-direction: column;
+		line-height: 1.2;
+		overflow: hidden;
+
+		strong {
+			font-size: 0.95rem;
+			white-space: nowrap;
+			text-overflow: ellipsis;
+		}
+
+		small {
+			color: var(--c-text-3);
+			font-size: 0.75rem;
+		}
+	}
+}
+
+.admin-nav {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+}
+
+.admin-sidebar-foot {
+	margin-top: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+	padding-top: 0.8rem;
+	border-top: 1px solid var(--c-border);
+}
+
+.admin-nav-link {
+	display: flex;
+	gap: 0.6rem;
+	align-items: center;
+	padding: 0.55rem 0.7rem;
+	border-radius: 0.5rem;
+	color: var(--c-text-2);
+	text-decoration: none;
+	background: none;
+	border: none;
+	font: inherit;
+	cursor: pointer;
+	text-align: start;
+	width: 100%;
+
+	&:hover {
+		background: var(--c-bg-2);
+		color: var(--c-text);
+	}
+
+	&.active {
+		background: var(--c-primary-soft);
+		color: var(--c-primary);
+		font-weight: 600;
+	}
+}
+
+/* ---------- 顶栏 ---------- */
+.admin-main {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.admin-topbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 0.9rem 1.6rem;
+	border-bottom: 1px solid var(--c-border);
+	background: var(--c-bg);
+	position: sticky;
+	top: 0;
+	z-index: 5;
+}
+
+.admin-page-title {
+	margin: 0;
+	font-size: 1.15rem;
+	font-weight: 700;
+}
+
+.admin-user {
+	display: inline-flex;
+	gap: 0.4rem;
+	align-items: center;
+	color: var(--c-text-2);
+	font-size: 0.85rem;
+
+	&[hidden] {
+		display: none;
+	}
+}
+
+/* ---------- 内容区 ---------- */
+.admin-content {
+	padding: 1.6rem;
+	min-width: 0;
+	flex: 1;
+}
+
+/* 窄屏：侧栏收成顶部横排 */
+@media (width <= 48rem) {
+	.admin-shell {
+		grid-template-columns: 1fr;
+	}
+
+	.admin-sidebar {
+		position: static;
+		height: auto;
+		flex-direction: row;
+		align-items: center;
+		flex-wrap: wrap;
+		border-inline-end: none;
+		border-bottom: 1px solid var(--c-border);
+		padding: 0.7rem 0.9rem;
+
+		.admin-brand {
+			border-bottom: none;
+			margin-bottom: 0;
+			padding-bottom: 0.2rem;
+			border-inline-end: 1px solid var(--c-border);
+			padding-inline-end: 0.9rem;
+		}
+	}
+
+	.admin-nav,
+	.admin-sidebar-foot {
+		flex-direction: row;
+		margin-top: 0;
+		padding-top: 0;
+		border-top: none;
+	}
+
+	.admin-content {
+		padding: 1rem;
+	}
+}
+</style>

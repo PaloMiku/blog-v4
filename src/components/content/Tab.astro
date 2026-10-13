@@ -55,9 +55,9 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 
 {combobox
 	? (
-		<div class="combobox-wrapper" class:list={{ 'has-border': border }} data-tab-root>
+		<div class="combobox-wrapper" class:list={{ 'has-border': border }} data-tab-root data-gamepad-region="main">
 			<div class="combobox-container">
-				<button class="combobox-trigger" type="button" aria-expanded="false" data-combobox-trigger>
+				<button class="combobox-trigger" type="button" aria-expanded="false" data-combobox-trigger data-gamepad-focus data-list-key="tab:trigger">
 					<span class="combobox-label" data-combobox-label>{current}</span>
 					<svg class="combobox-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<polyline points="6 9 12 15 18 9" />
@@ -72,6 +72,8 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 								class:list={{ active: index + 1 === initial }}
 								type="button"
 								data-tab-select={index + 1}
+								data-gamepad-focus
+								data-list-key={`tab:option:${index + 1}`}
 							>
 								<span>{tab}</span>
 								{index + 1 === initial && (
@@ -87,13 +89,19 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 
 			<div class="tab-content">
 				{panelHtml.map((html, index) => (
-					<div class="tab-panel" data-tab-panel={index + 1} hidden={index + 1 !== initial} set:html={html} />
+					<div
+						class="tab-panel"
+						data-tab-panel={index + 1}
+						hidden={index + 1 !== initial}
+						data-list-key={`tab:panel:${index + 1}`}
+						set:html={html}
+					/>
 				))}
 			</div>
 		</div>
 	)
 	: (
-		<div class:list={{ center, 'has-border': border }} data-tab-root>
+		<div class:list={{ center, 'has-border': border }} data-tab-root data-gamepad-region="main">
 			<div class="tabs" role="tablist">
 				{tabs.map((tab, index) => (
 					<button
@@ -103,6 +111,8 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 						role="tab"
 						aria-selected={index + 1 === initial ? 'true' : 'false'}
 						data-tab-select={index + 1}
+						data-gamepad-focus
+						data-list-key={`tab:option:${index + 1}`}
 					>
 						{tab}
 					</button>
@@ -110,14 +120,41 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 			</div>
 			<div class="tab-content">
 				{panelHtml.map((html, index) => (
-					<div class="tab-panel" data-tab-panel={index + 1} hidden={index + 1 !== initial} set:html={html} />
+					<div
+						class="tab-panel"
+						data-tab-panel={index + 1}
+						hidden={index + 1 !== initial}
+						data-list-key={`tab:panel:${index + 1}`}
+						set:html={html}
+					/>
 				))}
 			</div>
 		</div>
 	)}
 
 <script>
-	// 原生脚本会被 Astro 去重合并，故用 data 属性定位各个 Tab 实例
+	/*
+	 * 手柄大屏模式（Task 7 Step 6）：本组件是这个改动里唯一在**运行时重建 DOM**
+	 * 的目标组件，两个坑都在这里交代清楚。
+	 *
+	 * ## 1. 运行期重建的节点带不了 marker，也拿不到 `data-astro-cid`
+	 * 下面的 combobox 勾选标记由 `createElementNS` 现建，不带构建期属性
+	 * （CLAUDE.md 坑位 4；样式侧已用 `.combobox-wrapper :global(...)` 兜住）。
+	 * 它**刻意不补** `data-gamepad-focus`：对勾是装饰不是控制，
+	 * 补上只会多一个按了没反应的焦点站。
+	 *
+	 * ## 2. 面板切换**不需要**重挂 marker，`hidden` 已被观察
+	 * `select()` 只在自己那批面板上切 `hidden`，**不重建节点**，因此面板内部
+	 * 由 `set:html` 在构建期写死的 marker 在整页生命周期内一直有效。
+	 * 而「隐藏面板里的控件不可选」由 `gamepad-focus.ts` 自己兜住：
+	 * 它的属性观察器 `attributeFilter` 含 `hidden`、`subtree: true`
+	 * （见该文件 `OBSERVED_ATTRIBUTES` 与 `attributeObserver.observe`），
+	 * 且 `blockedByAttribute()` 沿祖先链判定——所以 `p.hidden = true`
+	 * 会被观察器收到并触发重算，**这里不需要、也不应该自己再发一次刷新**。
+	 *
+	 * 反面做法是给这里接一个全局刷新挂钩：那个挂钩无人发布（Shell 侧没有这个东西），
+	 * 写了就是死代码；而它看起来又像「已经接上线了」，比不写更糟。
+	 */
 	function initTab(root) {
 		if (!(root instanceof HTMLElement) || root.dataset.tabReady)
 			return
@@ -132,6 +169,7 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
 				if (btn.getAttribute('role') === 'tab')
 					btn.setAttribute('aria-selected', on ? 'true' : 'false')
 			}
+			// 只切 `hidden`：焦点管理器观察这个属性，会自己重算可选目标集合
 			panels.forEach(p => p.hidden = Number(p.dataset.tabPanel) !== index)
 		}
 
@@ -385,7 +423,7 @@ const panelHtml = tabs.map((_, i) => Astro.slots.render(`tab${i + 1}`))
  * 能力——那个 `<input class="search-input">` 由 SearchModal 渲染、带的是
  * **它的** cid，不带 Tab 的，于是整条规则永不匹配。
  * 该 class 全站仅此一个元素，改 global 无扩散风险。
- * 见 docs/astro-phase1-findings.md §50，scripts/audit-dead-scope.mjs 可复现。
+ * 见 git: a4603b0^:docs/astro-phase1-findings.md §50，scripts/audit-dead-scope.mjs 可复现。
  */
 :global(.search-input) {
 	flex: 1;

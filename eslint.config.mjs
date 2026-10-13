@@ -13,7 +13,19 @@ import { defineConfig } from 'eslint/config'
 // 摘掉它是接管后的可选清理（先确认没有 .vue 文件，再删那两行），本次没做。
 
 export default antfu({
-	ignores: ['*.yaml', '.mimosa', '.qoder', '.zcode', '.playwright-mcp'],
+	ignores: [
+		'*.yaml',
+		'.mimosa',
+		'.qoder',
+		'.zcode',
+		'.playwright-mcp',
+		// 工具/代理产生的一次性工作区，不入库也不受维护：
+		// `.superpowers/sdd/` 里是 Task 6 的几何测量脚本（无头浏览器 dump 解析器），
+		// `.astro-compare/` 是 accept 的构建日志与对比产物。两者都是 gitignored 的中间物，
+		// lint 扫它们只会让 147 个 no-console 错误挡住真正的代码问题。
+		'.superpowers/',
+		'.astro-compare/',
+	],
 	stylistic: {
 		indent: 'tab',
 	},

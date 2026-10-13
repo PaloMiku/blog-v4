@@ -98,6 +98,19 @@ const group = isSingleMode
 			? joinWith([item.title, item.description, item.link])
 			: item.title,
 	}))
+
+/**
+ * 手柄大屏模式（Task 7 Step 5）：项目卡片是「游戏 / 关于」页的主要控制。
+ *
+ * key 用 `project:<title>`：项目标题是内容里的稳定身份（同一分组内不会重复），
+ * 而 `link` 可能缺失（无链接卡片）或指向同一个站点。
+ *
+ * ⚠️ **无链接卡片也要显式 `data-gamepad-focus`**：它不是语义元素（裸 `<div>`），
+ * 不加这个属性就永远进不了手柄导航。加了之后焦点管理器会按需临时补
+ * `tabindex="-1"`（见 `gamepad-focus.ts` 头注），退出模式时再撤掉——
+ * 这正是契约里「不要给全部目标硬写 tabindex」那条的落点。
+ */
+const projectKey = (card: ProjectItem) => `project:${card.title}`
 ---
 
 {/* 单项目模式 */}
@@ -110,6 +123,8 @@ const group = isSingleMode
 				target="_blank"
 				rel="noopener noreferrer"
 				title={card.titleAttr}
+				data-gamepad-focus
+				data-list-key={projectKey(card)}
 			>
 				<slot name="icon" />
 				{card.resolved?.type === 'iconify' && (
@@ -131,7 +146,12 @@ const group = isSingleMode
 			</a>
 		)
 		: (
-			<div class:list={['project-card', className]} title={card.titleAttr}>
+			<div
+				class:list={['project-card', className]}
+				title={card.titleAttr}
+				data-gamepad-focus
+				data-list-key={projectKey(card)}
+			>
 				{card.resolved?.type === 'iconify' && (
 					<span class="project-icon"><Icon name={card.resolved.value} /></span>
 				)}
@@ -170,6 +190,8 @@ const group = isSingleMode
 							target="_blank"
 							rel="noopener noreferrer"
 							title={card.titleAttr}
+							data-gamepad-focus
+							data-list-key={projectKey(card)}
 						>
 							<slot name="icon" />
 							{card.resolved?.type === 'iconify' && (
@@ -191,7 +213,12 @@ const group = isSingleMode
 						</a>
 					)
 					: (
-						<div class="project-card" title={card.titleAttr}>
+						<div
+							class="project-card"
+							title={card.titleAttr}
+							data-gamepad-focus
+							data-list-key={projectKey(card)}
+						>
 							<slot name="icon" />
 							{card.resolved?.type === 'iconify' && (
 								<span class="project-icon"><Icon name={card.resolved.value} /></span>

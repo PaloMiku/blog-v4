@@ -70,7 +70,7 @@ const allow = [
 	{
 		pattern: 'MODULE_LEVEL_DIRECTIVE',
 		reason: 'MDX head 注入带来的 Rollup 噪音，非正确性信号：已验证 head export 确实生效'
-			+ '（docs/astro-phase1-findings.md E 节）。',
+			+ '（git: a4603b0^:docs/astro-phase1-findings.md E 节）。',
 		impact: '只影响含 frontmatter head 的 MDX 编译日志行；产物无丢失。',
 		recheck: '2027-04',
 	},
