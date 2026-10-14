@@ -135,6 +135,9 @@ const RELEASE_GATES = [
 	'check-breakpoints',
 	// 摘要 JSON 与内容一一对应（键集合 / seo 长度 / frontmatter 无残留 description）
 	'check-summaries',
+	// 未解析占位符（{{SECRET_…}}）不得进入产物 head 的 <script>：那是旧栈的运行时
+	// 替换语法，Astro 构建链不解析，原样发给读者且零报错——CF beacon 曾这样静默失效。
+	'check-placeholder',
 	'check-mdc-eval',
 	'check-heading-ids',
 	'check-feeds',
