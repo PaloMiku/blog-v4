@@ -1,4 +1,3 @@
-import type { ReadTimeResults } from 'reading-time'
 import { glob } from 'astro/loaders'
 import { defineCollection, z } from 'astro:content'
 import blogConfig from './config/blog'
@@ -6,26 +5,6 @@ import blogConfig from './config/blog'
 // 规则说明随函数一并移动；那里是无 astro 依赖的纯模块，可直接跑单测（tests/content-id.test.mjs）。
 import { generateId } from './lib/shared/content-id'
 import { withArticleMeta } from './loaders/with-article-meta'
-
-export interface ArticleSchema {
-	title?: string
-	subtitle?: string
-	date?: string
-	updated?: string
-	published?: string
-	categories?: string[]
-	tags?: string[]
-	type?: string
-
-	image?: string
-	recommend?: number
-	references?: { title?: string, link?: string }[]
-	collection?: string
-	draft?: boolean
-	permalink?: string
-
-	readingTime?: ReadTimeResults
-}
 
 /** frontmatter `metaSlots` 的单条：`props` 是 MDC 属性，`content` 是已转换的 MDX 片段 */
 export interface MetaSlot {
@@ -36,6 +15,12 @@ export interface MetaSlot {
 export type MetaSlots = Record<string, MetaSlot>
 
 const articleTypes = Object.keys(blogConfig.article.types)
+
+/**
+ * frontmatter 的 TS 类型一律从下面的 zod schema 推导
+ * （`z.infer<...>` 或 Astro 生成的 `CollectionEntry<'content'>['data']`），
+ * 不再维护手写的平行接口——schema 与平行接口漂移时零告警，历史上两手写过。
+ */
 
 /**
  * 把 YAML 解析出的 Date 还原成原始字面量。
