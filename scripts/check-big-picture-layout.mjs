@@ -46,6 +46,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { REPO_ROOT, resolveDistDir } from './lib/paths.mjs'
+import { requirePreviewSlot } from './lib/preview-guard.mjs'
 
 const ROOT = REPO_ROOT
 const PORT = 4409
@@ -181,8 +182,13 @@ async function waitHttp(url, tries = 40) {
 	return false
 }
 
-// preview 的登记表是按项目的：先无条件停掉本项目可能残留的那一个
-spawnSync('npx', ['astro', 'preview', 'stop'], { cwd: ROOT, shell: true, stdio: 'ignore' })
+// preview 的登记表是按项目的：走 preview-guard 协商，而不是无条件 stop。
+//
+// 原先这里是 `npx astro preview stop` 无条件停掉本项目任何 preview——那正是
+// lib/preview-guard.mjs 文件头点名批评的做法：它不看端口，会把用户为**本项目**
+// 手动起的那一个也杀掉，违反「preview 启停由用户管理」这条硬约束。
+// requirePreviewSlot 只在登记的端口是自己要用的 4409 时才 stop，别人的直接 exit 2。
+requirePreviewSlot({ cwd: ROOT, port: PORT })
 fs.rmSync(userDataDir, { recursive: true, force: true })
 
 const preview = spawn(astroBin, ['preview', '--port', String(PORT)], { cwd: ROOT, shell: process.platform === 'win32', stdio: 'ignore' })
@@ -191,9 +197,16 @@ const preview = spawn(astroBin, ['preview', '--port', String(PORT)], { cwd: ROOT
 const handles = { preview }
 handles.chrome = spawn(CHROME, [
 	'--headless=new',
-	'--disable-gpu',
 	`--remote-debugging-port=${DEBUG_PORT}`,
 	`--user-data-dir=${userDataDir}`,
+	// 首启抑制：干净 runner 上 Chrome 会走首次运行流程（选默认浏览器、弹默认
+	// profile 提示），那套流程在 page target 注册**之前**就占住进程，于是
+	// 下面那个 CDP 轮询 10s 全空 → 「Chrome 没起来」→ exit 1。
+	// 2026-10-14 CI 红灯：本地 Windows 上一直绿，干净 ubuntu runner 上第一次
+	// 量就红。check-runtime-dom 在同一台 runner 上一直稳，靠的就是这两条。
+	'--no-first-run',
+	'--no-default-browser-check',
+	'--disable-gpu',
 	'--window-size=1600,1000',
 	'about:blank',
 ], { stdio: 'ignore' })
@@ -201,6 +214,18 @@ handles.chrome = spawn(CHROME, [
 async function cleanup(code) {
 	killTree(handles.preview)
 	killTree(handles.chrome)
+	// 清掉**自己**起的那条 preview 登记。killTree 只杀进程、不碰 Astro 的登记表，
+	// 而 lib/preview-guard.mjs 读的是登记表 —— 不清就会变成孤儿记录，让后面
+	// check-runtime-dom 把这条陈旧登记误判成「用户手动起的 preview」而 exit 2。
+	// 2026-10-14 CI 红灯就是这个：两道门禁抢同一个项目的登记表，前一道退出时
+	// 没清，后一道（列表里的第 19 道）拒绝启动。
+	//
+	// 停它不会误伤用户的 preview：`astro preview stop` 本身不带端口过滤，
+	// 但走到这里的前提是 requirePreviewSlot 刚放行、本门禁紧接着成功占了 4409，
+	// 此刻登记表里那条就是本门禁自己写的。用户的 preview 只在两种情况下会挡路——
+	// 停在别的端口（那时 stop 恰好清的是自己的残留），或停在 4409（那时本门禁在
+	// requirePreviewSlot 就 exit 2 了，根本走不到 cleanup）。
+	spawnSync('npx', ['astro', 'preview', 'stop'], { cwd: ROOT, shell: true, stdio: 'ignore' })
 	// Chrome 退出后 Windows 还会短暂持有 user-data-dir 里的文件句柄
 	// （`check-runtime-dom.mjs` 的头注记着同一件事：crashpad / 文件句柄
 	// 往往要等一会儿才释放）。删不掉就算了——它落在 `.astro-compare/` 下，

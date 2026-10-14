@@ -46,7 +46,7 @@ const DEBUG_PORT = 9415
 //
 // 需要在内存更紧的机器上强制跑一遍时（例如本地验证门禁改动，而本机被别的
 // 进程占满）：GATE_MIN_FREE_MB=0 node scripts/check-runtime-dom.mjs。
-// 这是**降低自我保护**，不是提高判据；CI 上不要设（runner 有 7GB，用不着）。
+// 这是**降低自我保护**，不是提高判据；CI 上不要设（runner 是 ubuntu-latest 4 核 / 16GB，用不着）。
 const MIN_FREE_MB = Number(process.env.GATE_MIN_FREE_MB ?? 1500)
 const freeMB = Math.round(freemem() / 1024 / 1024)
 if (freeMB < MIN_FREE_MB) {

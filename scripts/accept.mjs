@@ -61,7 +61,7 @@ const BUILD_LOG = path.join(LOG_DIR, 'acceptance-build.log')
  * | skip            | 本机跳过 | CI 跳过 | 用在什么门禁上 |
  * |-----------------|----------|----------|----------------|
  * | `never`         | 红       | 红       | 绝大多数门禁：它们没有正当的跳过理由，跳过即缺陷 |
- * | `env-dependent` | 绿       | **红**   | 内存不足 / 网络不可达。CI runner 是 16GB 规格，跳过说明环境退化 |
+ * | `env-dependent` | 绿       | **红**   | 内存不足 / 网络不可达。CI runner 是 ubuntu-latest 4 核 / 16GB，跳过说明环境退化 |
  * | `expected-in-ci`| 红       | 绿       | 结构性跳过（输入不在 checkout 里），仍计入 skipped 并在汇总里点名 |
  *
  * 为什么要分 CI 与本机：这道 runner 的旧版对 `skipped > 0` 一律 `exit 0`，
@@ -126,7 +126,7 @@ const RELEASE_GATES = [
 	// 而当时 17/17 门禁与 374 个测试全绿——没有任何东西读这个布局。
 	// skip 用 'env-dependent'：它要起无头 Chrome，内存不足时该自我放弃；
 	// 但它在脚本里刻意不输出 SKIP（缺产物/起不来一律 exit 1），避免「跑没跑」被误判。
-	{ name: 'check-big-picture-layout', skip: 'env-dependent', why: '起 preview + 无头 Chrome（约 700MB）实测大屏阅读态几何。内存不足时本机可以跳过；CI runner 是 16GB 规格，在那里跳过说明环境退化。' },
+	{ name: 'check-big-picture-layout', skip: 'env-dependent', why: '起 preview + 无头 Chrome（约 700MB）实测大屏阅读态几何。内存不足时本机可以跳过；CI runner 是 ubuntu-latest 4 核 / 16GB，在那里跳过说明环境退化。' },
 	'check-anchor-classes',
 	'check-prose-layer',
 	'check-content-preservation',
@@ -158,7 +158,7 @@ const RELEASE_GATES = [
 	{
 		name: 'check-runtime-dom',
 		skip: 'env-dependent',
-		why: '无头 Chrome 约 700MB，内存不足时自我保护。本机被别的进程占满可以跳；CI runner 是 16GB 规格，在那里跳过说明环境退化，不是环境使然。',
+		why: '无头 Chrome 约 700MB，内存不足时自我保护。本机被别的进程占满可以跳；CI runner 是 ubuntu-latest 4 核 / 16GB，在那里跳过说明环境退化，不是环境使然。',
 	},
 ]
 
