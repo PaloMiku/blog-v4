@@ -3,7 +3,7 @@ import { defineCollection, z } from 'astro:content'
 import blogConfig from './config/blog'
 // generateId（条目 id = URL 合同）提取至 `./lib/shared/content-id.ts`，
 // 规则说明随函数一并移动；那里是无 astro 依赖的纯模块，可直接跑单测（tests/content-id.test.mjs）。
-import { generateId } from './lib/shared/content-id'
+import { configureContentId, generateId } from './lib/shared/content-id'
 import { withArticleMeta } from './loaders/with-article-meta'
 
 /** frontmatter `metaSlots` 的单条：`props` 是 MDC 属性，`content` 是已转换的 MDX 片段 */
@@ -15,6 +15,10 @@ export interface MetaSlot {
 export type MetaSlots = Record<string, MetaSlot>
 
 const articleTypes = Object.keys(blogConfig.article.types)
+
+// hidePostPrefix 的站点绑定：content-id.ts 本身零配置（默认值与当前合同一致），
+// 在这里灌真实配置——配置真身改了会跟随，模块默认值漂移则被 tests/content-id.test.mjs 抓住。
+configureContentId({ hidePostPrefix: blogConfig.article.hidePostPrefix })
 
 /**
  * frontmatter 的 TS 类型一律从下面的 zod schema 推导

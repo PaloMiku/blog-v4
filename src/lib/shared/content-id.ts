@@ -5,10 +5,20 @@
 //   3. blogConfig.article.hidePostPrefix 去掉 /posts 前缀
 //      （`/posts/foo` → `/foo`，`/posts/a/b` → `/a/b`）
 //
-// 本模块是从 `src/content.config.ts` 提取出的纯函数版本（EC-005）：不依赖 astro，
-// 可被 `tests/content-id.test.mjs` 直接单测。`src/content.config.ts` 只 import 使用，
-// 改动这里等价于改动 URL 合同，先读上面三条再动手。
-import blogConfig from '../../config/blog'
+// 本模块是从 `src/content.config.ts` 提取出的纯函数版本（EC-005）：不依赖 astro、
+// 不依赖站点配置（blogConfig 曾被顶层 import，纯度被打破；现改为模块内显式默认 +
+// `configureContentId` 绑定口），可被 `tests/content-id.test.mjs` 直接单测。
+// `src/content.config.ts` 只 import 使用，改动这里等价于改动 URL 合同，先读上面三条再动手。
+let contentIdCfg = {
+	/** 与 blogConfig.article.hidePostPrefix 同源；站点侧绑定见 content.config.ts */
+	hidePostPrefix: true,
+}
+
+/** 站点配置绑定口（幂等，后调覆盖先调） */
+export function configureContentId(cfg: { hidePostPrefix?: boolean }) {
+	if (typeof cfg.hidePostPrefix === 'boolean')
+		contentIdCfg = { ...contentIdCfg, hidePostPrefix: cfg.hidePostPrefix }
+}
 
 export function generateId({ entry, data, base }: { entry: string, data: Record<string, unknown>, base: URL }) {
 	const permalink = data.permalink
@@ -23,7 +33,7 @@ export function generateId({ entry, data, base }: { entry: string, data: Record<
 	rel = rel.replace(/(^|\/)index$/, '$1')
 	rel = rel.replace(/\/+$/, '')
 
-	if (blogConfig.article.hidePostPrefix && rel.startsWith('posts/'))
+	if (contentIdCfg.hidePostPrefix && rel.startsWith('posts/'))
 		rel = rel.slice('posts/'.length)
 
 	return rel

@@ -1,6 +1,28 @@
 import { Temporal } from 'temporal-polyfill'
-// 原为 Nuxt 别名 `~~/blog.config`，astro-site 里没有这个别名，指向站内拷贝
-import blogConfig from '../../config/blog'
+
+/**
+ * 本模块的时区/语言取值，**模块内显式默认**，不 import 站点配置——
+ * 这里是 `shared/` 纯模块层，拖进整个 blogConfig 曾让客户端 bundle 多 4.4KB
+ * （见 `lib/client.ts` 头注释的实测），也让单测依赖真实配置。
+ *
+ * 站点侧的绑定在 `lib/shared.ts`（barrel）里调 `configureTime`；测试无需初始化，
+ * 默认值与站点配置一致（Asia/Shanghai + zh-CN），`tests/harness.mjs` 另把
+ * `TZ` 钉在同一时区保证 Date 本地 getter 分支的语义。
+ * 改站点时区时这里与 barrel 各改一行——两者不一致会被 `tests/time.test.mjs`
+ * 的 `Asia/Shanghai` 断言抓住。
+ */
+let timeCfg = {
+	timeZone: 'Asia/Shanghai',
+	language: 'zh-CN',
+}
+
+/** 站点配置绑定口（barrel 调用；幂等，后调覆盖先调） */
+export function configureTime(cfg: { timeZone?: string, language?: string }) {
+	if (cfg.timeZone)
+		timeCfg = { ...timeCfg, timeZone: cfg.timeZone }
+	if (cfg.language)
+		timeCfg = { ...timeCfg, language: cfg.language }
+}
 
 export function isSameUnit(date1: string, date2: string, unit: 'year' | 'month' | 'day') {
 	try {
@@ -77,10 +99,10 @@ export function toZonedTemporal(date?: string) {
 	}
 	catch {
 		try {
-			return Temporal.Instant.from(date).toZonedDateTimeISO(blogConfig.timeZone)
+			return Temporal.Instant.from(date).toZonedDateTimeISO(timeCfg.timeZone)
 		}
 		catch {
-			return Temporal.PlainDateTime.from(date).toZonedDateTime(blogConfig.timeZone)
+			return Temporal.PlainDateTime.from(date).toZonedDateTime(timeCfg.timeZone)
 		}
 	}
 }
@@ -117,5 +139,5 @@ export function toZdtLocaleString(date: string | Temporal.ZonedDateTime, format:
 	// 就按该 zdt 自带的时区格式化，而 `toZonedTemporal` 产出的是
 	// `blogConfig.timeZone`（Asia/Shanghai）下的 zdt。
 	return (typeof date === 'string' ? toZonedTemporal(date) : date)
-		.toLocaleString(blogConfig.language, typeof format === 'string' ? dateTimeFormat[format] : format)
+		.toLocaleString(timeCfg.language, typeof format === 'string' ? dateTimeFormat[format] : format)
 }
