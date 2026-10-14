@@ -3,8 +3,8 @@
  * `blog.ts`（分类、版式、许可、友链）分工：改统计或评论服务只碰这一个文件。
  *
  * ⚠️ `scripts` 里的属性会**原样透传**为 head 里 `<script>` 的属性
- * （`Base.astro` 的 `thirdPartyScripts`）。占位符语法 `{{SECRET_x}}` 是旧栈的
- * 运行时替换语法，Astro 构建链不解析它——写进来会原样发到线上（见
+ * （`Base.astro` 的 `thirdPartyScripts`）。旧栈那种「双花括号包 SECRET 前缀」的
+ * 运行时替换占位符在 Astro 构建链不解析——写进来会原样发到线上（见
  * `check-placeholder` 门禁）。
  */
 
