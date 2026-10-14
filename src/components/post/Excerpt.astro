@@ -7,9 +7,8 @@
  * 动画与折叠交给原生 `<script>` 在挂载后接管。
  *
  * ═══ 与 Nuxt 版的差异 ═══
- * 1. `appConfig.component.excerpt`（`app/app.config.ts`）尚未迁入
- *    `src/lib/app-config.ts`，而该文件不在本任务的可改范围内，
- *    故在此按同源规则内联一份（见下方 excerptConfig 的注释）。
+ * 1. label 的真相源是 `src/config/integrations.ts` 的 `excerptLabel`（含硬编码
+ *    的 animation / caret 默认值，见下方 excerptConfig 的注释）。
  * 2. `isNarrowScreen` 不再是响应式状态：折叠开关的**长度**条件
  *    （`excerpt.length > 80`）是构建期常量，直接决定是否输出按钮；
  *    **屏幕宽度**条件沿用原组件自带的 `.hide-on-wide` 媒体查询，可见行为一致。
@@ -19,7 +18,7 @@
  *    原版额外注册的 `prefers-reduced-motion` change 监听没有可观察效果，一并省掉。
  */
 import Icon from '../Icon.astro'
-import blogConfig from '../../config/blog'
+import { excerptLabel } from '../../config/integrations'
 
 interface Props {
 	/** 完整长摘要，来自 `src/data/summaries.json`（loader 注入的 `summary`） */
@@ -34,17 +33,16 @@ interface Props {
 
 const { excerpt, model } = Astro.props
 
+
 /*
- * ⚠️ 同源内联，非重复定义：`app/app.config.ts` 的 `component.excerpt` 段
- * （该文件头部已注明 excerpt 尚未迁入 app-config.ts）。
- * animation / caret 是那里的硬编码默认值，label 取自根 blog.config 的 excerpt 段，
+ * ⚠️ 同源内联，非重复定义：label 的真相源是 `src/config/integrations.ts` 的
+ * `excerptLabel`（集成/文案域）；animation / caret 是硬编码默认值，
  * badge 是数据（`src/data/summaries.json` 的 `$meta.modelLabel`）由 prop 传入。
- * 待 `excerpt` 迁入 src/lib/app-config.ts 后，这里改读 appConfig.component.excerpt。
  */
 const excerptConfig = {
 	animation: true,
 	caret: '_',
-	label: blogConfig.excerpt?.label ?? '智能摘要',
+	label: excerptLabel,
 	/** 空串 ⇒ 徽章整块不输出 */
 	badge: model ?? '',
 }

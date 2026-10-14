@@ -19,6 +19,7 @@
  */
 import { pascalCase } from 'es-toolkit/string'
 import blogConfig from '../config/blog'
+import { integrationScripts, twikoo } from '../config/integrations'
 import { themeHomepage, themeName, themeVersion } from '../config/site-meta'
 import { isNoindexPath } from '../lib/noindex-paths'
 import { normalizeContentPath } from '../lib/shared'
@@ -87,8 +88,8 @@ const separator = '|'
 const documentTitle = title ? `${title} ${separator} ${blogConfig.title}` : blogConfig.title
 // 源项目 app.head.meta 第一项
 const author = [blogConfig.author.name, blogConfig.author.email].filter(Boolean).join(', ')
-// 源项目 app.head.script = blogConfig.scripts，src 之外的属性（defer / data-*）原样透传
-const thirdPartyScripts = blogConfig.scripts.map(({ src, ...attrs }) => ({ src, attrs }))
+// 源项目 app.head.script = integrations 的 scripts，src 之外的属性（defer / data-*）原样透传
+const thirdPartyScripts = integrationScripts.map(({ src, ...attrs }) => ({ src, attrs }))
 
 /* ---------------- 页面级 SEO 元信息 ---------------- */
 
@@ -246,7 +247,7 @@ const jsonLdText = JSON.stringify({ '@context': 'https://schema.org', '@graph': 
 
 		<link rel="icon" href={blogConfig.favicon}>
 		<link rel="alternate" type="application/atom+xml" href="/atom.xml">
-		<link rel="preconnect" href={blogConfig.twikoo.preload}>
+		<link rel="preconnect" href={twikoo.preload}>
 		<!--
 			KaTeX 样式**按需输出**（2026-10-07）。
 

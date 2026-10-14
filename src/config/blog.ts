@@ -114,15 +114,6 @@ const blogConfig = {
 		robotsNotIndex: ['/preview', '/previews/*'],
 	},
 
-	/**
-	 * 摘要块（`Excerpt.astro`）的静态文案。
-	 * 生成来源徽章不在这里：它是数据，取自 `src/data/summaries.json` 的 `$meta.model`，
-	 * 由 loader 注入后作为 prop 传入（缺省则整块不渲染）。
-	 */
-	excerpt: {
-		label: '智能摘要',
-	},
-
 	/** 博客 Atom 订阅源 */
 	feed: {
 		/** 订阅源最大文章数量 */
@@ -130,20 +121,6 @@ const blogConfig = {
 		/** 订阅源是否启用XSLT样式 */
 		enableStyle: true,
 	},
-
-	/** 向 <head> 中添加脚本 */
-	scripts: [
-		// 自己部署的 Umami 统计服务
-		{ 'src': 'https://umami.sotkg.com/script.js', 'data-website-id': '372ccc48-32bf-434d-a1a2-9879fe82ca32', 'defer': true },
-		// Cloudflare Insights 统计服务
-		{ 'src': 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': '{"token": "b5c89be9025a4b1ba8750f8fd8850904"}', 'defer': true },
-		// Twikoo 评论系统
-		//
-		// 换版本 / 换 CDN 之后跑 `node scripts/check-twikoo-cdn.mjs`：脚本 404 或
-		// CDN 回 200 + HTML 错误页时，浏览器里与正常完全一样（评论区框在、评论不出来），
-		// 只看状态码不算检查。
-		{ src: 'https://s4.zstatic.net/ajax/libs/twikoo/2.0.12/twikoo.min.js', defer: true },
-	],
 
 	/** 文章统计配置 */
 	stats: {
@@ -155,21 +132,6 @@ const blogConfig = {
 		includePaths: [] as string[],
 	},
 
-	/** 自己部署的 Twikoo 服务 */
-	twikoo: {
-		// 必须写到云函数本体，不能只写站点根：Netlify 上 `/` 是一张
-		// `location.href='/.netlify/functions/twikoo'` 的静态跳转页，只对浏览器导航有效。
-		// 客户端是对 envId 直接 POST JSON，POST `/` 落到静态文件返回 404 且不带
-		// CORS 头，浏览器读不到响应 → xhr.status 0 → Twikoo 报「请求被跨域策略拦截」。
-		// 这类错报会伪装成 CORS 问题：换 CORS 配置、改代码都没用，先核对 envId 指向的
-		// 路径真的接受 POST：
-		//   curl -i -X POST <envId> -H 'Origin: https://blog.sotkg.com' \
-		//     -H 'Content-Type: application/json' \
-		//     --data '{"event":"GET_CONFIG","envId":"<envId>"}'
-		envId: 'https://twikoo.sotkg.com/.netlify/functions/twikoo',
-		// preconnect 用 origin 即可，不必写到函数路径。
-		preload: 'https://twikoo.sotkg.com/',
-	},
 }
 
 /** 用于生成 OPML 和友链页面配置 */

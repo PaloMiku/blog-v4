@@ -4,8 +4,8 @@
  * 分批迁入，每批只加实际被消费到的字段：
  * 1. 内容组件（Phase 2）：`title` / `header` / `component`
  * 2. 站点外壳（Phase 3）：`nav` / `footer` / `themes`
- * 3. 页面级：`stats` / `pagination` / `link` 已迁入；
- *    尚未迁入：`excerpt` / `slide`
+ * 3. 页面级：`stats` / `pagination` / `link` 已迁入；`slide` 尚未迁入；
+ *    `excerpt` 的 label 属集成文案，真相源在 `src/config/integrations.ts`
  *
  * 注意：Nuxt 的 `useAppConfig()` 在运行时可被覆盖，这里是构建期常量。
  * 另注意 Nuxt 侧是 `...blogConfig` 展开 + 同名字段覆盖，本文件只显式列出被读取的键。
@@ -109,7 +109,7 @@ export const appConfig = {
 		/** 侧边栏底部图标导航（由 BlogSidebar 消费） */
 		iconNav: [
 			{ icon: 'tabler:home', text: '个人主页', url: '/' },
-			{ icon: 'ri:qq-line', text: '交流群: 767876073', url: 'https://qm.qq.com/q/NH7OS40dY6' },
+			{ icon: 'ri:qq-line', text: `交流群: ${blogConfig.qqGroup}`, url: 'https://qm.qq.com/q/NH7OS40dY6' },
 			{ icon: 'tabler:brand-github', text: 'GitHub: PaloMiku', url: 'https://github.com/PaloMiku' },
 			{ icon: 'tabler:brand-mastodon', text: 'Fediverse', url: 'https://circle.tkg3.top/@PaloMiku' },
 			{ icon: 'tabler:rss', text: 'Atom订阅', url: '/atom.xml' },
@@ -130,7 +130,7 @@ export const appConfig = {
 				title: '社交',
 				items: [
 					{ icon: 'tabler:brand-github', text: 'PaloMiku', url: 'https://github.com/PaloMiku' },
-					{ icon: 'ri:qq-line', text: '群: 767876073', url: 'https://qm.qq.com/q/NH7OS40dY6' },
+					{ icon: 'ri:qq-line', text: `群: ${blogConfig.qqGroup}`, url: 'https://qm.qq.com/q/NH7OS40dY6' },
 					{ icon: 'tabler:mail', text: blogConfig.author.email, url: `mailto:${blogConfig.author.email}` },
 				],
 			},
