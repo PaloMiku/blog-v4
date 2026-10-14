@@ -70,6 +70,29 @@ export default antfu({
 		'style/semi': 'off',
 		'unicorn/prefer-includes': 'off',
 	},
+}, {
+	// 浏览器 bundle 的依赖边界（架构梳理 B2，client.ts 头注释 4.4KB 教训的规则化）：
+	// 会进客户端 chunk 的模块不得 import 重依赖站点配置 / 域名解析库 / 构建期 barrel——
+	// 违规曾静默地把 4.4KB 配置或整个 parse-domain 拖进客户端包，只能靠读注释防御。
+	files: ['src/lib/client.ts', 'src/lib/client/**/*.ts'],
+	rules: {
+		'no-restricted-imports': ['error', {
+			patterns: [
+				{
+					group: ['parse-domain', 'parse-domain/*'],
+					message: 'parse-domain 会整包进客户端 chunk；用 client.ts 的内联实现。',
+				},
+				{
+					group: ['**/config/blog', '**/config/blog.ts'],
+					message: '站点整包配置会摇不进客户端（实测 4.4KB）；客户端模块用显式参数或模块内常量。',
+				},
+				{
+					group: ['**/lib/shared', '**/lib/shared.ts', '**/lib/shared/time.ts'],
+					message: 'shared barrel 顶层拖 config/blog 与 parse-domain；客户端只准用零依赖实现（client.ts）。',
+				},
+			],
+		}],
+	},
 }).append({
 	files: ['src/styles/**/*.css'],
 	extends: defineConfig(css),
