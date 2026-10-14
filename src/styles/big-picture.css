@@ -45,6 +45,26 @@
  * 由 `src/styles/index.css` **最后**引入。层叠顺序本身不产生依赖（下面覆盖
  * Blog.astro 的规则特异性都更高），放在最后只是让「模式层压在普通层之上」
  * 这件事在调试时一眼可见。
+ *
+ * ## ⚠️ 两条全文件级的硬约束
+ *
+ * 1. **给 Shell 的三块家具（动作区 / 键帽条 / 设置面板）与 `hidden` 属性
+ *    同时相关的规则，选择器上必须带 `:not([hidden])`。**
+ *    作者样式表里的 `display` 会压过 UA 的 `[hidden] { display: none }`
+ *    （来源优先级作者 > UA），而 `BigPictureShell.astro` 的模板给这几块
+ *    都写了 `hidden`、由 `toggleAttribute` 翻转。漏掉这一层的后果不是
+ *    「样式差一点」而是**显隐整个失效**：设置面板恒展开压在右栏上、
+ *    退出大屏后键帽条留在屏幕上、无右栏页面上的「目录」按钮也照常出现。
+ * 2. **给组件元素加样式时，选择器要压过 `.x[data-astro-cid]`。**
+ *    组件自己的规则带 cid，是 (0,2,0)；`:root[data-big-picture] .x` 同样
+ *    (0,2,0) —— 打平，胜负交给样式表顺序，于是「规则写了但从没生效」
+ *    会静默发生（实测过 `.article-card` 的放大规则：源码在，计算值是原值）。
+ *    本文件统一套一层 `:is()` 抬到 (0,3,0)。**判据是量 `getComputedStyle`
+ *    的计算值，不是读源码**——源码里写着不等于浏览器算出来是那样。
+ *
+ * 唯一的例外是 §1 里 `.big-picture-enter` 的那两条定位规则：它们不带模式
+ * 前缀，因为要修的是**普通模式**下入口按钮掉到视口左上角、压住站点头部
+ * 的位置缺陷（详见那里的注释）。
  */
 
 :root[data-big-picture] {
@@ -53,21 +73,31 @@
 	 * 而 `color.css` 的令牌随 light/dark 走，在浅色下会变成灰白。
 	 * 换句话说这里不是「给现有令牌换个值」，而是新增一层自己的调色板，
 	 * 再把需要覆盖的那几个 `--c-*` 指向它（见文件末尾的「主题覆盖」）。
+	 *
+	 * ⚠️ `--bp-border` 原来取 34% 明度。实测（1280×800 无头浏览器量卡片描边）
+	 * 那个值在 `hsl(222 40% 13%)` 的表面上是一条**发亮的蓝灰线**，
+	 * 密集排列的卡片看着像描了边而不是浮在面上；降到 26% 之后仍是可辨的分隔，
+	 * 但不再抢封面的对比。分隔线（`--bp-border-soft`）再退一档到 20%。
 	 */
 	--bp-bg: hsl(222 47% 9%);
 	--bp-surface: hsl(222 40% 13%);
 	--bp-surface-2: hsl(222 36% 18%);
-	--bp-border: hsl(217 34% 34%);
+	--bp-border: hsl(217 30% 26%);
+	--bp-border-soft: hsl(217 28% 20%);
 	--bp-text: hsl(210 60% 96%);
 	--bp-text-1: hsl(210 45% 88%);
 	--bp-text-2: hsl(213 30% 70%);
-	--bp-text-3: hsl(215 22% 52%);
+	--bp-text-3: hsl(215 22% 58%);
 	--bp-accent: hsl(212 92% 66%);
 	--bp-accent-soft: hsl(212 92% 66% / 18%);
 
 	/* ── 焦点标记（规格：3px 描边）─────────────────────────────
-	 * 3px 是规格给的字面量，不换算成 rem —— 它在任何缩放下都必须仍是 3px。 */
-	--bp-focus: hsl(205 100% 72%);
+	 * 3px 是规格给的字面量，不换算成 rem —— 它在任何缩下都必须仍是 3px。
+	 * 明度 78% 是刻意与 `--bp-accent`（66%）拉开的：焦点描边与「选中态底色」
+	 * 在同一屏里同时出现，两者是同一个蓝色系时只能靠「线」与「面」区分，
+	 * 而手柄模式里选中态底色是半透明的（`--bp-accent-soft`），
+	 * 描边若与强调色同明度就分不出「这是当前项」还是「这是焦点项」。 */
+	--bp-focus: hsl(200 100% 78%);
 	--bp-focus-width: 3px;
 	--bp-focus-offset: 2px;
 
@@ -78,9 +108,32 @@
 	--bp-gap: 1.5rem;
 	--bp-radius: 0.75rem;
 
-	/* ── 常驻 Shell 的两条家具（页面为它们预留空间，见 §3）───── */
-	--bp-bar-top: 4rem;
+	/* ── 常驻 Shell 的两条家具（页面为它们预留空间，见 §3）─────
+	 * `--bp-bar-top` 是「顶部动作条 + 连接提示行」的**合计**：
+	 * 动作条自己只占 4.25rem（`--bp-control-size` 提到 1.25rem 之后），
+	 * 剩下的 `--bp-line-h` 是给 prompt / status 那一行的。
+	 * 以前这两块各算各的（页面只预留了动作条那一档），于是提示条
+	 * 一出现就压在正文第一行上——而提示条出现的时机（连上了手柄、
+	 * 设备断开、浏览器不支持 API）恰恰是用户正盯着正文的时候。
+	 * 现在提示行也进预留量，「家具不许压内容」这条契约才成立。 */
+	--bp-bar-top: 6.5rem;
+	--bp-line-h: 2.25rem;
 	--bp-bar-bottom: 3.25rem;
+
+	/* 顶栏动作区与页面栅格的左缘对齐用：见 §1 的 padding-inline 计算。 */
+	--bp-gutter-total: calc(var(--bp-info-width) + var(--bp-gap) + var(--bp-content-max));
+
+	/* 两条家具（顶栏 / 键帽条）的底色比抽屉**更实**。
+	   原来它们用 `--ld-bg-blur`（82% 不透明），和页面底色几乎同深，
+	   于是 1920 下顶栏右侧那 1400px 的空读起来像「没画完」而不是
+	   「留白」——一条看得见边界的带子上有空白才成立，
+	   底色与页面齐平就没有边界。92% 之后它是一条明确的带。
+	   键帽条则反过来取 74%：它是**贴着视口下沿**的 fixed 条，会盖住滚动
+	   中间位置的内容（`padding-bottom` 只保护文档末尾，管不到那里），
+	   底色越实被遮的内容越看不见。74% + blur 让底下那一行字仍隐约透出来，
+	   读起来是「透过毛玻璃看到下面」而不是「被一块板子截断」。 */
+	--bp-bar-bg: hsl(222 47% 9% / 92%);
+	--bp-bar-bg-hints: hsl(222 47% 9% / 74%);
 
 	/* ── 层级 ───────────────────────────────────────────────────
 	 * 刻意夹在 `--z-index-popover`（100，Mask 与 Panel）与 modal 的
@@ -92,10 +145,16 @@
 
 	/* ── 栅格尺度 ───────────────────────────────────────────────
 	 * 1280×800（Steam Deck 常见视口）落在 >1080 的三栏档：
-	 * 256 + 288 + 2×24 = 592 被两侧占用，中间还剩 688px 正文宽度。
-	 * 这两个宽度就是这么来的——再宽一点，正文就放不下首页的两列卡片了。 */
-	--bp-nav-width: 16rem;
-	--bp-info-width: 18rem;
+	 * 272 + 304 + 2×24 = 624 被两侧占用，中间还剩 656px 正文宽度。
+	 * 这两个宽度就是这么来的——再宽一点，正文就放不下首页的两列卡片了。
+	 *
+	 * ⚠️ 常驻列与抽屉**必须同宽**。原来常驻 256/288 而抽屉统一 320：
+	 * 同一个 `#blog-aside` 在 1280 下是 288 的常驻列，在 1080 一下瞬间
+	 * 变成 320 的抽屉，跨断点时内容重排一次、手柄目标的高度全变。
+	 * 现在 ≤1080 的右栏抽屉取 `--bp-info-width`、≤768 的左栏取
+	 * `--bp-nav-width`，任何断点下同一栏的宽度都不跳。 */
+	--bp-nav-width: 17rem;
+	--bp-info-width: 19rem;
 	--bp-content-max: 68rem;
 
 	/* ── 阅读态（860px / 18–20px / 1.8，三条都是规格给的字面量）─ */
@@ -104,24 +163,37 @@
 	--bp-reading-size-max: 1.25rem;
 	--bp-reading-leading: 1.8;
 
-	/* ── 控件尺度（规格：清晰的大字号控件）──────────────────── */
-	--bp-control-size: 1.125rem;
+	/* ── 控件尺度（规格：清晰的大字号控件）────────────────────
+	 * 1.125rem（18px）是「鼠标用户的舒服值」，但大屏模式的观看距离是
+	 * 0.6–1m（Steam Deck 掌上、客厅电视 3m），实测 18px 的元信息与
+	 * 按钮在那个距离上已经糊成一团。提到 1.25rem（20px）后，
+	 * `--bp-bar-top` 相应地从 4rem 涨到 4.25rem（见 §1）。 */
+	--bp-control-size: 1.25rem;
 	--bp-control-min: 3rem;
 	--bp-control-pad: 0.5rem 1rem;
 
 	/* ── 抽屉 ───────────────────────────────────────────────────
 	 * 常驻列与抽屉共用同一组 token，所以「≤1080 的右栏」「≤768 的左栏」
 	 * 「任何视口下的阅读态」三条规则写出来的盒子完全一致。 */
-	--bp-drawer-width: 20rem;
 	--bp-drawer-pad: 0.75rem;
 
 	/* ══════════════════════════════════════════════════════════
 	   主题覆盖：把大屏配色接到现有令牌上
-	   ══════════════════════════════════════════════════════════
-	   只覆盖「让这套深蓝真正铺开」所必需的那几个。刻意**不**动 `--hue-theme`、
-	   `--c-success` / `--c-warning` / `--c-error` 与 `--delay` 等非颜色令牌：
-	   前者被 `color.css` 的 calc() 消费（动了会让所有 hsl() 一起偏），
-	   后者与大屏模式无关。 */
+   ══════════════════════════════════════════════════════════
+   刻意**不**动 `--hue-theme` 与 `--delay` 等非颜色令牌：前者被 `color.css`
+   的 calc() 消费（动了会让所有 hsl() 一起偏），后者与大屏模式无关。
+
+   ⚠️ 这一组是**补齐**而不是「挑几个覆盖」。原来的版本只覆盖 12 个 `--c-*`，
+   于是下面这些令牌在大屏模式下仍然跟着**用户的 light/dark 偏好**走，
+   在固定的深蓝底上露出另一个主题的值（实测 1280×800）：
+   - `--c-border-strong` = `hsl(220 10% 48%)`（浅色主题的中性灰），
+     用在 `li > code` 的描边上，是深蓝底上的一条浅灰线；
+   - `--c-accent` = `#52e0e0`（青绿），与 `--c-primary` 的亮蓝并排出现，
+     同一屏上两个不相干的强调色互相削弱；
+   - `--c-success/-warning/-error` 是为**浅底**选的十六进制值（`#5A5`、`#D55`），
+     在深底上偏亮且色相不搭。
+   「模式自带一套固定深蓝」这个前提，只有在**所有**颜色令牌都被接管时
+   才成立——漏一个就是一处「同一页面两种配色」。 */
 	color-scheme: dark;
 	--c-bg: var(--bp-bg);
 	--c-bg-1: var(--bp-bg);
@@ -129,12 +201,23 @@
 	--c-bg-3: var(--bp-surface-2);
 	--c-bg-soft: var(--bp-accent-soft);
 	--c-border: var(--bp-border);
+	--c-border-strong: hsl(217 32% 46%);
 	--c-text: var(--bp-text);
 	--c-text-1: var(--bp-text-1);
 	--c-text-2: var(--bp-text-2);
 	--c-text-3: var(--bp-text-3);
 	--c-primary: var(--bp-accent);
 	--c-primary-soft: var(--bp-accent-soft);
+	/* 强调色只有一个。青绿 `--c-accent` 收到蓝调里同一个色相家族
+	   （比 `--c-primary` 更冷一档），需要「第二强调色」的地方
+	   （如链接 hover 的冷调区分）靠色相而不是靠换一个色系来做。 */
+	--c-accent: hsl(196 88% 68%);
+	--c-success: hsl(146 58% 62%);
+	--c-success-soft: hsl(146 58% 62% / 18%);
+	--c-warning: hsl(38 88% 66%);
+	--c-warning-soft: hsl(38 88% 66% / 18%);
+	--c-error: hsl(2 82% 68%);
+	--c-error-soft: hsl(2 82% 68% / 18%);
 	--c-bg-a50: hsl(222 47% 9% / 55%);
 	--c-bg-a80: hsl(222 47% 9% / 82%);
 	--ld-bg-blur: var(--c-bg-a80);
@@ -165,8 +248,20 @@
 	pointer-events: auto;
 }
 
-/* 顶部动作区：导航 / 目录 / 设置 / 退出大屏。 */
-:root[data-big-picture] .big-picture-actions {
+/* 顶部动作区：导航 / 目录 / 设置 / 退出大屏。
+ *
+ * ⚠️ 三个「显隐由 `hidden` 属性驱动」的块（这里、键帽条、设置面板）
+ * **一律带 `:not([hidden])`**，且这是硬要求不是风格：
+ * `BigPictureShell.astro` 的模板给这三块都写了 `hidden`，显隐由
+ * `toggleAttribute('hidden', …)` 翻转。作者样式表里的 `display: flex`
+ * 会**压过 UA 的 `[hidden] { display: none }`**（来源优先级：作者 > UA），
+ * 于是模板里的 `hidden` 静默失效——实测 1280×800：
+ * 设置面板恒展开（142px 的浮层压在右栏统计上）、键帽条与动作条恒可见，
+ * 「目录」按钮在**没有右栏**的页面（`/link`）上也照常出现。
+ * 加 `:not([hidden])` 之后，「想给这三块加 `display`」这个动作
+ * 本身就变成了一个必须重新考虑的动作。
+ */
+:root[data-big-picture] .big-picture-actions:not([hidden]) {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
@@ -174,18 +269,38 @@
 	position: fixed;
 	inset-block-start: 0;
 	inset-inline: 0;
-	min-height: var(--bp-bar-top);
-	padding: 0.5rem 1rem;
+	min-height: calc(var(--bp-bar-top) - var(--bp-line-h));
+	padding-block: 0.5rem;
+	/* 左侧内边距跟着页面栅格走：1920 下页面 #blog-root 宽 1400 且居中，
+	   左缘在 (1920-1400)/2 = 260px。动作条原来从 16px 起，
+	   于是「壳」与「内容」有两条不同的左缘，同屏一眼就能看出错位。
+	   `max()` 保证窄视口下仍然退回 1rem，不会因为栅格比视口宽而算出负值。 */
+	padding-inline: max(1rem, calc((100vw - var(--bp-gutter-total)) / 2)) 1rem;
 	border-block-end: 1px solid var(--bp-border);
-	background-color: var(--ld-bg-blur);
-	backdrop-filter: blur(0.75rem);
+	background-color: var(--bp-bar-bg);
+	backdrop-filter: blur(0.75rem) saturate(1.2);
+}
+
+/* 「退出大屏」是这条动作区里唯一的**离场**动作，却和导航/目录/设置
+   长得一模一样。给它透明底 + 弱一档的文字与描边，主动作仍然是主动作，
+   而它读起来就是「这排按钮里那个不一样」。 */
+:root[data-big-picture] .big-picture-actions button[data-big-picture-action="exit"] {
+	background-color: transparent;
+	color: var(--c-text-2);
 }
 
 /* 底部键帽条。四个槽位是静态渲染的纯展示（没有可聚焦子节点），
-   LB/RB 的区域循环会自然跳过它——所以它不需要、也不该有自己的焦点样式。 */
-:root[data-big-picture] .big-picture-hints {
+   LB/RB 的区域循环会自然跳过它——所以它不需要、也不该有自己的焦点样式。
+ *
+ * `align-items: center` 是必须的：原来漏了它，flex 默认 `stretch`
+   把四个胶囊拉成 35px 高的方块（实测 1280×800 键帽条内容区就是 36px），
+   `border-radius: 2em` 于是从一个药丸变成一个竖着的方框。
+ * `flex-wrap: nowrap` 则针对 ≤768：四个槽位在 390px 下会换行成两行
+   （实测高 80px）而 `--bp-bar-bottom` 只预留 64px，底部的正文被压掉一截。 */
+:root[data-big-picture] .big-picture-hints:not([hidden]) {
 	display: flex;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
+	align-items: center;
 	justify-content: center;
 	gap: 0.5rem 1.5rem;
 	position: fixed;
@@ -194,7 +309,7 @@
 	min-height: var(--bp-bar-bottom);
 	padding: 0.5rem 1rem;
 	border-block-start: 1px solid var(--bp-border);
-	background-color: var(--ld-bg-blur);
+	background-color: var(--bp-bar-bg-hints);
 	backdrop-filter: blur(0.75rem);
 	font-family: var(--font-basic);
 	font-size: 1rem;
@@ -202,6 +317,10 @@
 }
 
 :root[data-big-picture] [data-big-picture-hint] {
+	/* `flex-shrink` + `min-width: 0`：窄屏下宁可把胶囊压扁也不要让
+	   整条溢出视口——`nowrap` 之后一旦有子项不肯收缩，第一行就右溢出。 */
+	flex: 0 1 auto;
+	min-width: 0;
 	padding: 0.1rem 0.6rem;
 	border: 1px solid var(--bp-border);
 	border-radius: 2em;
@@ -217,33 +336,58 @@
    两者同时出现的布局变化是零。 */
 :root[data-big-picture] .big-picture-prompt,
 :root[data-big-picture] .big-picture-status {
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	position: fixed;
-	inset-block-start: var(--bp-bar-top);
+	inset-block-start: calc(var(--bp-bar-top) - var(--bp-line-h));
 	inset-inline: 0;
+	min-height: var(--bp-line-h);
 	margin: 0;
-	padding: 0.35rem 1rem;
+	padding: 0 1rem;
 	background-color: var(--c-bg-a80);
 	font-family: var(--font-basic);
 	font-size: 1rem;
+	line-height: 1.4;
 	text-align: center;
 	color: var(--c-text-1);
 }
 
+/* 两条提示互斥出现（`resolveShellView()` 里一个讲怎么进、一个讲设备），
+   所以 status 落在 prompt **下面一整行**的位置上，两者同时出现时
+   布局变化为零。原来的 `+ 1.75rem` 是照着「大概一行」估的，
+   而实际行高是 `0.35rem*2 + 1.4rem = 2.1rem` ⇒ 两条重叠 0.35rem。
+   现在两行都由 `--bp-line-h` 撑着，重叠在几何上不再可能。 */
 :root[data-big-picture] .big-picture-status {
-	inset-block-start: calc(var(--bp-bar-top) + 1.75rem);
+	inset-block-start: var(--bp-bar-top);
 	color: var(--c-text-2);
 }
 
-:root[data-big-picture] .big-picture-enter {
-	position: fixed;
-	inset-block-start: var(--bp-bar-top);
+/* 手动进入的兜底入口。本文件其余规则都挂在 `:root[data-big-picture]` 下，
+   这两条是**唯一的例外**，因为它们要修的是普通模式下的一个位置缺陷：
+   `inset-block-start: var(--bp-bar-top)` 里的变量只在大屏模式下存在，
+   普通模式下整条声明按 invalid 处理而回落，元素于是按文档流位置停在
+   shell 的左上角——正好压住站点自己的头部导航。
+   挂到 shell（`position: fixed; inset: 0`）上用 `absolute` 之后，
+   两种模式都是同一个位置：视口右上角、距边 1rem；而大屏模式下顶栏就在
+   那 4.25rem 高的位置，按钮 3rem 高、上下居中，于是它落进顶栏里与那三个
+   按钮同高，视觉上就是动作区的一部分。 */
+.big-picture-enter:not([hidden]) {
+	position: absolute;
+	inset-block-start: 1rem;
 	inset-inline-end: 1rem;
 }
 
-:root[data-big-picture] .big-picture-actions button,
-:root[data-big-picture] .big-picture-enter {
+:root[data-big-picture] .big-picture-enter:not([hidden]) {
+	inset-block-start: calc((var(--bp-bar-top) - var(--bp-line-h) - var(--bp-control-min)) / 2);
+	inset-inline-end: max(1rem, calc((100vw - var(--bp-gutter-total)) / 2));
+}
+
+:root[data-big-picture] .big-picture-actions button:not([hidden]),
+:root[data-big-picture] .big-picture-enter:not([hidden]) {
 	display: inline-flex;
 	align-items: center;
+	justify-content: center;
 	min-height: var(--bp-control-min);
 	padding: var(--bp-control-pad);
 	border: 1px solid var(--bp-border);
@@ -277,19 +421,19 @@
  * 同理 `prefers-reduced-motion` 那段**刻意不**覆盖它——
  * 把 duration 归零会让「吞掉 B」的窗口塌成 0，那是实打实的离站导航缺陷，
  * 而不是动效偏好。 */
-:root[data-big-picture] .big-picture-settings {
+:root[data-big-picture] .big-picture-settings:not([hidden]) {
 	display: flex;
 	flex-direction: column;
 	gap: 0.75rem;
 	position: fixed;
-	inset-block-start: calc(var(--bp-bar-top) + 2.5rem);
-	inset-inline-end: 1rem;
+	inset-block-start: calc(var(--bp-bar-top) - var(--bp-line-h));
+	inset-inline-end: max(1rem, calc((100vw - var(--bp-gutter-total)) / 2));
 	min-width: 18rem;
 	max-width: calc(100vw - 2rem);
 	padding: 1rem 1.25rem;
 	border: 1px solid var(--bp-border);
 	border-radius: var(--bp-radius);
-	box-shadow: var(--box-shadow-3);
+	box-shadow: var(--box-shadow-2), var(--box-shadow-3);
 	background-color: var(--bp-surface-2);
 	font-family: var(--font-basic);
 	font-size: var(--bp-control-size);
@@ -352,7 +496,12 @@
    `gamepad-focus.ts` 里 `scrollIntoView({ block: 'nearest' })` 滚完之后，
    目标不会被压在键帽条底下。
    ⚠️ 这两条**只能同时存在**：只留 padding 不留 scroll-padding，滚到底的
-   目标正好被底条盖住；只留 scroll-padding 不留 padding，首屏就被家具吃掉一块。 */
+   目标正好被底条盖住；只留 scroll-padding 不留 padding，首屏就被家具吃掉一块。
+   顶部预留的是完整的 `--bp-bar-top`（动作条 + 一行提示）。以前只预留了
+   动作条那一档，于是 prompt / status 一出现就正好压在正文第一行上——
+   而它们出现的时机（连上了手柄、设备断开、浏览器不支持 API）恰恰是
+   用户正盯着正文的时候。提示与状态互斥、永远只有一行，代价是最多一行
+   空带；对一个观看距离 0.6–1m 的模式来说，这行留白反而是合适的呼吸。 */
 :root[data-big-picture] #blog-root {
 	padding-block: var(--bp-bar-top) var(--bp-bar-bottom);
 }
@@ -400,8 +549,22 @@
 
 /* 唯一的消费点：三栏 / 两栏 / 单列的选择全部经由 `--bp-grid-columns`。
    放在三栏规则**之后**只是排版顺序，不承担任何「压过它」的职责——
-   真正让阅读态生效的是 §6 覆盖 `--bp-grid-columns` 这件事本身。 */
-:root[data-big-picture] #blog-root {
+   真正让阅读态生效的是 §6 覆盖 `--bp-grid-columns` 这件事本身。
+ *
+   ⚠️ 选择器必须带上 `:not(:has(…))` 那一支，否则**右栏为空的页面**上
+   大屏这一层会被 `Blog.astro` 的对应规则压过去：
+   那边写的是 `:global(#blog-root):not(:has(> .blog-aside-track > #blog-aside:not(.is-empty)))`，
+   `:has()` 取「参数中最具体者」= `#blog-aside:not(.is-empty)` = (1,1,0)，
+   再叠上 `#blog-root` 得到 **(2,1,0)**；而本文件不带 `:has()` 时只有
+   `:root[data-big-picture] #blog-root` = **(1,2,0)**。id 数 2 > 1，
+   于是普通模式那条赢。实测 `/link`（aside 是 `.is-empty`）：
+   `--bp-grid-columns` 明明算成了 `16rem minmax(0,1fr)`，
+   落地的列却还是 Blog.astro 的 `--sidebar-width` = **280px**、
+   列间距也退回 1rem——大屏在这类页面上**整个没生效**。
+   选择器列表按其中最高的特异性计一条规则，所以补上这一支即可，
+   而 `:has()` 与 `:not(:has())` 条件互斥，不必再靠书写顺序决胜。 */
+:root[data-big-picture] #blog-root,
+:root[data-big-picture] #blog-root:not(:has(> .blog-aside-track > #blog-aside:not(.is-empty))) {
 	grid-template-columns: var(--bp-reading-grid, var(--bp-grid-columns));
 	column-gap: var(--bp-gap);
 	max-width: calc(var(--bp-info-width) + var(--bp-gap) + var(--bp-content-max));
@@ -416,7 +579,10 @@
 	}
 }
 
-/* ≤768：单列，两侧都是抽屉（抽屉盒子见 §5）。 */
+/* ≤768：单列，两侧都是抽屉（抽屉盒子见 §5）。
+   顶栏在窄屏要放得下四个动作按钮，提示行也压不掉，于是两档家具都加高；
+   键帽条已经改成 nowrap + 可收缩（§1），`--bp-bar-bottom` 回到 3.5rem：
+   原来为「会换行成两行」留的 4rem 在 nowrap 之后是纯粹的空带。 */
 @media (max-width: 768px) {
 	:root[data-big-picture] #blog-root,
 	:root[data-big-picture] #blog-root:not(:has(> .blog-aside-track > #blog-aside:not(.is-empty))),
@@ -425,8 +591,19 @@
 	}
 
 	:root[data-big-picture] {
-		--bp-bar-top: 4.5rem;
-		--bp-bar-bottom: 4rem;
+		--bp-bar-top: 6.25rem;
+		--bp-bar-bottom: 3.5rem;
+		--bp-control-size: 1.125rem;
+	}
+
+	:root[data-big-picture] [data-big-picture-hint] {
+		padding: 0.1rem 0.45rem;
+		font-size: 0.875rem;
+	}
+
+	:root[data-big-picture] .big-picture-hints:not([hidden]) {
+		gap: 0.5rem 0.75rem;
+		font-size: 0.875rem;
 	}
 }
 
@@ -453,7 +630,7 @@
 		visibility: hidden;
 		inset-block: var(--bp-bar-top) var(--bp-bar-bottom);
 		inset-inline: auto 0;
-		width: var(--bp-drawer-width);
+		width: var(--bp-info-width);
 		max-width: 100%;
 		padding: var(--bp-drawer-pad);
 		box-shadow: var(--box-shadow-2);
@@ -476,7 +653,7 @@
 		visibility: hidden;
 		inset-block: var(--bp-bar-top) var(--bp-bar-bottom);
 		inset-inline: 0 auto;
-		width: var(--bp-drawer-width);
+		width: var(--bp-nav-width);
 		max-width: 100%;
 		padding: var(--bp-drawer-pad);
 		box-shadow: var(--box-shadow-2);
@@ -527,13 +704,15 @@
 
 /* 两侧栏在阅读态下即使视口很宽也是抽屉：它们必须能由顶部的
    「导航」「目录」按钮唤起，而抽屉的开启靠 `.show`（layout-state 的订阅者
-   统一写），不靠视口。`closeLayout()` 之后焦点由 Shell 归还给触发按钮。 */
+   统一写），不靠视口。`closeLayout()` 之后焦点由 Shell 归还给触发按钮。
+   宽度取 `--bp-info-width`：阅读态是任何视口都可能发生的，两侧都用
+   同一个值，从 1920 一路到 390 抽屉宽度都不变。 */
 :root[data-big-picture] #blog-root:has(> #main-content[data-big-picture-page="reading"]) :is(#blog-sidebar, #blog-aside) {
 	position: fixed;
 	visibility: hidden;
 	inset-block: var(--bp-bar-top) var(--bp-bar-bottom);
 	inset-inline: 0 auto;
-	width: var(--bp-drawer-width);
+	width: var(--bp-info-width);
 	max-width: 100%;
 	padding: var(--bp-drawer-pad);
 	box-shadow: var(--box-shadow-2);
@@ -562,17 +741,58 @@
 }
 
 /* 单列之后 `grid-area` 必须一并复位：`Blog.astro` 给 main 与页脚写的是
-   第 2 列，在只有一列的栅格里那会凭空生成一条隐式列。 */
+   第 2 列，在只有一列的栅格里那会凭空生成一条隐式列。
+ *
+ * ⚠️ 居中必须用 `justify-self: center` 而**不是** `margin-inline: auto`。
+ * grid item 的 `justify-self` 只在「`width: auto` **且**两侧 margin 不是
+ * `auto`」时才 stretch 成列宽；一旦写了 `margin-inline: auto`，
+ * `width: auto` 就改按 **fit-content** 解析，于是正文宽度变成
+ * min-content 与可用空间之间的某个值而**溢出列外**。实测 390×844 的
+ * 阅读态：`#blog-root` 宽 390、栅格列 358，`#main-content` 却算出
+ * **692.75px**（第一屏就被切掉一截，标题只剩前两个字）。
+ * `check-big-picture-layout.mjs` 量的是「正文 ≤ 860px」，693 ≤ 860，
+ * 所以那道门禁一直是绿的——它量的字段与缺陷的字段不一致（坑位 19）。
+ * `width: 100%` + `max-width: min(var(--bp-reading-max), 100%)` 让
+ * 「窄屏不许超宽、宽屏居中到 860」两条同时成立。 */
 :root[data-big-picture] #blog-root:has(> #main-content[data-big-picture-page="reading"]) #main-content {
 	grid-area: 1 / 1;
-	max-width: var(--bp-reading-max);
-	margin-inline: auto;
+	justify-self: center;
+	width: 100%;
+	max-width: min(var(--bp-reading-max), 100%);
 	font-size: clamp(var(--bp-reading-size-min), 0.95rem + 0.4vw, var(--bp-reading-size-max));
 	line-height: var(--bp-reading-leading);
+	/* 正文色跟大屏的蓝调走。`article.css` 里正文色是继承来的中性灰，
+	   在深蓝底上偏土；标题原本走 `--c-text`（已经是蓝调白），所以
+	   「标题偏蓝、正文偏灰」是同一页里唯一一处色相断裂。 */
+	color: var(--c-text-1);
 }
 
 :root[data-big-picture] #blog-root:has(> #main-content[data-big-picture-page="reading"]) > .blog-footer {
 	grid-area: 2 / 1 / auto / -1;
+}
+
+/* 阅读态的层级：正文被放到 20px 之后，原有的 em 比例就压扁了。
+   实测（1280×800）`article p` = 20px、`h2` = 30px（1.5）、`h3` = 23.4px
+   （1.17）—— 1.17 那个几乎不是一级标题。而 `blockquote` 是 14.4px，
+   **比它引用的正文还小**，读者会当成脚注而不是引文。
+   这三档都跟着正文的 em 走，所以只需在模式内改比例：
+   40 / 28 / 26 px（相对 20px 的 2 / 1.4 / 1.3）。 */
+:root[data-big-picture] #main-content[data-big-picture-page="reading"] :is(article h2) {
+	font-size: 2em;
+}
+
+:root[data-big-picture] #main-content[data-big-picture-page="reading"] :is(article h3, article h4) {
+	font-size: 1.4em;
+}
+
+:root[data-big-picture] #main-content[data-big-picture-page="reading"] :is(article h5, article h6) {
+	font-size: 1.15em;
+}
+
+:root[data-big-picture] #main-content[data-big-picture-page="reading"] :is(article blockquote, blockquote) {
+	font-size: 0.95em;
+	line-height: 1.7;
+	color: var(--c-text-1);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -581,26 +801,35 @@
 
 /* 首页：文章列表两列卡片。
    只改排布，不碰 `.article-card` 自身的样式——它有 `@container` 断点，
-   两列之后每张卡变窄，封面会自动切回「整幅在上」的形态，那是它本来就有的行为。 */
+   两列之后每张卡变窄，封面会自动切回「整幅在上」的形态，那是它本来就有的行为。
+ *
+ * ⚠️ 用 `auto-fit` 而不是 `repeat(2, …)` + 一条 `@media` 收成单列。
+   原来那条例外把 `--bp-grid-columns` 覆盖成单列，而**本规则的
+   `grid-template-columns` 是硬写的 `repeat(2, …)`、根本不读这个变量**
+   —— 于是一条看起来正确的响应式规则从未生效：实测 900×800 与
+   768×768 的首页仍是两列，卡片被压到 282px / 356px 宽，标题折三行、
+   摘要折五行。`minmax(min(22rem, 100%), 1fr)` 交给 `auto-fit` 自己决定
+   几列：容器装不下两条 22rem 就退成一条，不需要任何断点，
+   断点漂移（容器宽度随 `--bp-nav-width` 变）也不会再留下缝。
+   22rem = 352px 是量出来的：1280 的正文列 656px 装不下两条（328 < 352）
+   ⇒ 单列，卡片 656px 宽、标题两行、摘要每行 30 余字；
+   1920 的正文列 792px 装得下（396 ≥ 352）⇒ 两列。
+   两档各得其所，而不是「一个写死的两列在所有宽度下都硬撑」。 */
 :root[data-big-picture] #main-content[data-big-picture-page="home"] [data-post-menu] {
 	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
+	grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
 	align-content: start;
 	gap: var(--bp-gap);
 }
 
-@media (max-width: 1080px) {
-	:root[data-big-picture] #main-content[data-big-picture-page="home"] [data-post-menu] {
-		--bp-grid-columns: minmax(0, 1fr);
-	}
-}
-
 /* 归档：保留年份 / 条目分组，只把每行做大一点让方向键走得舒服。
    `--archive-item-column` 由页面自己的密度面板写（内联 style），
-   这里不覆盖它——用户调过的列数必须继续有效。 */
-:root[data-big-picture] #main-content[data-big-picture-page="archive"] .article-item {
+   这里不覆盖它——用户调过的列数必须继续有效。
+   `:is()` 那一层同 §8：`.article-item` 带 cid，不加就与组件规则打平。 */
+:root[data-big-picture] #main-content[data-big-picture-page="archive"] :is(.article-item) {
+	min-height: var(--bp-control-min);
 	padding-block: 0.35rem;
-	font-size: 1.0625rem;
+	font-size: 1.125rem;
 }
 
 /* 友链：内容列表布局。这是它与阅读态的**唯一**区别——列表页每一项都是链接，
@@ -630,27 +859,65 @@
    ══════════════════════════════════════════════════════════════
    范围刻意只覆盖「手柄真正会选中的那几处」：侧栏导航项与文章卡片。
    搜索 / 灯箱 / 标签页沿用现有 modal、tab 与 layout 状态，**只**多了 §2 的
-   焦点标记——规格对它们的要求就是这一句。 */
-:root[data-big-picture] .sidebar-nav-item,
-:root[data-big-picture] .sidebar-nav-item-parent {
+   焦点标记——规格对它们的要求就是这一句。
+
+   ⚠️ 下面每条都套一层 `:is()`，**不是为了好读，是为了让特异性赢**。
+   组件自己的规则带 cid：`.article-card[data-astro-cid-x]` 是 (0,2,0)，
+   裸写 `:root[data-big-picture] .article-card` 同样 (0,2,0) —— 打平，
+   胜负交给样式表顺序。实测 1280×800：`.article-card` 算出来是 **16px**
+   （= 普通模式的原值），也就是这条放大规则**从未生效**，而没人发现，
+   因为读代码时它就摆在那儿。加一层 `:is()` 后是 (0,3,0)，稳赢。
+   判据：**给组件加样式时先量一次 `getComputedStyle` 的计算值**，
+   源码里写着不等于浏览器算出来是那样（坑位 1、2、3 的同族）。 */
+:root[data-big-picture] :is(.sidebar-nav-item, .sidebar-nav-item-parent) {
 	min-height: var(--bp-control-min);
 	padding-block: 0.35em;
-	font-size: 1.0625rem;
+	font-size: 1.125rem;
 }
 
-:root[data-big-picture] .sidebar-nav h3 {
-	font-size: 0.875rem;
+:root[data-big-picture] :is(.sidebar-nav h3) {
+	font-size: 0.9375rem;
 	letter-spacing: 0.08em;
 }
 
-:root[data-big-picture] .article-card {
-	font-size: 1.0625rem;
+/* 卡片：正文 1.125rem（18px）、摘要 1rem（16px）、元信息 0.9375rem（15px）。
+   原来只把 `.article-card` 提到 1.0625rem，而卡片内部三层全是 `em`：
+   标题 1.2em、摘要 0.9em、元信息 0.8em。元信息落回 12.8px ——
+   在 0.6–1m 的观看距离上完全不可读，而元信息（日期、分类、字数）
+   恰恰是扫列表时最先要找的东西。三层各自定一个绝对值，
+   免得再出现「父级改了、子级跟着缩水」这种整体不可读的组合。
+ *
+ * `margin-block: 0` 是配套的：组件给卡片写了 `margin: 1em 0`，
+ * 列表又是 grid + `gap: var(--bp-gap)`，两套间距叠在一起实测 60px，
+   于是**行间距是卡内 padding（18px）的三倍**——外松内紧。
+   模式内把 margin 归零，行距一律由 gap 给，卡内再各自加一点。 */
+:root[data-big-picture] :is(.article-card, .feed-card) {
+	margin-block: 0;
+	font-size: 1.125rem;
 }
 
-/* 悬浮开关面板：只让它给底部的键帽条让出位置，功能与外观一概不动。
-   它的两颗按钮仍可被鼠标点到，只是 `z-index` 在 Shell 之下，
-   因此必须靠位移而不是靠层级让开。 */
-:root[data-big-picture] .panel-anchor {
+:root[data-big-picture] :is(.article-card, .feed-card) > article {
+	padding: 1.25rem;
+}
+
+:root[data-big-picture] :is(.article-card, .feed-card) :is(.article-description) {
+	font-size: 1rem;
+	line-height: 1.6;
+}
+
+:root[data-big-picture] :is(.article-card, .feed-card) :is(.article-info) {
+	font-size: 0.9375rem;
+}
+
+/* 悬浮开关面板与分页条：只让它们给底部的键帽条让出位置，功能与外观一概不动。
+   它们的按钮仍可被鼠标点到，只是 `z-index` 在 Shell 之下，
+   因此必须靠位移而不是靠层级让开。
+   ⚠️ 分页条这一半是新加的：`.pagination.sticky` 的 `bottom: min(2em, 5%)`
+   是相对**滚动容器**算的，而 `#blog-root` 的 `padding-bottom` 只让开了
+   `scroll-padding` 那一份。实测 1920×1080：分页条停在 y≈1045、键帽条顶边
+   1028 ⇒ 下缘被盖掉 17px，最后一页的按钮一半在家具底下。
+   `:is()` 那一层同 §8：组件规则带 cid，不套就与它打平。 */
+:root[data-big-picture] :is(.panel-anchor, .pagination.sticky) {
 	bottom: calc(var(--bp-bar-bottom) + min(2rem, 5%));
 }
 

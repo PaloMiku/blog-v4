@@ -307,7 +307,8 @@ const PROBE = `(() => {
   if (!main || !root) return { error: 'missing #main-content/#blog-root' }
   const r = main.getBoundingClientRect()
   const cs = getComputedStyle(main)
-  const cols = getComputedStyle(root).gridTemplateColumns.trim().split(/\\s+/).length
+  const gtc = getComputedStyle(root).gridTemplateColumns.trim()
+  const cols = gtc.split(/\\s+/).length
   const side = (sel) => {
     const el = document.querySelector(sel)
     if (!el) return null
@@ -319,6 +320,12 @@ const PROBE = `(() => {
     fontSize: cs.fontSize,
     lineHeight: cs.lineHeight,
     rootColumns: cols,
+    rootTemplate: gtc,
+    // 单列时根上唯一那列的宽度。**与 width 比**，而不是与 860 比：
+    // 「正文 ≤ 860」这条判据看不见溢出——溢出恰恰是**比 860 小**的那种坏
+    // （实测 390×844 阅读态正文 692.75px，根列 358px，而 693 ≤ 860 成立）。
+    rootColumnWidth: cols === 1 ? Math.round(parseFloat(gtc) * 100) / 100 : null,
+    docScrollWidth: document.documentElement.scrollWidth,
     sidebar: side('#blog-sidebar'),
     aside: side('#blog-aside'),
   }
@@ -361,6 +368,24 @@ for (const vp of VIEWPORTS) {
 		bad(`${vp.label} #blog-root 仍有 ${m.rootColumns} 列，阅读态没有收成单列`)
 	else ok(`${vp.label} #blog-root 单列`)
 
+	/*
+	 * 正文不得溢出它那一列。
+	 *
+	 * 这一条不是重复上面那条 ≤860：溢出是**比 860 小**的坏。实测（本次修复前）
+	 * 390×844 阅读态下 `#blog-root` 宽 390、栅格列 358，`#main-content` 却算出
+	 * 692.75px ——「693 ≤ 860」让原来的断言全绿，而首屏被切掉一截。
+	 * 根因是 grid item 同时写了 `margin-inline: auto`：`justify-self` 的
+	 * stretch 要求「两侧 margin 非 auto」，一旦是 auto，`width: auto` 就改按
+	 * fit-content 解析，`max-width: 860px` 反而成了上限而不是目标。
+	 */
+	if (m.rootColumnWidth != null && m.width > m.rootColumnWidth + 0.5)
+		bad(`${vp.label} 阅读态正文 ${m.width}px 溢出了它那一列（根列 ${m.rootColumnWidth}px）—— 居中方式让 grid item 变成了 fit-content`)
+	else ok(`${vp.label} 阅读态正文未溢出所在列（${m.width}px / 列 ${m.rootColumnWidth}px）`)
+
+	if (m.docScrollWidth > vp.width + 1)
+		bad(`${vp.label} 页面横向溢出：scrollWidth ${m.docScrollWidth}px > 视口 ${vp.width}px`)
+	else ok(`${vp.label} 无横向溢出（scrollWidth ${m.docScrollWidth}px）`)
+
 	// 两侧栏必须是移出流且默认隐藏的抽屉，否则顶部的「导航」「目录」打不开它们
 	let drawerOk = true
 	for (const [name, s] of [['#blog-sidebar', m.sidebar], ['#blog-aside', m.aside]]) {
@@ -393,7 +418,102 @@ for (const vp of VIEWPORTS) {
 		ok(`${vp.label} 字号 ${m.fontSize} / 行高 ${m.lineHeight}（${ratio.toFixed(2)}）`)
 }
 
-console.log('--- 4. 普通模式未被波及 ---')
+/*
+ * §4：Shell 家具的 `hidden` 契约。
+ *
+ * `BigPictureShell.astro` 的模板给动作区 / 键帽条 / 设置面板 / 「目录」按钮
+ * 都写了 `hidden`，显隐由 `toggleAttribute('hidden', …)` 翻转。
+ * **作者样式表里的 `display: flex` 会压过 UA 的 `[hidden] { display: none }`**
+ * （来源优先级作者 > UA），于是这些 `hidden` 曾经全部静默失效：实测 1280×800
+ * 设置面板恒展开（142px 浮层压在右栏统计上）、「目录」按钮在 `/link`
+ * 这种没有右栏的页面上照常出现、退出大屏后动作条与键帽条留在屏上。
+ *
+ * 这里刻意**先读 hidden 再读 display**：门禁自己不能用 `getComputedStyle`
+ * 的 `display` 当「可见性」的定义，那正是缺陷所在的层。
+ */
+/*
+ * §3.5 右栏为空的页面：大屏这一层必须真的赢过 `Blog.astro`。
+ *
+ * `Blog.astro` 的两栏分支是 `:global(#blog-root):not(:has(> .blog-aside-track > #blog-aside:not(.is-empty)))`，
+ * `:has()` 取参数里最具体者的特异性 ⇒ 那一条是 **(2,1,0)**；
+ * 而大屏的消费点若只写 `:root[data-big-picture] #blog-root` 是 **(1,2,0)**，
+ * id 数 2 > 1，于是普通模式那条赢。实测 `/link`（aside 是 `.is-empty`）：
+ * `--bp-grid-columns` 算对了，落地列却还是 `--sidebar-width` = 280px。
+ *
+ * 门禁此前只跑文章页（右栏非空 ⇒ 走三栏分支），所以**完全看不见**这条。
+ */
+console.log('--- 3.5 右栏为空的页面：侧栏宽度取大屏的 --bp-nav-width ---')
+{
+	await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false })
+	await send('Page.navigate', { url: `${LOCAL}/link/` })
+	for (let i = 0; i < 40; i++) {
+		await sleep(250)
+		const r = await evaluate(`document.readyState === 'complete' && !!document.querySelector('#blog-sidebar')`)
+		if (r.value === true)
+			break
+	}
+	await sleep(600)
+	const probed = await evaluate(`(() => {
+	  document.documentElement.setAttribute('data-big-picture', 'active')
+	  const root = document.querySelector('#blog-root')
+	  const sb = document.querySelector('#blog-sidebar')
+	  const cs = getComputedStyle(root)
+	  return { navWidth: parseFloat(cs.getPropertyValue('--bp-nav-width')) * 16,
+	    gap: parseFloat(cs.columnGap),
+	    sbW: Math.round(sb.getBoundingClientRect().width),
+	    rootTemplate: cs.gridTemplateColumns }
+	})()`)
+	const v = probed.value || {}
+	// `var(--bp-nav-width)` 解析失败时 getComputedStyle 给出的是空串 → 0，这里一并红
+	if (!v.sbW || Math.abs(v.sbW - v.navWidth) > 1)
+		bad(`§3.5 /link 侧栏宽 ${v.sbW}px，不是大屏的 --bp-nav-width ${v.navWidth}px —— 大屏这一层输给了 Blog.astro 的两栏分支`)
+	else ok(`§3.5 /link 侧栏宽 ${v.sbW}px = --bp-nav-width，列间距 ${v.gap}px`)
+}
+
+console.log('--- 4. Shell 家具的 hidden 契约（模式激活后仍由 hidden 决定显隐）---')
+{
+	await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false })
+	await send('Page.navigate', { url: `${LOCAL}/2025/11/riddle-joker/` })
+	for (let i = 0; i < 40; i++) {
+		await sleep(250)
+		const r = await evaluate(`document.readyState === 'complete' && !!document.querySelector('main#main-content')`)
+		if (r.value === true)
+			break
+	}
+	await sleep(600)
+	// 只设模式属性、**一个字 hidden 都不动**：模板里带 hidden 的就必须没有盒子
+	const probed = await evaluate(`(() => {
+	  document.documentElement.setAttribute('data-big-picture', 'active')
+	  const sh = document.querySelector('[data-big-picture-shell]')
+	  const out = {}
+	  for (const sel of ['.big-picture-actions', '.big-picture-hints', '.big-picture-settings',
+	    '.big-picture-enter', '[data-big-picture-action="open-aside"]']) {
+	    const el = sh.querySelector(sel)
+	    if (!el) { out[sel] = 'missing'; continue }
+	    const r = el.getBoundingClientRect()
+	    out[sel] = { hidden: el.hasAttribute('hidden'), display: getComputedStyle(el).display,
+	      w: Math.round(r.width), h: Math.round(r.height) }
+	  }
+	  return out
+	})()`)
+	const boxes = probed.value || {}
+	let contractOk = true
+	for (const [sel, v] of Object.entries(boxes)) {
+		if (v === 'missing') {
+			bad(`§4 ${sel} 不在产物里`)
+			contractOk = false
+			continue
+		}
+		if (v.hidden && (v.display !== 'none' || v.w > 0 || v.h > 0)) {
+			bad(`§4 ${sel} 带 hidden 却仍有盒子（display:${v.display}, ${v.w}x${v.h}）—— 作者样式表的 display 压过了 UA 的 [hidden]`)
+			contractOk = false
+		}
+	}
+	if (contractOk)
+		ok(`§4 5 处带 hidden 的家具全部没有盒子（display:none）`)
+}
+
+console.log('--- 5. 普通模式未被波及 ---')
 {
 	await send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false })
 	await send('Page.navigate', { url: `${LOCAL}/2025/11/riddle-joker/` })
