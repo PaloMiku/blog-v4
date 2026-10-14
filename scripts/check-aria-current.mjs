@@ -66,8 +66,9 @@ const FAIL = []
  * 归一化页面路径：去尾斜杠，空则 '/'（与 lib/shared/link.ts 的 normalizeContentPath 同规则）。
  *
  * 收敛到 `toRoute`：本文件原来写的是 `p.replace(/\/+$/, '') || '/'`，与
- * `compare-urls.mjs` 的 `normalizeUrl`、`compare-remote-sitemap.mjs` 的内联版
- * 三份等价实现是同一语义。留着的代价是**改一处忘另一处**——`build.format: 'directory'`
+ * `compare-remote-sitemap.mjs` 的内联版两份等价实现是同一语义（第三份
+ * `compare-urls.mjs` 已随 Nuxt 基线退役一并删除）。留着的代价是**改一处忘另一处**
+ * ——`build.format: 'directory'`
  * 让产物 URL 恒带尾斜杠，谁忘了归一化，谁的精确比较就会在首页之外整片失效。
  */
 const norm = toRoute

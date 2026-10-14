@@ -16,7 +16,7 @@
  * 现有的 `compare-page-heights`（比高度）、`compare-dom-live`（比类名计数）、
  * `audit-dead-scope`（比 scoped 死规则）都看不见以上任何一条：
  * 少一个监听器，页高不变、DOM 形状不变、样式不变。
- * `check-flip-gates` 覆盖 FLIP 接线，但不覆盖「排序状态有没有被消费」。
+ * `check-list-controls` 覆盖 FLIP 接线，但不覆盖「排序状态有没有被消费」。
  *
  * 更阴的一种：**源码里写了、产物里没有**。Astro 不会编译没人引用的组件，
  * 构建照样绿。所以本门禁只认产物（`dist/`），不认源码。
@@ -563,6 +563,36 @@ function evaluate(art) {
 			problems.push(`产物 JS 里没有查询参数 ${key} 的字面量（该参数没被读取或写回）`)
 	}
 
+	// ---- 9. FLIP 客户端脚本本身必须真的在产物 JS 里 ----
+	//
+	// 上面 1~8 查的都是「控件与控制器」，这一节查的是**动画驱动脚本**。
+	// 三者的失败形态一样（缺席时页面照样正常渲染），但修的地方不同：
+	// 控件没接 ⇒ 排序/分页是死的；FLIP 脚本没进产物 ⇒ 排序能work、只是不动画。
+	//
+	// 只在源码里出现不算数：没人引用的组件 Astro 根本不会编译。
+	for (const [needle, what] of [
+		['--motion-duration', '读取容器上的动画时长自定义属性'],
+		['--motion-easing', '读取容器上的缓动自定义属性'],
+		['data-list-key', '按 data-list-key 收集条目'],
+		['data-article-transition', '整页文章过渡逃生口'],
+		['prefers-reduced-motion', '减少动效逃生口'],
+	]) {
+		if (!js.includes(needle))
+			problems.push(`产物 JS 里没有「${needle}」（${what}）——FLIP 脚本没有被打进产物`)
+	}
+
+	// ---- 10. 三个行为钩子 ----
+	//
+	// `dataset.changing = ''` 压缩后是 `.changing`（DOM 属性名不会被 mangle），
+	// 故用 `changing` 配合赋值/删除形态来判，不用裸词。
+	//
+	// 前两条曾由 check-flip-gates 单独守着，那道门禁已并入本文件——它的 wrapper
+	// 判据是本文件第 1 组的严格子集，Toggle/Slider 选择器判据则与本文件逐字相同。
+	if (!/\.changing\s*=/.test(js))
+		problems.push('产物 JS 里没有 `dataset.changing` 的写入（过渡期的 overflow: clip / overflow-anchor: none 永远不会生效）')
+	if (!/delete\s+\w+\.dataset\.changing/.test(js))
+		problems.push('产物 JS 里没有 `delete dataset.changing`（动画结束后属性不清除，列表会永久 overflow: clip）')
+
 	return problems
 }
 
@@ -632,6 +662,14 @@ function goodArtifacts() {
 			'document.querySelector("[data-toggle-root]");',
 			'g.style.setProperty("--archive-item-column",String(c));',
 			'g.style.setProperty("--archive-item-gap",s+"em");',
+			// FLIP 驱动脚本（第 9 组判据的锚）。注意 `data-list-key` 必须**由脚本读出**：
+			// markup 上那个同名属性是卡片自己的，光靠它会让本组判据在「脚本没进产物、
+			// 标记还在」时误判为通过——那正是原 check-flip-gates 用例 g) 治的失败形态。
+			'const items=[...e.querySelectorAll("[data-list-key]")];',
+			'const d=getComputedStyle(e).getPropertyValue("--motion-duration"),g=getComputedStyle(e).getPropertyValue("--motion-easing");',
+			'e.dataset.changing="";e.animate([{height:t+"px"}],{duration:d,fill:"forwards"});delete e.dataset.changing;',
+			'matchMedia("(prefers-reduced-motion: reduce)").matches',
+			'document.documentElement.hasAttribute("data-article-transition")',
 		].join('\n'),
 		// 内联那一路默认留空：上面那些用例各自抽掉外链片段即可验证「缺了就报」，
 		// 放进内联就不然了。内联路径由 m) / n) 单独覆盖
@@ -850,6 +888,38 @@ const SELF_TESTS = [
 		art: { ...good, js: good.js.split('q.get("sort");q.get("asc");q.get("category");q.get("page");').join('e.sortOrder;e.sorted;e.listSorted;e.pageCount;e.ascending;e.categoryList;') },
 		expect: ['查询参数 sort 的字面量', '查询参数 asc 的字面量', '查询参数 category 的字面量', '查询参数 page 的字面量'],
 	},
+	/* 以下 w) ~ ab) 自原 check-flip-gates.mjs 迁入。该门禁已并入本文件：
+	   wrapper 判据是第 1 组的严格子集，Toggle/Slider 选择器判据与第 6 组逐字相同。 */
+	{
+		name: 'w) FLIP 脚本完全没进产物（组件写了没人引用）→ 必须报',
+		// 注意只断言 4 条：`--motion-duration` 与 `--motion-easing` 原本在**同一行** JS
+		// （getComputedStyle 那行）里，整段抽掉时 easing 的字面量也随之消失、判据恒绿。
+		// 但该 token 在真实产物里独立成行（见 goodArtifacts），其判据有效性由 x)/y)/z)
+		// 这类「只抽一个」的正例维持——这里刻意不强求一条本就不该报的 easing 报错。
+		art: { ...good, js: good.js.split('const items=[...e.querySelectorAll("[data-list-key]")];').join('').split('getComputedStyle(e).getPropertyValue("--motion-duration")').join('').split('data-article-transition').join('').split('prefers-reduced-motion').join('') },
+		expect: ['--motion-duration', 'data-list-key', 'data-article-transition', 'prefers-reduced-motion'],
+	},
+	{
+		name: 'x) 少了 data-changing 的写入（动画没有 overflow 裁剪）→ 必须报',
+		art: without(good, 'js', 'e.dataset.changing="";'),
+		expect: ['没有 `dataset.changing` 的写入'],
+	},
+	{
+		name: 'y) 少了 delete（结束后属性不清，列表永久 overflow: clip）→ 必须报',
+		art: without(good, 'js', 'delete e.dataset.changing;'),
+		expect: ['没有 `delete dataset.changing`'],
+	},
+	{
+		// 内联那一路是同权判据，不是安慰奖：FLIP 脚本被 Astro 内联进页面时不该报。
+		name: 'z) FLIP 脚本只内联在页面里、外链 chunk 一个都没有 → 不报',
+		art: { ...good, js: good.js.split('const items=[...e.querySelectorAll("[data-list-key]")];').join(''), inline: { css: good.inline.css, js: [good.js] } },
+		expect: [],
+	},
+	{
+		name: 'aa) FLIP 脚本外链与内联都没有 → 照样必须报',
+		art: { ...good, js: good.js.split('const items=[...e.querySelectorAll("[data-list-key]")];').join(''), inline: { css: [], js: [] } },
+		expect: ['data-list-key'],
+	},
 ]
 
 let selfOk = true
@@ -860,8 +930,8 @@ for (const t of SELF_TESTS) {
 		// ⚠️ 这里原来写的是 `got.every(k => got.some(g => g.includes(k)))`——
 		// 迭代的是 `got` 而不是 `t.expect`，于是「每条问题都被某条问题包含」
 		// 恒真（空数组的 every 也是 true）：**自检永远不会失败**，判据坏了也照样出结论。
-		// 本门禁的另外两道（check-flip-gates / check-icon-swap）都是
-		// `t.expect.every(k => got.some(g => g.includes(k)))`，此处对齐。
+		// `check-icon-swap` 用的就是 `t.expect.every(k => got.some(g => g.includes(k)))`，
+		// 此处对齐。
 		: t.expect.every(k => got.some(g => g.includes(k)))
 	if (!ok) {
 		selfOk = false

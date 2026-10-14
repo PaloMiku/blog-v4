@@ -238,7 +238,7 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
     就手工重钉一次名单。**键应该是语义身份**（cid 本身就是组件内容的哈希，改组件必改 cid）。
 24. ⚠️ **脚本里的路径必须从脚本自身位置解析，不要用 `process.cwd()`。** Node 侧从
     `import.meta.url` 解析——跟着进程 CWD 的相对路径（旧 PowerShell 的 `Resolve-Path '..\x'`）
-    曾让 `check-dates` 与 `compare-urls` 指向过从未存在的路径。
+    曾让 `check-dates` 与两个比较门禁（一个比冻结基线、一个比线上）指向过从未存在的路径。
     同族陷阱：**Windows PowerShell 5.1 会先插值再交给 node，且无 BOM 的文件按 ANSI 读**——
     命令串里的 `$1` / `$变量名` 被当成变量吃掉，中文被按 ANSI 吞。仓库已无 `.ps1`，
     但 `powershell -Command` 仍在用。**改文件用 edit/write 工具，或写进临时 .mjs 再跑。**
@@ -369,6 +369,31 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
     完整 ID 始终留在 `$meta.model`（复现调用需要那个字符串），
     `$meta.modelLabel` 是可选的显式短名（`--model-label`），缺省即自动推导。
     实测产物：`$meta.model = "deepseek/deepseek-flash"` ⇒ 38 页徽章渲染为 `Flash`。
+38. **⚠️ 判据要能被证伪，而「中文没有词边界」是最常见的永红来源。**
+    精简门禁时实测到两类绿灯失效，形态不同但同一根因——**没人注入过真实缺陷**：
+    - **永红**：`audit-deferred` 的 `/留空/` 命中了 `placeholder: '留空表示未更新'`。
+      中文没有 `\b`，照搬英文那两条 `TODO`/`stub` 的「单词」写法必然误伤正常文案。
+      修法不是改文案迁就门禁，是给中文标记加**上下文**约束（这里用
+      `(?:=|return)\s*["']…["']` 并排除 `placeholder`/`label` 这类「本就是提示用户」的字段）。
+    - **永绿**：`check-anchor-classes` 的 `.article` 与 `max-width:100%` 两条子串判据，
+      实测命中分别来自 `.article-card`(7 处) 与 `fit-content`/`min-width` 里的无关规则，
+      而目标文件早已被打进共享 bundle、不再是独立文件。
+    **同族教训**：判据「看起来在测某件事」不等于它在测那件事。
+    **每个子串/正则类判据都要问一句「这段文本还能从哪儿来」**——
+    带前缀同族的 class（`.article` vs `.article-card`）、同属性的其它写法
+    （`max-width` vs `min-width`）、前缀相同的标识符（`sort` vs `sortOrder`）。
+    要判唯一性就用**集合成员判定**（`cls.split(/\s+/).includes('article')`）或带否定前瞻的整词正则。
+    这也是 CLAUDE.md 坑位 16「键必须选稳定的那一层」在选择器一侧的同型。
+39. **合并门禁前先证明重复是「逐字」或「真子集」，否则是在搬代码不是去重。**
+    实测：`check-flip-gates` 与 `check-list-controls` 的 Toggle/Slider 选择器判据
+    **md5 相同**、连报错文案都一样，`maskNonCode` 在三道门禁里也是逐字副本。
+    判据是真子集时才可删：list-controls 的 wrapper 判据覆盖 3 页且多两个更严的
+    `data-list-transition-*` 钩子，flip-gates 只覆盖 2 页的 class 形态 ⇒ 后者是前者子集。
+    **⚠️ 但判据「不相交」时不要硬合**：`check-icon-swap`（`<use>`/symbol 闭包）与
+    `check-icon-box`（CSS display 几何）看着都是「图标」，实则一个要 CSS 规则解析器、
+    一个没有，合进来等于把两套解析器和两套自检体系缝在一起——那是**变复杂**不是变简单。
+    那种情况该做的是补齐弱的那道（icon-box 当时零自检，补完 7 例当场抓出
+    「父级 flex 上下文只计数、不满足判据」的真缺陷），而不是删掉或合并。
 
 ## 开放项
 
@@ -379,3 +404,5 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
 | `probe-subtree` 的 profile 模式（垂直剖面 / 空隙 / 对账）该不该并进 `compare-ui-parity` | 它现在不在任何门禁名单里，作为「门禁」等于不存在 | 未处理。它的 tree 模式已被 `--sel=` 完全覆盖，profile 模式是唯一能说清「空隙」的仪器 |
 | `compare-dom-live` 退役后丢掉的覆盖 | 它独有的是 head meta 与侧栏 widget/footer 计数，且只硬编码 8 页 | 2026-10-04 退役时未回填。`compare-ui-parity` 的 `SEM_RULES` 已含 head meta，但只有加重档会跑 |
 | 手柄大屏模式未做实机测试 | 所有验证（test/typecheck/lint/accept/interaction-check）均通过，但覆盖全部来自 `interaction-check.mjs` 注入的 `navigator.getGamepads` 夹具 | **未测试**。Steam Deck 与 Xbox/DualSense 列入实机覆盖目标。交付报告必须把「注入夹具覆盖」与「物理设备覆盖」分开写，不因标准映射模拟通过就声明全部兼容 |
+| parity 档是否该整体降级为诊断工具 | `live:ui-parity` 拿线上（= 本站上一版产物）当基线，上一版随时被 force-push 覆盖；`probe-subtree` + 三个 `lib/` 模块约 3200 行只服务这一档 | **未处理**。它们仍是唯一能量「线上有没有漂移」的仪器，删了就只能靠人看。要降级需先决定放弃这项能力 |
+| `AI excerpt` / `excerpt-content` 两条断言的自动覆盖 | 原 `check-integration` 有这两条，精简时移交给了 `interaction-check.mjs`——但那道门禁**不进流水线** | **未处理**。若要它们自动生效，应加进 `check-affordances`（release 档、只读 dist）而不是加回 `check-integration` |

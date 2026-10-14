@@ -73,8 +73,8 @@ function concatAssets(ext) {
 }
 
 const jsAll = concatAssets('.js')
-const cssAll = concatAssets('.css')
-
+// 不再 concat CSS：原先两条 CSS 负断言（`:hover>&`、`article[data-astro-cid].` 二次作用域）
+// 已移交给 check-layout（那里本来就有同样两条）。留着这份拼接只会白读一批产物。
 const all = html + jsAll
 
 const has = (hay, needle) => hay.includes(needle)
@@ -82,16 +82,35 @@ const has = (hay, needle) => hay.includes(needle)
 /**
  * 判据表。顺序与原 PS 版的有序哈希表逐条一致，正向/反向语义不变。
  * `hint` 只在失败时打印出来给人看，不参与判定。
+ *
+ * ## 精简记录（2026-10-14）
+ *
+ * 这道门禁原本 16 条，裁到 8 条。裁掉的每一条都有**release 档里的别处覆盖**，
+ * 且别处那份更强（不是同强度重复）：
+ *
+ *   - `modal scrim present` / `lightbox registered` / `lightbox trigger script`
+ *     → `check-runtime-dom` 的判据 E 在**真浏览器里**验同一件事（role=dialog、
+ *     焦点进模态、Esc 后焦点归还），静态字符串匹配不如它。
+ *   - `pic zoom hook` → `check-affordances` 判据 3 扫**全站每个** `data-zoom`，
+ *     且额外要求 `cursor:zoom-in`；这里只看一页的一个 caption 属性。
+ *   - `AI excerpt` / `excerpt content id` → `interaction-check` 有真交互断言。
+ *     ⚠️ 但那道门禁**不进流水线**，所以若日后要让这两条自动生效，
+ *     应把它们加进 `check-affordances` 而不是加回本文件。
+ *   - `twikoo init call` → `check-runtime-dom` 覆盖 `envId`。
+ *   - `no invalid :hover>&` / `no double-scoped article`
+ *     → `check-layout` 已有同样两条负断言。
+ *
+ * 留下的 8 条都是**release 档内无其它门禁覆盖**的骨架断言——实测
+ * `data-modal-host`、`data-modal="search"`、`id="twikoo"`、
+ * `z-button button primary` 在其余门禁里一处命中都没有，而它们的缺席
+ * 是「构建全绿、页面少一块」那一族（见文件头「它在防什么失败模式」）。
  */
 const checks = [
 	// modal stack wiring
 	['modal host mounted', () => has(html, 'data-modal-host'), 'HTML 里没有 data-modal-host：弹窗栈根节点没渲染'],
-	['modal scrim present', () => has(html, 'data-modal-scrim'), 'HTML 里没有 data-modal-scrim：遮罩没渲染'],
 	['search modal registered', () => has(html, 'data-modal="search"'), '搜索弹窗没有注册到弹窗栈'],
-	['lightbox registered', () => has(html, 'data-modal="lightbox"'), '灯箱没有注册到弹窗栈'],
-	['lightbox trigger script', () => has(all, 'openModal'), '产物（HTML + JS chunk）里找不到 openModal：客户端逻辑被 tree-shake 掉了'],
 	// The share feature was removed on both sides (Nuxt + Astro).
-	// These three assertions are inverted rather than deleted on purpose: once the
+	// This assertion is inverted rather than deleted on purpose: once the
 	// structure is gone, the only way it can silently come back is someone
 	// reintroducing those markers, and no positive assertion here would go red.
 	// Scan $all (HTML + JS chunks), not just $html: the trigger markup and the modal
@@ -99,19 +118,10 @@ const checks = [
 	['share fully removed', () => !/data-share|data-modal="share"|blog-share|shareReady|share-(?:card|qr|menu|item|icon)/i.test(all), '分享功能的标记又回来了：data-share / data-modal="share" / blog-share / shareReady / share-*(card|qr|menu|item|icon)'],
 	// Button.astro data-* regression (trap: undeclared props are dropped)
 	['button primary class', () => has(html, 'z-button button primary'), 'Button.astro 把 data-* 吞了：产物里没有 "z-button button primary"'],
-	// image zoom intent
-	['pic zoom hook', () => has(html, 'data-zoom-caption'), '图片没有挂上 data-zoom-caption：点图放大失效'],
-	// article features
-	['AI excerpt', () => has(html, 'ai-excerpt'), 'AI 摘要标记缺失'],
-	['excerpt content id', () => has(html, 'excerpt-content'), '摘要容器 id 缺失'],
 	['twikoo container', () => has(html, 'id="twikoo"'), 'twikoo 容器缺失：评论区挂不上'],
-	['twikoo init call', () => has(all, 'envId'), '产物里找不到 envId：twikoo 初始化代码没了'],
 	// layout shell
 	['blog-root', () => has(html, 'id="blog-root"'), '布局外壳 #blog-root 缺失'],
 	['main content', () => has(html, 'id="main-content"'), '布局外壳 #main-content 缺失'],
-	// css regressions
-	['no invalid :hover>&', () => !/\[[^\]]+\]:hover>&/i.test(cssAll), '产物 CSS 里有非法的 `[...]:hover>&`（死规则，不报错也不生效）'],
-	['no double-scoped article', () => !/article\[data-astro-cid-[^\]]+\]\s*\./i.test(cssAll), '产物 CSS 里有 article 叠加 data-astro-cid 的二次作用域规则'],
 ]
 
 let pass = 0

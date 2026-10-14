@@ -88,8 +88,8 @@ export function resolveDistDir() {
  * 清单里消失。
  *
  * ⚠️ 这里**有意比收敛前的实现更严一档**：`'///'` 这类「全是斜杠」的输入，
- * 旧的 `compare-urls.mjs: normalizeUrl` 与 `check-aria-current.mjs: norm` 都返回
- * `''`（它们的守卫只挡 `''` 与 `'/'`，`'///'` 落到 `replace` 之后就是空串）。
+ * 旧的 `check-aria-current.mjs: norm` 返回
+ * `''`（它的守卫只挡 `''` 与 `'/'`，`'///'` 落到 `replace` 之后就是空串）。
  * 真实输入里不会出现这种路径，但既然已经收敛成一份，就把不变式补完整——
  * 剥完为空串时一律回 `/`。对拍 7 个真实输入与旧实现逐字相同。
  *

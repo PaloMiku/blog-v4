@@ -72,7 +72,7 @@ const BUILD_LOG = path.join(LOG_DIR, 'acceptance-build.log')
  * `expected-in-ci` 要克制着用：它等价于「永久豁免」，
  * 所以每一条都必须写 `why`，且 CI 上仍然计入 `skipped`、
  * 在汇总里逐条点名，不是静默放行。EC-003 起默认档不再需要它——
- * 唯一结构性跳过的 compare-urls 已经移入 parity 档。
+ * 唯一结构性跳过过的 compare-urls（比的是 gitignore 掉的 Nuxt 基线）已直接退役。
  */
 const SKIP_POLICIES = new Set(['never', 'env-dependent', 'expected-in-ci'])
 
@@ -127,7 +127,6 @@ const RELEASE_GATES = [
 	// skip 用 'env-dependent'：它要起无头 Chrome，内存不足时该自我放弃；
 	// 但它在脚本里刻意不输出 SKIP（缺产物/起不来一律 exit 1），避免「跑没跑」被误判。
 	{ name: 'check-big-picture-layout', skip: 'env-dependent', why: '起 preview + 无头 Chrome（约 700MB）实测大屏阅读态几何。内存不足时本机可以跳过；CI runner 是 ubuntu-latest 4 核 / 16GB，在那里跳过说明环境退化。' },
-	'check-anchor-classes',
 	'check-prose-layer',
 	'check-content-preservation',
 	'check-dates',
@@ -174,13 +173,12 @@ const MAINTENANCE_GATES = [
 	'check-tab-panels',
 	'check-icon-box',
 	'check-icon-swap',
-	'check-flip-gates',
 	'check-list-controls',
 	'check-text-literal',
 	'check-affordances',
-	// CSS 域审计
+	// CSS 域审计。`audit-css-blocks` 已并入 `check-dropped-css`（判据取并集，
+	// 共用同一趟 maskNonCode + 花括号深度扫描），所以名单里不再单列。
 	'check-scope-anchors',
-	'audit-css-blocks',
 	'audit-dead-scope',
 	'check-dropped-css',
 	// 豁免台账治理（棘轮 / 到期）：只读台账与配置，一条豁免到期跟产物新旧无关
@@ -206,7 +204,10 @@ const MAINTENANCE_GATES = [
  * 基线本来就不在 checkout 里，硬凑一个绿才是骗人。
  */
 const PARITY_GATES = [
-	{ name: 'compare-urls', why: '比 baseline/nuxt/urls.txt；基线未入库（gitignore，freeze 脚本已退役），缺失时不可运行' },
+	// 原先这里还有一道 `compare-urls`（比 baseline/nuxt/urls.txt），已删：
+	// baseline/ 在 .gitignore 里、git 未跟踪，干净 CI 上那道门禁结构性不可运行；
+	// 而线上自 2026-10-03 起就是本站自己的产物，拿冻结的 Nuxt 快照比对已经没有
+	// 判据意义。路由漂移由下面的 live:sitemap 守（它的事实源在线、不随基线失效）。
 	{ name: 'live:sitemap', script: 'compare-remote-sitemap.mjs', why: '线上 sitemap vs 本地产物' },
 	{ name: 'live:ui-parity', script: 'compare-ui-parity.mjs', why: '逐页对比线上与本地产物（大头，约 20 min）' },
 ]

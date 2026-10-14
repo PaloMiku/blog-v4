@@ -29,7 +29,7 @@ function parseLocs(xml) {
 		.map((u) => {
 			const p = new URL(u).pathname
 			// 收敛前这里写的是 `p.length > 1 ? p.replace(/\/+$/, '') : p`，
-			// 与 compare-urls / check-aria-current 的两份本地实现同义，现统一到 toRoute。
+			// 与 check-aria-current 的本地实现同义，现统一到 toRoute。
 			return toRoute(p)
 		})
 }
@@ -61,8 +61,7 @@ function readLocalSitemap() {
 	//
 	// 路由用 `fileToRoute`，**不带尾斜杠**。收敛前这里是手写的
 	// `/${rel.replace(/index\.html$/, '')}`，对 `/2025/11/x/index.html` 产出
-	// `/2025/11/x/`（带尾斜杠）——与另两处（`compare-urls` / `check-aria-current`）
-	// 的形状不一致，属实。
+	// `/2025/11/x/`（带尾斜杠）——与 `check-aria-current` 的形状不一致，属实。
 	//
 	// 但**它当时并没有造成假阳性**：产出随即被喂回 `parseLocs`，而 `parseLocs`
 	// 的归一化会把尾斜杠去掉，两边因此仍然相等（已实测：改前改后输出逐字相同）。

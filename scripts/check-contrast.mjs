@@ -83,8 +83,9 @@ function block(selectorRe) {
 	let depth = 0
 	for (let i = open; i < src.length; i++) {
 		const ch = src[i]
-		if (ch === '{')
+		if (ch === '{') {
 			depth++
+		}
 		else if (ch === '}') {
 			depth--
 			if (depth === 0) {
@@ -96,7 +97,7 @@ function block(selectorRe) {
 	return null
 }
 
-const light = block(/^\s*:root,\s*\n\s*\.light\s*\{/m)
+const light = block(/^\s*:root,[\t\v\f\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]*\n\s*\.light\s*\{/m)
 const dark = block(/^\s*\.dark\s*\{/m)
 if (!light || !dark) {
 	console.error('color.css 结构与预期不符，脚本自身出错')
@@ -130,11 +131,16 @@ function hslToRgb([h, s, l]) {
 	let r
 	let g
 	let b
-	if (hh < 60) [r, g, b] = [c, x, 0]
-	else if (hh < 120) [r, g, b] = [x, c, 0]
-	else if (hh < 180) [r, g, b] = [0, c, x]
-	else if (hh < 240) [r, g, b] = [0, x, c]
-	else if (hh < 300) [r, g, b] = [x, 0, c]
+	if (hh < 60)
+		[r, g, b] = [c, x, 0]
+	else if (hh < 120)
+		[r, g, b] = [x, c, 0]
+	else if (hh < 180)
+		[r, g, b] = [0, c, x]
+	else if (hh < 240)
+		[r, g, b] = [0, x, c]
+	else if (hh < 300)
+		[r, g, b] = [x, 0, c]
 	else [r, g, b] = [c, 0, x]
 	return [r + m, g + m, b + m]
 }

@@ -173,6 +173,64 @@ function styleBlocks(text) {
 
 /* ══════════════════════════ 判据 1：顶层裸 `> selector` ══════════════════════════ */
 
+/**
+ * 判据 1b：顶层裸声明 + 花括号配平（并入自已删的 audit-css-blocks.mjs）。
+ *
+ * 与 `scanTopLevelCombinator` 跑在同一趟 `maskNonCode` + 花括号深度扫描上，
+ * 判据取**并集**而非竞争：三者（顶层裸 `>` / 顶层裸声明 / 括号失配）都在
+ * 「源码里被工具改坏」这一族下。历史上它们被拆成两道门禁、两份逐字相同的
+ * `maskNonCode`，于是「同一趟扫描」这件事发生了两次。
+ *
+ * ⚠️ 那道门禁另有两条**无效**判据，未并入：
+ *   - BOM 扫描：只打 WARN、不影响 exitCode（它永远不能让门禁红），且与主扫描
+ *     重复跑了一遍整棵 src 树。
+ *   - 「`.css` 文件覆盖」：`styleBlocks` 只认 `<style` 开标签，裸 `src/styles/*.css`
+ *     里一行都扫不到——那次扫描是对 9 个文件的白跑。
+ *
+ * 返回问题描述数组；空 = 干净。`lineBase` 让报出的行号是**文件真实行号**
+ * （frontmatter 与 `<style>` 开标签都要算），指错行的门禁用两次就没人看了。
+ */
+function scanTopLevelDamage(rawCss, lineBase = 0) {
+	const problems = []
+	const css = maskNonCode(rawCss)
+	let depth = 0
+	let segStart = 0
+	for (let i = 0; i < css.length; i++) {
+		const c = css[i]
+		if (c === '{') {
+			if (depth === 0)
+				segStart = i + 1
+			depth++
+		}
+		else if (c === '}') {
+			depth--
+			if (depth < 0) {
+				problems.push({ line: lineBase + css.slice(0, i).split('\n').length, msg: '多余的右花括号' })
+				depth = 0
+				segStart = i + 1
+			}
+			else if (depth === 0) {
+				segStart = i + 1
+			}
+		}
+		else if (c === ';' && depth === 0) {
+			const seg = css.slice(segStart, i).trim()
+			// 自定义属性声明（`--x: 1;`）在顶层是**合法**的，不是裸声明
+			if (seg !== '' && !seg.startsWith('--')) {
+				problems.push({
+					line: lineBase + css.slice(0, i).split('\n').length,
+					msg: `顶层出现裸声明「${seg.replace(/\s+/g, ' ').slice(0, 60)}」——选择器行丢失`,
+				})
+				return problems
+			}
+			segStart = i + 1
+		}
+	}
+	if (depth !== 0)
+		problems.push({ line: lineBase, msg: `花括号不配对：结束时仍缺 ${depth} 个右花括号` })
+	return problems
+}
+
 function scanTopLevelCombinator(rawCss) {
 	const findings = []
 	const css = maskNonCode(rawCss)
@@ -792,6 +850,49 @@ const SELF_TESTS = [
 		}, [STYLE_MAIN]).length > 0,
 		expect: true,
 	},
+	/* 判据 1b（并入自已删的 audit-css-blocks.mjs）的自检。原样迁自那道门禁，
+	   它的判据当时同样从没被看过变红——那道门禁的自检只在自己进程里跑过。 */
+	{
+		name: '判据1b：正常嵌套规则 → 一条都不该报',
+		run: () => scanTopLevelDamage('.a {\n\tcolor: red;\n}\n').length,
+		expect: 0,
+	},
+	{
+		name: '判据1b：本仓库真实损坏的那一段（选择器行被吃掉）→ 必报裸声明',
+		run: () => scanTopLevelDamage('\n\tposition: revert !important;\n}\n\n.center {\n\twidth: fit-content;\n}\n').length,
+		expect: 1,
+	},
+	{
+		name: '判据1b：缺少右花括号 → 必报不配平',
+		run: () => scanTopLevelDamage('.a {\n\tcolor: red;\n').length,
+		expect: 1,
+	},
+	{
+		name: '判据1b：媒体查询内的声明不算顶层',
+		run: () => scanTopLevelDamage('@media (width < 600px) {\n\t.a {\n\t\tcolor: red;\n\t}\n}\n').length,
+		expect: 0,
+	},
+	{
+		name: '判据1b：注释里的花括号不参与配对',
+		run: () => scanTopLevelDamage('/* } { ; */\n.a {\n\tcolor: red;\n}\n').length,
+		expect: 0,
+	},
+	{
+		name: '判据1b：闭合规则后的顶层分号仍算裸声明',
+		run: () => scanTopLevelDamage('.a {\n\tcolor: red;\n}\nposition: revert !important;\n').length,
+		expect: 1,
+	},
+	{
+		name: '判据1b：字符串里的分号不算顶层声明',
+		run: () => scanTopLevelDamage('.a::before {\n\tcontent: "};";\n}\n').length,
+		expect: 0,
+	},
+	{
+		// 自定义属性在顶层合法。不写这条，`--bp-bg: hsl(...)` 那种写法会被全站报一遍。
+		name: '判据1b：自定义属性声明是合法顶层',
+		run: () => scanTopLevelDamage('--x: 1;\n.a {\n\tcolor: red;\n}\n').length,
+		expect: 0,
+	},
 ]
 
 let selfOk = true
@@ -853,6 +954,7 @@ async function main() {
 			blocks.push({ file: f, body: b.body, lineBase: b.lineBase })
 	}
 	const combinator = []
+	const damage = []
 	for (const b of blocks) {
 		for (const hit of scanTopLevelCombinator(b.body)) {
 			combinator.push({
@@ -860,6 +962,9 @@ async function main() {
 				line: b.lineBase + hit.line,
 				selector: hit.selector,
 			})
+		}
+		for (const hit of scanTopLevelDamage(b.body, b.lineBase)) {
+			damage.push({ file: relative(ROOT, b.file).replace(/\\/g, '/'), ...hit })
 		}
 	}
 
@@ -873,7 +978,7 @@ async function main() {
 	const renderInput = INJECT ? injectButtonFault(render) : render
 	const toggleFindings = checkToggleButton(renderInput, styles)
 
-	const total = combinator.length + chatFindings.length + toggleFindings.length
+	const total = combinator.length + damage.length + chatFindings.length + toggleFindings.length
 
 	if (INJECT)
 		console.log('\n########## 负控制：已注入本仓库真实的那两个缺陷 ##########')
@@ -886,6 +991,16 @@ async function main() {
 		console.log(`  FAIL: ${combinator.length} 处`)
 		for (const f of combinator)
 			console.log(`      ${f.file}:${f.line}  ${f.selector}`)
+	}
+
+	console.log('\n===== 判据 1b：顶层裸声明 / 花括号配平（并入自已删的 audit-css-blocks）=====')
+	if (!damage.length) {
+		console.log('  OK: 没有顶层裸声明，花括号全部配平')
+	}
+	else {
+		console.log(`  FAIL: ${damage.length} 处`)
+		for (const d of damage)
+			console.log(`      ${d.file}:${d.line}  ${d.msg}`)
 	}
 
 	console.log('\n===== 判据 2：Chat 编译产物形状 =====')

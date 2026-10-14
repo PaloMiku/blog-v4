@@ -59,15 +59,80 @@ const SRC = join(ROOT, 'src')
  * 逐条对应 PowerShell 原件：
  *   '(?m)\b(TODO|FIXME|XXX)\b' → \b 已是 ASCII 词边界，逐行匹配时 `(?m)` 无作用，
  *                               去掉它不改变任何一条命中的结果；捕获组没人读，改 `(?:`。
- *   '(?i)\bstub\b'             → `i` 由上面的统一 `i` 提供，语义相同。
+ *   '(?i)\bstub\b'             → `i` 由下面的统一 `i` 提供，语义相同。
  * 另两条是纯中文、大小写不变，`i` 对它们本就是空操作（eslint 会把这一点指出来）。
+ *
+ * ⚠️ 中文没有 `\b` 词边界，所以纯中文的那两条**不能**照搬英文那两条的
+ * 「单词」写法：`/留空/` 会把 `placeholder: '留空表示未更新'` 这种**正常文案**
+ * 一并命中。实测结果是这道门禁长期 exit 1——两道假阳性全在
+ * `src/lib/frontmatter.ts` 的 placeholder 文案上，而按 CLAUDE.md 验收原则
+ * 「一道永远红的门禁等价于没有门禁」，红着等于没门禁。
+ *
+ * 修法是给中文标记加**上下文**约束：要求它出现在「占位/延后」的语境里
+ * （前面是赋值或注释标记），而不是要求它是某个词。后者做不到——
+ * 「留空」在这两个字符串里都完全合法，改文案来迁就门禁是本末倒置。
  */
 const PATTERNS = [
 	['TODO/FIXME/XXX', /\b(?:TODO|FIXME|XXX)\b/i],
 	['unported marker', /未移植|尚未迁入|待移植|属其他批次|后续批次/],
-	['deferred/left empty', /暂不可用|留空|暂留空|待接|接回|留待/],
+	// 「留空」「待接」这类只在**被当作延后说明**时才算标记。
+	//
+	// 中文没有词边界，所以不能写成裸 `/留空/`：那会把
+	// `placeholder: '留空表示未更新'` 这类**正常 UI 提示文案**一并命中。
+	// 实测那道门禁因此长期 exit 1——两道假阳性全在 frontmatter.ts 的
+	// placeholder 上，而按 CLAUDE.md「一道永远红的门禁等价于没有门禁」，红着等于没门禁。
+	//
+	// ⚠️ 这里刻意**不用**一条大正则包办。曾经的写法是
+	// `/(?:^|[^\w])(?:return\s+|=\s*)(?!.*\b(?:placeholder|label)\b\s*:)\s*["'`][^"'`]{0,12}…/`
+	// ——它同时踩了三个坑：`[^"'`]{0,12}` 嵌在 `.*` 里是**指数级回溯**的形状
+	// （门禁要扫 131 个文件，一个坏形状就够卡住整轮），负向前瞻里的 `\b…\s*:`
+	// 在 `placeholder:` 前面恒成立（无意义断言），`[^\w]` 也不是该用的写法。
+	// 改成下面的**线性**三步：定位赋值 → 看右值里有没有延后词 → 排除提示类字段。
+	// 每步都是单向扫描，没有可回溯的嵌套量词。
+	['deferred: 实现被写成「留空/待接」', isDeferredAssignment],
 	['stub keyword', /\bstub\b/i],
 ]
+
+const DEFERRED_WORDS = ['暂不可用', '暂留空', '留待', '待接', '接回', '留空']
+
+/** 这些字段名后面跟的值是**给用户看的说明**，写「留空」是本职，不是延后标记 */
+const PROMPT_FIELDS = ['placeholder', 'label', 'title', 'description', 'hint', 'tip']
+
+/**
+ * 判据：这一行是不是「把某处实现写成了『留空 / 待接』」。
+ *
+ * 三步都是线性扫描，没有可回溯的嵌套量词：
+ *   1. 找延后词出现在行的哪个位置；
+ *   2. 从那个位置**往回**看它属于哪个键——即「延后词所在的那个字符串字面量」
+ *      的字段名。往回看而不是从行首找赋值号，是因为
+ *      `const x = { placeholder: '留空表示未更新' }` 的赋值号在 `x` 上，
+ *      而要排除的是 `placeholder`：**判据的对象是那个字符串字面量，不是整行**。
+ *   3. 键名是提示类字段就放行（提示语里的「留空」恰恰是它在告诉用户
+ *      「这项可以不填」）；否则报。
+ *
+ * ⚠️ 曾经的写法是从行首找赋值号再取左侧键名，于是 `{ placeholder: … }` 里的
+ *  `placeholder` 在**右**边、永远取不到，提示语照样被报——实测过一次。
+ */
+function isDeferredAssignment(line) {
+	for (const w of DEFERRED_WORDS) {
+		let from = 0
+		for (;;) {
+			const at = line.indexOf(w, from)
+			if (at < 0)
+				break
+			// 往回找最近的 `键:` 或 `键 =`，取键名。`[^:]*$` 已吞掉中间所有非冒号字符
+			// （含空白），所以 `\s*` 是多余的——留着还会触发 super-linear-backtracking 告警。
+			// 另注意**不能**写成 `/([\w$]+)[\s\S]*$/`：`[\s\S]*` 与前面的 `[\w$]+`
+			// 能匹配同一段文本，是指数回溯的形状，而本判据要扫 131 个文件的每一行。
+			const before = line.slice(0, at)
+			const key = /(?:^|[^\w$.])([\w$]+)\s*(?::|=)[^:]*$/.exec(before)?.[1] ?? ''
+			if (!PROMPT_FIELDS.includes(key))
+				return true
+			from = at + w.length
+		}
+	}
+	return false
+}
 
 /**
  * 前置过滤：整行是注释（`//` 开头、`*` 开头、`/*` 开头）就跳过。
@@ -97,13 +162,17 @@ const files = walkFiles(SRC, { sort: true }).filter(p => /\.(?:astro|ts)$/i.test
 
 const rows = PATTERNS.map(([kind, re]) => {
 	const hits = []
+	// 判据既可以是正则，也可以是函数（`isDeferredAssignment` 那种需要看上下文、
+	// 又不能写成带回溯风险大正则的判断）。`null` 不再出现——那条提示字段的
+	// 判据已经折进函数内部。
+	const match = typeof re === 'function' ? re : t => re.test(t)
 	for (const file of files) {
 		const lines = readLines(file)
 		for (let i = 0; i < lines.length; i++) {
 			const t = lines[i]
 			if (COMMENT_LINE.test(t))
 				continue
-			if (re.test(t))
+			if (match(t))
 				hits.push({ file: relative(SRC, file).replace(/\\/g, '/'), line: i + 1, text: t.trim().slice(0, 84) })
 		}
 	}

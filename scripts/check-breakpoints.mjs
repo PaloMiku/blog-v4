@@ -68,7 +68,7 @@ function scan(dir, acc = []) {
 		const full = path.join(dir, entry.name)
 		if (entry.isDirectory())
 			scan(full, acc)
-		else if (/\.(astro|css|ts)$/.test(entry.name))
+		else if (/\.(?:astro|css|ts)$/.test(entry.name))
 			acc.push(full)
 	}
 	return acc
