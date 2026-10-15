@@ -104,13 +104,6 @@ export const collections = {
 			aside: z.array(z.string()).optional(),
 			/** 由 withArticleMeta loader 补齐：对应 Nuxt 的 stem LIKE 'posts/%' */
 			isPost: z.boolean().optional(),
-			/**
-			 * 由 withArticleMeta loader 补齐：正文是否真的含公式。
-			 * 判据是 remark-math 产出的 `math` / `inlineMath` AST 节点，不是文本正则。
-			 * Base.astro 据此决定要不要输出 katex.min.css——原先那份第三方 CSS
-			 * 挂在共享布局里，等于 68 页里有 67 页为一个公式页扛关键路径。
-			 */
-			hasMath: z.boolean().optional(),
 
 			/**
 			 * 摘要相关字段，全部由 withArticleMeta loader 从 `src/data/summaries.json`

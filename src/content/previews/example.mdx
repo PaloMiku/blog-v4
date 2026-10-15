@@ -228,42 +228,6 @@ metaSlots:
 
 [^micromark-extension-gfm-footnote]: [README of micromark-extension-gfm-footnote](https://github.com/micromark/micromark-extension-gfm-footnote#use)
 
-### 数学公式
-
-> 由 remark-$\KaTeX$ 驱动，支持 $\TeX$ 和部分 $\LaTeX$ 语法。如果 Markdown 正文需要直接使用 \$ 符号，需要使用 `\$` 转义。
->
-> [支持语法列表](https://katex.org/docs/supported)（[中文版](https://www.luogu.com.cn/paste/hs3jg81l)）
-
-````Component [math-code.ts] source=plugins/math-code.ts
-行内公式 $\text{课程绩点} = \frac{\text{课程分数(成绩)}}{10} - 5$
-
-$$
-\text{学分绩点} = \text{课程学分} \times \text{课程绩点}
-$$
-
-```math
-\text{平均绩点(GPA)} =\frac {\text{学分绩点之和}}{\text{课程学分之和}} = \frac{\sum (\text{课程学分} \times \text{课程绩点})}{\sum \text{课程学分}}
-```
-
-$$
-\raisebox{-2pt}{\colorbox{#4A90A4}{\color{white}{\Large\text{纸}}}}\kern-2pt
-\raisebox{-4pt}{\colorbox{#5BA88C}{\color{white}{\large\text{鹿}}}}\kern-3pt
-\raisebox{-1pt}{\colorbox{#6B8E9F}{\color{white}{\normalsize\text{至}}}}\kern-1pt
-\raisebox{-3pt}{\colorbox{#A8D5E2}{\color{#2C4A52}{\large\text{麓}}}}\kern-2pt
-\raisebox{0pt}{\colorbox{#B8E0D0}{\color{#2C4A52}{\normalsize\text{不}}}}\kern-3pt
-\raisebox{-5pt}{\colorbox{#5A9AA8}{\color{white}{\large\text{知}}}}\kern-1pt
-\raisebox{-2pt}{\colorbox{#C5E0E8}{\color{#2C4A52}{\Large\text{路}}}}
-\quad
-\raisebox{-4pt}{\colorbox{#5BA88C}{\color{white}{\large\text{支}}}}\kern-2pt
-\raisebox{-1pt}{\colorbox{#4A90A4}{\color{white}{\Large\text{炉}}}}\kern-3pt
-\raisebox{-3pt}{\colorbox{#7BC4B5}{\color{white}{\normalsize\text{制}}}}\kern-1pt
-\raisebox{-5pt}{\colorbox{#A8D5E2}{\color{#2C4A52}{\large\text{麓}}}}\kern-2pt
-\raisebox{-2pt}{\colorbox{#C5E0E8}{\color{#2C4A52}{\Large\text{不}}}}\kern-3pt
-\raisebox{0pt}{\colorbox{#6B8E9F}{\color{white}{\normalsize\text{止}}}}\kern-1pt
-\raisebox{-3pt}{\colorbox{#B8E0D0}{\color{#2C4A52}{\large\text{漉}}}}
-$$
-````
-
 ### 许可协议和侧栏插槽
 
 > 由自编写的rehype-meta-slots插件实现，插槽必须是文章的直接子元素，内容已插入到文章末尾 [^copyright] 和目录侧栏。

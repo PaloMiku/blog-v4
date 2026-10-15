@@ -10,11 +10,8 @@ import {
 } from '@shikijs/transformers'
 import icon from 'astro-icon'
 import { defineConfig } from 'astro/config'
-import rehypeKatex from 'rehype-katex'
-import remarkMath from 'remark-math'
 import { remarkComponentFence } from './src/plugins/component-fence'
 import { rehypeNuxtHeadingIds } from './src/plugins/heading-ids'
-import { rehypeMathCode } from './src/plugins/math-code'
 import { rehypeProseChrome } from './src/plugins/prose'
 import { remarkTabPanels } from './src/plugins/tab-panels'
 
@@ -28,24 +25,16 @@ import { remarkTabPanels } from './src/plugins/tab-panels'
 //    不会被解析，构建时只报 `xx not applied` 警告然后静默跳过。
 // 4. `unified()` 返回的处理器实例不可被两个消费者共用——`markdown.processor` 与
 //    `mdx({ processor })` 复用同一实例会导致 .md 侧静默丢失插件。因此建两个独立实例。
-// 5. rehypeMathCode 必须排在最前。remark-math 6 不做 `math` -> markup 转换，行间公式
-//    落到 mdast-util-math 的兜底形状 `<pre><code class="language-math math-display">`，
-//    rehypeKatex 认识它但要求 code 仍挂在 pre 内；而 rehypeProseChrome 补
-//    `figure.z-codeblock` 外壳时会 `pre.children = code.children` 把这个 code 丢掉，
-//    于是行间公式退化成裸 TeX 代码块。先摘掉 pre 外壳，两边就都满意了。
-//    详见 src/plugins/math-code.ts。
-// 6. rehypeProseChrome 必须排在 rehypeKatex 之前：它会把 `a` 换掉，
-//    KaTeX 输出里的链接不应该再套一层 z-link 与域名图标。
-// 7. rehypeNuxtHeadingIds 排最前：Astro 内建的 heading id 排在**所有**用户插件之后，
+// 5. rehypeNuxtHeadingIds 排最前：Astro 内建的 heading id 排在**所有**用户插件之后，
 //    但它尊重已存在的 string id，所以「前置写好 id」是唯一可行解。
 //    **标题锚点 id 规则是线上 URL 合同，勿改**：线上全部标题锚点按 Nuxt slugger
 //    的后处理规则生成，改它等于全站断链（TOC、搜索片段、外链一起失效）。另见
 //    src/plugins/heading-ids.ts 与 src/lib/slug.ts。
-// 8. smartypants: false —— `remark-smartypants` 默认开着（Astro 侧判断的是
+// 6. smartypants: false —— `remark-smartypants` 默认开着（Astro 侧判断的是
 //    `smartypants !== false`），它把 `"…"` 写成 `“…”`、`...` 写成 `…`。
 //    换的是标点**字形**不是盒子，页高与计算样式类门禁全部看不见；而正文的字面
 //    形态是内容合同（`check-text-literal` 盯这一类，另见 CLAUDE.md 坑位 13）。
-// 9. remarkComponentFence 排在最前：它把 ```` ```Component [X.astro] ```` 围栏
+// 7. remarkComponentFence 排在最前：它把 ```` ```Component [X.astro] ```` 围栏
 //     展开成 <Tab> 的两个页签（现场效果 = 正文按 MDX 真实渲染、组件语法 = 正文原文）。
 //     排在最前是为了让下游 remark 插件看到的是
 //     展开后的树；下游还有 rehypeProseChrome 负责给派生围栏套上
@@ -53,8 +42,8 @@ import { remarkTabPanels } from './src/plugins/tab-panels'
 //     详见 src/plugins/component-fence.ts 的文件头。
 function createProcessor() {
 	return unified({
-		remarkPlugins: [remarkComponentFence, remarkTabPanels, remarkMath],
-		rehypePlugins: [rehypeNuxtHeadingIds, rehypeMathCode, rehypeProseChrome, [rehypeKatex, { throwOnError: false, strict: false }]],
+		remarkPlugins: [remarkComponentFence, remarkTabPanels],
+		rehypePlugins: [rehypeNuxtHeadingIds, rehypeProseChrome],
 		smartypants: false,
 	})
 }

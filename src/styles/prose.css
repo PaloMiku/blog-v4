@@ -458,7 +458,7 @@ code.shiki {
 	word-break: break-all;
 
 	table.scroll {
-		contain: layout; /* 防止 KaTeX 撑开宽度 */
+		contain: layout;
 		display: block;
 		white-space: nowrap;
 		word-break: normal;

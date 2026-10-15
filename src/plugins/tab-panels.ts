@@ -45,7 +45,6 @@
 import { readFileSync } from 'node:fs'
 import { createProcessor } from '@mdx-js/mdx'
 import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
 
 /**
  * 只 parse 不 run：MDX 的 `run()` 会一路做到 estree 源码，而这里要的是节点树
@@ -54,7 +53,7 @@ import remarkMath from 'remark-math'
  * 插件顺序与 `astro.config.mjs` 的 `createProcessor()` 保持一致，否则合成出来的
  * 模板在「组件」栏展示时可能与页面真实渲染不同。
  */
-const PROCESSOR = createProcessor({ remarkPlugins: [remarkMath, remarkGfm] })
+const PROCESSOR = createProcessor({ remarkPlugins: [remarkGfm] })
 
 /** 面板标记段落：整段文本恰好是 `#tab1` / `#tab12` */
 const PANEL_RE = /^#tab(\d+)$/

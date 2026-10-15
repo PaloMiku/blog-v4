@@ -176,15 +176,9 @@ catalogs:
     '@shikijs/transformers':
       specifier: ^4.4.3
       version: 4.4.3
-    rehype-katex:
-      specifier: ^7.0.1
-      version: 7.0.1
     remark-gfm:
       specifier: ^4.0.1
       version: 4.0.1
-    remark-math:
-      specifier: ^6.0.0
-      version: 6.0.0
     remark-mdc:
       specifier: ^3.11.1
       version: 3.11.1
@@ -374,15 +368,9 @@ importers:
       reading-time:
         specifier: catalog:util
         version: 1.5.0
-      rehype-katex:
-        specifier: catalog:content
-        version: 7.0.1
       remark-gfm:
         specifier: catalog:content
         version: 4.0.1(supports-color@10.2.2)
-      remark-math:
-        specifier: catalog:content
-        version: 6.0.0(supports-color@10.2.2)
       remark-mdc:
         specifier: catalog:content
         version: 3.11.1(supports-color@10.2.2)
@@ -2365,12 +2353,6 @@ packages:
     resolution: {integrity: sha512-iZyKG96/JwPz1N55vj2Ie2vXbhu440zfUfJvSwEqEbeLluk7NnapfGqa7LH0mOsnDxTF85Mx8/dyR6HfqcbmbQ==}
     engines: {node: '>=20'}
 
-  hast-util-from-dom@5.0.1:
-    resolution: {integrity: sha512-N+LqofjR2zuzTjCPzyDUdSshy4Ma6li7p/c3pA78uTwzFgENbgbUrm2ugwsOdcjI1muO+o6Dgzp9p8WHtn/39Q==}
-
-  hast-util-from-html-isomorphic@2.0.0:
-    resolution: {integrity: sha512-zJfpXq44yff2hmE0XmwEOzdWin5xwH+QIhMLOScpX91e/NSGPsAzNCvLQDIEPyO2TXi+lBmU6hjLIhV8MwP2kw==}
-
   hast-util-from-html@2.0.3:
     resolution: {integrity: sha512-CUSRHXyKjzHov8yKsQjGOElXy/3EKpyX56ELnkHH34vDVw1N1XSQ1ZcAvTyAPtGqLTuKP/uxM+aLkSPqF/EtMw==}
 
@@ -3120,9 +3102,6 @@ packages:
     resolution: {integrity: sha512-NgRBy2Nx/bE+9F27nVHnqcN5HjyLmecqsqx2PJHu3/IEtADD4WuxuXIVExD5PoSDFVrl78dOonfcOe5O+5nbzQ==}
     hasBin: true
 
-  rehype-katex@7.0.1:
-    resolution: {integrity: sha512-OiM2wrZ/wuhKkigASodFoo8wimG3H12LWQaH8qSPVJn9apWKFSH3YOCtbKpBorTVw/eI7cuT21XBbvwEswbIOA==}
-
   rehype-raw@7.0.0:
     resolution: {integrity: sha512-/aE8hCfKlQeA8LmyeyQvQF3eBiLRGNlfBJEvWH7ivp9sBqs7TNqBL5X3v157rM4IFETqDnIOO+z5M/biZbo9Ww==}
 
@@ -3134,9 +3113,6 @@ packages:
 
   remark-gfm@4.0.1:
     resolution: {integrity: sha512-1quofZ2RQ9EWdeN34S79+KExV1764+wCUGop5CPL1WGdD0ocPpu91lzPGbwWMECpEpd42kJGQwzRfyov9j4yNg==}
-
-  remark-math@6.0.0:
-    resolution: {integrity: sha512-MMqgnP74Igy+S3WwnhQ7kqGlEerTETXMvJhrUzDikVZ2/uogJCb+WHUg97hK9/jcfc0dkD73s3LN8zU49cTEtA==}
 
   remark-mdc@3.11.1:
     resolution: {integrity: sha512-bjH7Q1OO1BSXVPmUxYIrGH2dUAZkizNY3i9WJUEcIFLowZAEjLTT7fUAH2vH0Tpkeh+/MrzwFFmeWcZ66QLh7A==}
@@ -5724,19 +5700,6 @@ snapshots:
     dependencies:
       hookified: 1.15.1
 
-  hast-util-from-dom@5.0.1:
-    dependencies:
-      '@types/hast': 3.0.5
-      hastscript: 9.0.1
-      web-namespaces: 2.0.1
-
-  hast-util-from-html-isomorphic@2.0.0:
-    dependencies:
-      '@types/hast': 3.0.5
-      hast-util-from-dom: 5.0.1
-      hast-util-from-html: 2.0.3
-      unist-util-remove-position: 5.0.0
-
   hast-util-from-html@2.0.3:
     dependencies:
       '@types/hast': 3.0.5
@@ -6831,16 +6794,6 @@ snapshots:
     dependencies:
       jsesc: 3.1.0
 
-  rehype-katex@7.0.1:
-    dependencies:
-      '@types/hast': 3.0.5
-      '@types/katex': 0.16.8
-      hast-util-from-html-isomorphic: 2.0.0
-      hast-util-to-text: 4.0.2
-      katex: 0.16.47
-      unist-util-visit-parents: 6.0.2
-      vfile: 6.0.3
-
   rehype-raw@7.0.0:
     dependencies:
       '@types/hast': 3.0.5
@@ -6868,15 +6821,6 @@ snapshots:
       micromark-extension-gfm: 3.0.0
       remark-parse: 11.0.0(supports-color@10.2.2)
       remark-stringify: 11.0.0
-      unified: 11.0.5
-    transitivePeerDependencies:
-      - supports-color
-
-  remark-math@6.0.0(supports-color@10.2.2):
-    dependencies:
-      '@types/mdast': 4.0.4
-      mdast-util-math: 3.0.0(supports-color@10.2.2)
-      micromark-extension-math: 3.1.0
       unified: 11.0.5
     transitivePeerDependencies:
       - supports-color

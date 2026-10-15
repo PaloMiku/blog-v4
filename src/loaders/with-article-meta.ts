@@ -3,7 +3,6 @@ import { fileURLToPath } from 'node:url'
 import { createProcessor } from '@mdx-js/mdx'
 import readingTimeOf from 'reading-time'
 import remarkGFM from 'remark-gfm'
-import remarkMath from 'remark-math'
 import remarkMDC, { parseFrontMatter } from 'remark-mdc'
 import { deriveModelLabel, readSummaries } from '../lib/shared/summaries'
 
@@ -32,15 +31,10 @@ import { deriveModelLabel, readSummaries } from '../lib/shared/summaries'
  * （见 `@nuxtjs/mdc/dist/runtime/parser/options.js` 与 `nuxt.config.ts:171-180`），
  * 跑在**原始 `.md`** 上。Astro 侧喂进来的是 codemod 产物 `.mdx`，
  * 里面同时存在 MDC 指令与 JSX 组件，所以这里用 `@mdx-js/mdx` 建解析器
- * 并补上 GFM / math / MDC 三个扩展，得到与 Nuxt 同构的 mdast。
- *
- * `remark-math` 不能省：`.mdx` 里的 LaTeX（如 `\frac{\text{…}}`）带花括号，
- * 而 MDX 把 `{` 当表达式起始，不装 math 扩展会让 acorn 解析
- * `\t` / `\u` 转义直接抛错（`previews/example.mdx:240`）。
+ * 并补上 GFM / MDC 两个扩展，得到与 Nuxt 同构的 mdast。
  */
 const mdxProcessor = createProcessor({ jsx: true })
 	.use(remarkGFM)
-	.use(remarkMath)
 	.use(remarkMDC)
 	.freeze()
 
@@ -76,40 +70,17 @@ function collectCountableText(node: MdastNode, sink: string[]): void {
 	for (const child of node.children ?? []) collectCountableText(child, sink)
 }
 
-/**
- * 这份 mdast 有没有公式？判据是 **remark-math 自己产出的节点类型**
- * （`math` = `$$…$$` / `\[…\]` / `\begin{…}`，`inlineMath` = `$…$`），
- * 不是对源文本做正则。
- *
- * ⚠️ 为什么不能用正则（实测踩过）：直接扫原文的 `$` 会命中代码围栏里的
- * shell 变量与正则字符类。63 个 mdx 里朴素正则报 7 个「有公式」，
- * 逐个查下去 6 个全是假阳性——`${CONTAINER_NAME}`、`.%@$!&~\_-` 这类；
- * 真正渲染出 KaTeX 的只有 `previews/example.mdx` 一篇。
- * 而 remark-math 本来就不解析代码块与行内代码，所以它给出的判决与产物一致。
- *
- * 顺带省掉一次解析：`mdxProcessor` 本来就要 parse 一遍给 reading-time 用。
- */
-function hasMathNode(node: MdastNode): boolean {
-	if (node.type === 'math' || node.type === 'inlineMath')
-		return true
-	for (const child of node.children ?? []) {
-		if (hasMathNode(child))
-			return true
-	}
-	return false
-}
-
-/** 取文本 + 判公式，一次解析两用；解析失败时公式一律按「无」处理（与 reading-time 同口径兜底） */
-function analyzeBody(body: string): { text: string, hasMath: boolean } {
+/** 取文本，一次解析；解析失败时按正则兜底（与 reading-time 同口径兜底） */
+function analyzeBody(body: string): { text: string } {
 	try {
 		const { content } = parseFrontMatter(body)
 		const tree = mdxProcessor.parse(content) as MdastNode
 		const sink: string[] = []
 		collectCountableText(tree, sink)
-		return { text: sink.join(''), hasMath: hasMathNode(tree) }
+		return { text: sink.join('') }
 	}
 	catch {
-		return { text: toPlainTextByRegex(body), hasMath: false }
+		return { text: toPlainTextByRegex(body) }
 	}
 }
 
@@ -182,7 +153,7 @@ export function withArticleMeta(inner: Loader): Loader {
 					withSummary.seo = rec.seo
 				withSummary.summaryModel = summaryModelLabel
 
-				if (entry.data.isPost !== undefined && entry.data.readingTime && entry.data.hasMath !== undefined) {
+				if (entry.data.isPost !== undefined && entry.data.readingTime) {
 					// 派生字段齐了，但摘要仍要写盘——JSON 可能变了而正文没变。
 					// 用 generateDigest(合并后的 data) 比对，摘要变了就落库，没变就跳过。
 					const digest = context.generateDigest(withSummary)
@@ -194,13 +165,12 @@ export function withArticleMeta(inner: Loader): Loader {
 				const isPost = /[\\/]posts[\\/]/.test(entry.filePath ?? '')
 
 				// `.md` / `.mdx` 统一走 mdast：Nuxt 侧数的是 mdast 文本节点，
-				// 渲染后的 HTML（含 KaTeX 双份表示、标签实体）反而无法对齐；
-				// 同一次解析顺带问出 hasMath（remark-math 的节点判决）
-				const { text, hasMath } = entry.body
+				// 渲染后的 HTML（含标签实体）反而无法对齐。
+				const { text } = entry.body
 					? analyzeBody(entry.body)
-					: { text: '', hasMath: false }
+					: { text: '' }
 
-				const data: Record<string, unknown> = { ...withSummary, isPost, hasMath }
+				const data: Record<string, unknown> = { ...withSummary, isPost }
 				if (text && !entry.data.readingTime)
 					data.readingTime = readingTimeOf(text)
 

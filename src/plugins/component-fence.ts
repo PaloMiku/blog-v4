@@ -37,20 +37,13 @@
  * （JSX 属性值只认单引号 / 双引号 / 花括号表达式），而这种错误只在**真正跑一遍解析**
  * 的时候才暴露。
  *
- * ⚠️ 解析器必须带 remark-math。`remark-math` v6 只有 micromark 扩展、**没有
- * transformer**（读 node_modules/remark-math/lib/index.js 确认过），也就是说
- * `$$x$$` 必须在**解析期**就被认出来。「数学公式」那一节的围栏正文里既有 `$$…$$`
- * 又有 ` ```math ` 围栏，缺了它这两样都会退化成字面文本——而那正是「组件」栏要展示的
- * 东西。`createProcessor({ remarkPlugins: [remarkMath] })` 的 remark 插件是在冻结
- * （首次 parse）时并进解析器的，所以只调 `parse()` 就已经带上数学语法。
- *
  * ═══ 围栏 info string ═══
  *
  *   ```Component [Alert.astro] source=components/blog/BlogHeader.astro
  *
  * - `Component`   本插件的标记，**不要**拿它当 shiki 语言
  * - `[Alert.astro]` 图注里显示的文件名，同时决定默认路径 `components/content/<名字>`
- *   （`BlogHeader.astro`、`math-code.ts` 这类不在 `components/content/` 的再补 `source=`）。
+ *   （`BlogHeader.astro` 这类不在 `components/content/` 的再补 `source=`）。
  *   **移除「源码」栏之后它只剩图注作用，但指向的文件仍然要读**（见 `expand()`）。
  * - `source=…`     显式路径，相对 `src/`。其余 `key=value`（`icon=` / `wrap` / `expand`）
  *   对本围栏无意义——派生围栏的 meta 是写死的，见下。
@@ -71,7 +64,6 @@ import { readFileSync } from 'node:fs'
 import { normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createProcessor } from '@mdx-js/mdx'
-import remarkMath from 'remark-math'
 
 /** `src/plugins/component-fence.ts` → `<repo>/src` */
 const SRC_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -111,7 +103,7 @@ interface MdastNode {
  * 只用 `parse()`，不走 `run()`：MDX 的 `run()` 会一路做到 estree 源码，
  * 而这里要的是**节点树**（splice 回页面树，由页面的 MDX 编译去求值）。
  */
-const PROCESSOR = createProcessor({ remarkPlugins: [remarkMath] })
+const PROCESSOR = createProcessor({ remarkPlugins: [] })
 
 /**
  * 一个 Component 围栏派生出的围栏 info string。
