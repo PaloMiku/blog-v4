@@ -15,7 +15,7 @@
  * `NuxtLink` 对 `_blank` 会自动补 `rel="noopener noreferrer"`，这里照搬：
  * **只有外链**（即 `target="_blank"` 的那条分支）加。同源链接 Nuxt 也不加，
  * 全站乱加就是一处新差异了。`rel` 同时开放成 prop：它是「调用方的显式决定」，
- * 不该出现「传了却被静默吞掉」的情况（`ResourceList` / `InfoCard` 就自己写过 `rel="noopener"`）。
+ * 不该出现「传了却被静默吞掉」的情况（`InfoCard` 就自己写过 `rel="noopener"`）。
  */
 import { currentPageHref, isExtLink } from '../../lib/shared'
 

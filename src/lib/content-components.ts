@@ -33,7 +33,6 @@ import Music from '../components/content/Music.astro'
 import Pic from '../components/content/Pic.astro'
 import ProjectGroup from '../components/content/ProjectGroup.astro'
 import Quote from '../components/content/Quote.astro'
-import ResourceList from '../components/content/ResourceList.astro'
 import Tab from '../components/content/Tab.astro'
 import Tip from '../components/content/Tip.astro'
 import VideoEmbed from '../components/content/VideoEmbed.astro'
@@ -57,7 +56,6 @@ export const contentComponents = {
 	Blur,
 	InfoCard,
 	Chat,
-	ResourceList,
 	Tip,
 	BlogHeader,
 }

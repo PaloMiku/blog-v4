@@ -92,21 +92,22 @@ const LIVE = [
  * `target="_blank"` 只有 `noopener` 缺 `noreferrer` 的**已知 parity 形态**：键 = 组件自身的 class。
  *
  * ═══ 为什么这一类不再让门禁红灯 ═══
- * 这两处都不是本次改写引入的：Nuxt 基线（`.output/public`）里逐字相同
- * （37 个 feed-card + 5 个 download-btn，形状与数量都对得上），而且源码把
- * 「照搬原版、不要补全成新差异」写在了注释里（`FeedCard.astro:13-16`）。
- * 判据自己早年的措辞也是「属历史遗留，不是本次改写引入」——判据都这么说了还
- * 拿它 exit 1，就是在教人忽略红灯，而会哭狼的门禁等于没有门禁
+ * 这处不是本次改写引入的：Nuxt 基线（`.output/public`）里逐字相同（37 个 feed-card，
+ * 形状对得上），而且源码把「照搬原版、不要补全成新差异」写在了注释里
+ * （`FeedCard.astro:13-16`）。判据自己早年的措辞也是「属历史遗留，不是本次改写引入」
+ * ——判据都这么说了还拿它 exit 1，就是在教人忽略红灯，而会哭狼的门禁等于没有门禁
  * （本仓库守则）。所以：照旧统计、照旧打印，但只当**记录**，不当失败。
  *
- * ⚠️ 放行范围是这两个 class，不是整类。出现第三种形状（谁再写一个裸
+ * ⚠️ 放行范围是这个 class，不是整类。出现第三种形状（谁再写一个裸
  * `rel="noopener"` 的外链）照样红；`target="_blank"` 完全没有 `noopener` 也照样红。
  * 这不是把判据删掉，是把它从「绝对规则」收回到「parity 差异检测」——
  * 门禁该抓的是**改写引入的新差异**，不是把原样搬过来的既成事实。
+ *
+ * 2026-10-15：`download-btn` 一项随 `ResourceList.astro` 退役而删除——那个 class 的
+ * 唯一产出者就是它，产物里不可能再出现，留着等于一条永远匹配不上的死豁免。
  */
 const PARITY_BLANK_NO_NOREFERRER = {
 	'feed-card': 'FeedCard.astro:86 `rel={to ? \'noopener\' : undefined}`，照搬 FeedCard.vue:45（注释明写「不要补全成新差异」）',
-	'download-btn': 'ResourceList.astro:71 与 clarity-resource-list.mdx:78 手写 `rel="noopener"`，Nuxt 侧同形',
 }
 
 /**
@@ -525,8 +526,8 @@ const SELF_TESTS = [
 		expect: ['缺 noreferrer'],
 	},
 	{
-		name: 'r) feed-card / download-btn 的 rel="noopener" 是 parity 形态 → 不报',
-		art: withPage(good, `${GOOD_PAGE}<a class="feed-card gradient-card" href="https://example.com" target="_blank" rel="noopener"></a><a class="download-btn" href="https://example.com" target="_blank" rel="noopener"></a>`),
+		name: 'r) feed-card 的 rel="noopener" 是 parity 形态 → 不报',
+		art: withPage(good, `${GOOD_PAGE}<a class="feed-card gradient-card" href="https://example.com" target="_blank" rel="noopener"></a>`),
 		expect: [],
 	},
 	{

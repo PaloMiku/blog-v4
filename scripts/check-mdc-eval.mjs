@@ -62,8 +62,14 @@ function registeredNames() {
 	const open = src.indexOf('{', start)
 	const close = src.indexOf('}', open)
 	const names = [...src.slice(open + 1, close).matchAll(/^\t([A-Z]\w*)\s*,?/gm)].map(m => m[1])
-	if (names.length < 20)
-		throw new Error(`从注册表只解析出 ${names.length} 个组件名（预期 20+），正则可能已失效`)
+	// 「正则是否还生效」用**集合成员判定**判，不用「数量下限」判。
+	// 数量下限会把当前注册表的规模硬编码进第二处事实源：删掉一个组件就误报
+	// 「正则失效」，逼着人回来改数字（CLOCK 的坑位 21 同型）。
+	// 这里钉几个从第一屏就在用的核心组件，缺任何一个才真的说明正则坏了。
+	const ANCHORS = ['Alert', 'Folding', 'Tab', 'LinkCard']
+	const missingAnchors = ANCHORS.filter(n => !names.includes(n))
+	if (missingAnchors.length)
+		throw new Error(`从注册表解析出 ${names.length} 个组件名，但缺少核心组件 ${missingAnchors.join(', ')}，正则可能已失效`)
 	return names
 }
 
