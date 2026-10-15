@@ -69,7 +69,6 @@
     "@clack/prompts": "catalog:quality",
     "@types/node": "catalog:quality",
     "@zinkawaii/eslint-config-css": "catalog:quality",
-    "cspell": "catalog:quality",
     "eslint": "catalog:quality",
     "strip-ansi": "catalog:quality",
     "typescript": "catalog:quality",

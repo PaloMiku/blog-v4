@@ -19,7 +19,6 @@ allowBuilds:
   rolldown: true
   sharp: true
   unrs-resolver: true
-  vue-demi: true
 
 catalogs:
   content:
@@ -73,5 +72,3 @@ catalogs:
     unist-util-visit: ^5.1.0
 
 engineStrict: true
-
-shamefullyHoist: true
