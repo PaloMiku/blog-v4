@@ -406,7 +406,7 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 
 			const start = (page - 1) * perPage
 			const state = order === 'updated' ? 'updated' : 'date'
-			const cards = list.slice(start, start + perPage).map((item) => {
+			const cards = list.slice(start, start + perPage).map((item, index) => {
 				const source = item.byState[state]
 				if (!source?.firstElementChild)
 					return null
