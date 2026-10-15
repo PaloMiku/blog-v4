@@ -30,9 +30,7 @@ import InfoCard from '../components/content/InfoCard.astro'
 import Key from '../components/content/Key.astro'
 import LinkBanner from '../components/content/LinkBanner.astro'
 import LinkCard from '../components/content/LinkCard.astro'
-import Mermaid from '../components/content/Mermaid.astro'
 import Music from '../components/content/Music.astro'
-import MusicScore from '../components/content/MusicScore.astro'
 import Pic from '../components/content/Pic.astro'
 import Poetry from '../components/content/Poetry.astro'
 import ProjectGroup from '../components/content/ProjectGroup.astro'
@@ -68,8 +66,6 @@ export const contentComponents = {
 	Timeline,
 	Tip,
 	EmojiClock,
-	MusicScore,
 	SeriesGroup,
-	Mermaid,
 	BlogHeader,
 }

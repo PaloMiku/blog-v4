@@ -688,26 +688,6 @@ process.stdout.write('=== interactive checks (headless Chrome over CDP) ===\n')
 		assert(n > 0, 'no domain icon')
 	})
 
-	await test('Mermaid: the diagram actually rendered into an <svg>', p, async (pg) => {
-		const containers = await pg.count('[data-mermaid]')
-		assert(containers > 0, 'no [data-mermaid] container on the demo page')
-		// Rendering is gated behind an IntersectionObserver (rootMargin 50%), so
-		// the diagram stays unrendered until it is scrolled near the viewport.
-		await pg.eval('(() => { const e = document.querySelector("[data-mermaid]"); if (e) e.scrollIntoView({ block: "center" }); return true })()')
-		let n = 0
-		for (let i = 0; i < 60; i++) {
-			n = await pg.count('[data-mermaid-canvas] svg')
-			if (n > 0)
-				break
-			await sleep(500)
-		}
-		assert(n > 0, 'no <svg> inside [data-mermaid-canvas] after 30s')
-		// A failed render leaves an error box visible and hides the canvas, so
-		// this is what distinguishes a real render from a quiet bail-out.
-		const stillHidden = await pg.eval('(() => { const d = document.querySelector("[data-mermaid-error]"); return d ? d.hasAttribute("hidden") : true })()')
-		assert(stillHidden === true, 'mermaid reported a render error')
-	})
-
 	await test('no uncaught page errors (demo)', p, async (pg) => {
 		await pg.harvestRejections()
 		assert(pg.errors.length === 0, pg.errorsFor('demo').join(' | '))

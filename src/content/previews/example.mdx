@@ -295,53 +295,6 @@ metaSlots:
 > ⚠️ `content` 里放的是**MDX 源码字符串**，不是 MDC 块语法。它由 `src/lib/meta-slot.ts` 解析成节点树后走真实组件渲染——**不能**用 `set:html` 直接吐出去，否则 `<LinkCard />` 会变成浏览器不认识的未知元素、整个 widget 空白（而页高、计算样式两道门禁都看不见它）。
 > 上面这段就是**本页自己的 frontmatter**，可以逐字对照。
 
-### 乐谱渲染播放
-
-> 用 `<MusicScore abc={…} />` 传入 ABC 记法，必要时可用豆包等 AI 将乐谱识别为 ABC 记法。只在网络状态良好时加载播放能力。
->
-> 编辑器、Cheat Sheet 和语法检查：https://editor.drawthedots.com/
-
-```Component [MusicScore.astro]
-<MusicScore abc={`L:1/8
-Q:1/4=100 "andante moderato"
-M:2/4
-K:D
-"D" FA A>B | AF DD/E/ |1 "G" FF ED | "A" E2 z2 :|2 "G" FF "A" EE | "D" D2 z2 ||`} />
-
-<MusicScore abc={`L:1/8
-Q:1/4=100
-M:2/4
-K:D
-V:1 clef=treble
-V:2 clef=bass
-%%MIDI program 32
-[V:1] z2 z f/g/ | aa a>b | af dd/e/ | ff ee | d2 z2 || FA A>B | AF DD/E/ |
-w: | | | | | 你 爱 我 | 我 爱 你 蜜 雪
-[V:2] z4 | D,[F,A,] .A,[F,A,] | .D,[F,A,] .A,[E,A,] | .G,,[G,D,] .A,,[E,A,] | .D,[F,A,] [D,,D,]2 || .D,,[D,F,] .A,,[D,F,] | .D,,[D,F,] .A,,[D,F,] |
-[V:1] FF ED | E2 z2 | FA A>B | AF DD/E/ | FF EE | D2 z2 | G2 G2 |
-w: 冰 城 甜 蜜 | 蜜 | 你 爱 我 | 我 爱 你 蜜 雪 冰 城 甜 蜜 | 蜜 | 你 爱
-[V:2] .G,,[B,G,] .D,[B,G,] | .A,,[A,C] .E,[A,C] | .D,,[D,F,] .A,,[D,F,] | .D,,[D,F,] .A,,[D,F,] | .G,,[G,D,] .A,,[E,A,] | .D,,[A,,D,] .[A,,D,]2 | .G,,[B,G,] .D,[B,G,] |
-[V:1] GB z2 | A2 AF | E2 z2 | FA A>B | AF DD/E/ | FF EE | D2 z2 |]
-w: 我 呀 | 我 爱 | 你 | 你 爱 我 | 我 爱 你 蜜 雪 冰 城 甜 蜜 | 蜜
-[V:2] .G,,[B,G,] .D,[B,G,] | .D,,[F,D,] .A,,[F,D,] | .A,,[A,C] .E,[A,C] | .D,,[F,D,] .A,,[F,D,] | .D,,[F,D,] .A,,[F,D,] | .G,,[G,D,] .A,,[E,A,] | .D,.A,, [D,,D,]2 |]`} />
-```
-
-### 图表渲染
-
-> 用 `<Mermaid code={…} />` 传入图表源码，语法参见 [Mermaid 文档](https://mermaid.js.org/intro/syntax-reference.html)。构建期只输出空容器与源码，渲染器由原生 `<script>` 动态 import；图表跟随亮暗色模式重绘，进入视口附近才会加载渲染器。超宽图表可横向滚动，悬停或点击图表可切换为适应宽度。
-
-```Component [Mermaid.astro]
-<Mermaid code={`graph TD
-    A[间断点] --> B[第一类间断点]
-    A --> C[第二类间断点]
-
-    B --> B1[可去间断点]
-    B --> B2[跳跃间断点]
-
-    C --> C1[无穷间断点]
-    C --> C2[振荡间断点]`} />
-```
-
 ## 自定义组件
 
 只属于 MDX 的组件：直接写在 `.mdx` 里的 JSX，没有 Markdown 原生写法。

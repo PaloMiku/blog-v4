@@ -26,8 +26,6 @@ catalogs:
     '@astrojs/mdx': ^8.0.2
     '@mdx-js/mdx': ^3.1.1
     '@shikijs/transformers': ^4.4.3
-    abcjs: ^6.7.1
-    mermaid: ^11.17.2
     rehype-katex: ^7.0.1
     remark-gfm: ^4.0.1
     remark-math: ^6.0.0
