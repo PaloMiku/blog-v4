@@ -18,11 +18,15 @@
 	 * 此前每来一处就要单独补一条覆盖（archive.astro 两处、prose.css 一处，
 	 * 后者自述「已经付过一次 2036px 的代价」）。在 .card 自己身上收口，
 	 * 派生覆盖就不必再写。
+	 *
+	 * ⚠️ 兜底只靠上面那条 `display: block`，**不要再加 `&:not([hidden])`**：
+	 * 它编译出 `.card:not([hidden])`，特异度 (0,2,0) 与组件自带的
+	 * `.link-card[data-astro-cid-*]` **完全相同**，胜负退化成源序——
+	 * 全局样式排在组件样式之后，于是 LinkCard / LinkBanner 的 `display: flex`
+	 * 被静默压成 `block`，卡片图文从并排变成纵向堆叠。
+	 * 兜底的语义（hidden 要压过 UA）由 `.card` 自身的 `display: block` 就够了，
+	 * 那条 `&:not([hidden])` 从来是多余的，且正是它咬掉了组件的 display。
 	 */
-	&:not([hidden]) {
-		display: block;
-	}
-
 	&[hidden] {
 		display: none;
 	}

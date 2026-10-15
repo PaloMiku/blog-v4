@@ -41,14 +41,20 @@ import { ciIcons, getDomain } from '../../lib/shared'
  * 该门禁现已补上 `runtime-escape` 规则专门盯这个。
  *
  * 实际只用到 5 个值，逐个冻结在此：
- *   Blog 3.8.0 / Astro ^7.3.5 / Vue ^3.5.42 / MDC ^3.11.1 / pnpm 12.5.1
+ *   Blog 3.8.0 / Astro ^7.3.5 / MDX ^8.0.2 / Node v24.18.0 / pnpm 12.5.1
  *
- * ⚠️ 值本身已不再是 Nuxt 那一套：用户 2026-10-02 要求「构建信息改成 Astro 版」。
- * 即便如此**仍然冻结为字面量**，不去 import 本站的 package.json：
- * 自包含门禁盯的是「不读树外文件」，这里要守的是另一件事——冻结写法让这 5 个值
- * 在 diff 里始终可见，改版本号是一次有记录的改动，而不是某次 `pnpm update` 的副产品。
- * 取值来源 = `astro-site/package.json` 里的 semver **range**（与 Nuxt 侧从 pnpm
- * catalogs 取 range、而不是从 lockfile 取实装版本的做法一致）。
+ * ⚠️ 2026-10-15 更正：原第 3、4 项是 **Vue ^3.5.42 与 MDC ^3.11.1**，那是 Nuxt
+ * 时代的残留——项目早已零 Vue 岛、也没有 remark-mdc（`vue` / `@astrojs/vue` /
+ *   `@nuxt/content` 均不在依赖里，`package.json` 与 `pnpm-workspace.yaml` 全无匹配）。
+ *   挂着两个根本不参与构建的框架版本，属于对读者撒谎。改为列出真正参与内容链路的
+ *   **MDX ^8.0.2**（`@astrojs/mdx`，previews/ 下那两篇 .mdx 的实际渲染器）。
+ *
+ * ⚠️ 值本身已不再是 Nuxt 那一套：用户 2026-10-02 要求「构建信息改成 Astro 版」，
+ * 2026-10-15 又要求剔除已不存在的框架。**仍然冻结为字面量**，不去 import 本站的
+ * package.json：自包含门禁盯的是「不读树外文件」，这里要守的是另一件事——冻结写法
+ * 让这 5 个值在 diff 里始终可见，改版本号是一次有记录的改动，而不是某次 `pnpm update`
+ * 的副产品。取值来源 = `pnpm-workspace.yaml` 里 catalogs 的 semver **range**
+ * （与 Nuxt 侧从 pnpm catalogs 取 range、而不是从 lockfile 取实装版本的做法一致）。
  *
  * ⚠️⚠️ 写这段注释时踩过一次门禁：`check-self-contained.mjs` 是**词法**扫描，
  * 不认注释，于是「反面示例」里那条包着引号的 package.json 相对路径被判成
@@ -59,8 +65,7 @@ const SITE_VERSION = '3.8.0'
 const PM_NAME = 'pnpm'
 const PM_VERSION = '12.5.1'
 const ASTRO_VERSION = '^7.3.5'
-const VUE_VERSION = '^3.5.42'
-const MDC_VERSION = '^3.11.1'
+const MDX_VERSION = '^8.0.2'
 
 /*
  * 对应 nuxt.config.ts 的 runtimeConfig.public：
@@ -120,20 +125,21 @@ const service: DlItem[] = [
 ]
 
 /*
- * 「构建信息」组，8 项——与 Nuxt 侧同为 8 项，便于逐项对照：
- *   Nuxt ^4.5.2     → Astro ^7.3.5   （本项目正在做的迁移本身）
- *   Content ^3.16.0 → MDC ^3.11.1    （`remark-mdc`，MDC 语法层。
- *                                      Astro 的内容集合 `astro:content` 是框架内置的，
- *                                      没有独立版本号可列；@astrojs/mdx 只服务
- *                                      previews/ 下那两篇 .mdx，不是正文主链路）
+ * 「构建信息」组，7 项：
+ *   Astro ^7.3.5 —— 迁移之后真正在跑的框架
+ *   MDX ^8.0.2 —— 内容链路真正接手的一层（@astrojs/mdx，服务 previews/ 下的 .mdx）
+ *
+ * 2026-10-15 更正：原先列的 Vue 与 MDC 是 Nuxt 时代残留。项目早已零 Vue 岛、
+ * 也没有 remark-mdc，那几个包都不在依赖里（package.json 与 pnpm-workspace.yaml
+ * 全无匹配）。挂一个根本不参与构建的版本等于对读者撒谎，故删去并由 MDX 接替，
+ * 项数 8 变 7。
  * 版式同时改为 `size="stack"`：一行一项、每项带图标（见 DlGroup 的 stack 说明）。
  * 图标逐个查过 icons.json 存在，不靠记忆。
  */
 const techstack: DlItem[] = [
 	{ label: 'Blog', value: SITE_VERSION, icon: 'tabler:file-text' },
 	{ label: 'Astro', value: ASTRO_VERSION, icon: 'simple-icons:astro' },
-	{ label: 'Vue', value: VUE_VERSION, icon: 'simple-icons:vuedotjs' },
-	{ label: 'MDC', value: MDC_VERSION, icon: 'catppuccin:markdown' },
+	{ label: 'MDX', value: MDX_VERSION, icon: 'catppuccin:markdown' },
 	{ label: 'Node', value: nodeVersion, icon: 'simple-icons:nodedotjs' },
 	{ label: pm, value: pmVersion, icon: 'simple-icons:pnpm' },
 	{ label: 'OS', value: platform, icon: osIcons[platform] ?? 'tabler:device-desktop' },
