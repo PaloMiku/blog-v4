@@ -14,7 +14,7 @@
  * 改动 schema 时一并复核这里的 `ADMIN_FIELDS`。
  *
  * ## 与内容层的一致性约定
- * - `splitFrontMatter` 的围栏正则与 `remark-mdc` 的 `parseFrontMatter` 对齐；
+ * - `splitFrontMatter` 的围栏正则与 `loaders/with-article-meta.ts` 的内联切分逐字同口径；
  * - 序列化时**跳过空字符串与空数组**，不写 `title: ''` 这类噪声；
  * - 数组用流式语法 `[a, b]`（与仓库现有 MDX 一致），
  *   不用 YAML 块序列——后者会让 diff 变得难读。
@@ -72,7 +72,7 @@ export function emptyFrontMatter(): AdminFrontMatter {
  * 把原始文件切成「frontmatter 原文」与「正文」。
  *
  * 只认文件**开头**的 `---` 围栏，且要求闭合行前后无其它内容——
- * 与 `remark-mdc` 的 `parseFrontMatter` 口径一致。正文里的 `---`
+ * 与 `loaders/with-article-meta.ts` 的内联切分同口径。正文里的 `---`
  * （YAML 分隔线 / 水平线）不会被误判，因为拆分只在开头找一次。
  */
 export function splitFrontMatter(body?: string): { raw: string, content: string } {

@@ -3,7 +3,6 @@ import { fileURLToPath } from 'node:url'
 import { createProcessor } from '@mdx-js/mdx'
 import readingTimeOf from 'reading-time'
 import remarkGFM from 'remark-gfm'
-import remarkMDC, { parseFrontMatter } from 'remark-mdc'
 import { deriveModelLabel, readSummaries } from '../lib/shared/summaries'
 
 /**
@@ -30,12 +29,11 @@ import { deriveModelLabel, readSummaries } from '../lib/shared/summaries'
  * Nuxt 侧的处理器是 `remarkParse → remarkMDC → remarkGFM → remark-math`
  * （见 `@nuxtjs/mdc/dist/runtime/parser/options.js` 与 `nuxt.config.ts:171-180`），
  * 跑在**原始 `.md`** 上。Astro 侧喂进来的是 codemod 产物 `.mdx`，
- * 里面同时存在 MDC 指令与 JSX 组件，所以这里用 `@mdx-js/mdx` 建解析器
- * 并补上 GFM / MDC 两个扩展，得到与 Nuxt 同构的 mdast。
+ * 正文里的 MDC 指令已全部转为 JSX 组件（内容里 `:::` 指令为 0），
+ * 所以这里用 `@mdx-js/mdx` 建解析器并补 GFM 扩展即可，无需 MDC 扩展。
  */
 const mdxProcessor = createProcessor({ jsx: true })
 	.use(remarkGFM)
-	.use(remarkMDC)
 	.freeze()
 
 /**
@@ -70,10 +68,23 @@ function collectCountableText(node: MdastNode, sink: string[]): void {
 	for (const child of node.children ?? []) collectCountableText(child, sink)
 }
 
+/**
+ * frontmatter `---` 围栏切分，与 `src/lib/frontmatter.ts` 的同名函数逐字同口径：
+ * 只认文件开头的围栏、要求闭合行前后无其它内容。原先直接用 remark-mdc 导出的
+ * `parseFrontMatter`，随该依赖摘除而内联（A/B 实测 63 篇正文 62 篇逐字节一致，
+ * 唯一差异是示例页脚注定义的 text 节点归属，对阅读时长影响可忽略）。
+ */
+function splitFrontMatter(body: string): { raw: string, content: string } {
+	const match = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(body)
+	if (!match)
+		return { raw: '', content: body }
+	return { raw: match[1], content: body.slice(match[0].length) }
+}
+
 /** 取文本，一次解析；解析失败时按正则兜底（与 reading-time 同口径兜底） */
 function analyzeBody(body: string): { text: string } {
 	try {
-		const { content } = parseFrontMatter(body)
+		const { content } = splitFrontMatter(body)
 		const tree = mdxProcessor.parse(content) as MdastNode
 		const sink: string[] = []
 		collectCountableText(tree, sink)

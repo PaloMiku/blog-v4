@@ -229,26 +229,8 @@ defineProps<{
 
 <div slot="tab2">
 
-```mdc wrap expand
-::resource-list
----
-items:
-  - id: 1
-    title: 示例资源 1
-    subtitle: 这是一个副标题
-    summary: 这是资源的简短描述
-    tags: ["标签1", "标签2"]
-    link: "https://example.com/download1"
-    extractPassword: "abc123"
-    downloadPassword: "def456"
-  - id: 2
-    title: 示例资源 2
-    subtitle: 另一个副标题
-    summary: 另一个资源的简短描述
-    tags: ["标签3"]
-    link: "https://example.com/download2"
----
-::
+```mdx wrap expand
+<ResourceList items={[{"id":1,"title":"示例资源 1","subtitle":"这是一个副标题","summary":"这是资源的简短描述","tags":["标签1","标签2"],"link":"https://example.com/download1","extractPassword":"abc123","downloadPassword":"def456"},{"id":2,"title":"示例资源 2","subtitle":"另一个副标题","summary":"另一个资源的简短描述","tags":["标签3"],"link":"https://example.com/download2"}]} />
 ```
 
 </div>

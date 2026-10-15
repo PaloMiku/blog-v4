@@ -55,7 +55,6 @@
     "parse-domain": "catalog:util",
     "reading-time": "catalog:util",
     "remark-gfm": "catalog:content",
-    "remark-mdc": "catalog:content",
     "shiki": "catalog:content",
     "temporal-polyfill": "catalog:framework",
     "unist-util-visit": "catalog:util"
