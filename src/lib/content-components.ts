@@ -24,7 +24,6 @@ import Blur from '../components/content/Blur.astro'
 import CardList from '../components/content/CardList.astro'
 import Chat from '../components/content/Chat.astro'
 import Copy from '../components/content/Copy.astro'
-import EmojiClock from '../components/content/EmojiClock.astro'
 import Folding from '../components/content/Folding.astro'
 import InfoCard from '../components/content/InfoCard.astro'
 import Key from '../components/content/Key.astro'
@@ -32,13 +31,10 @@ import LinkBanner from '../components/content/LinkBanner.astro'
 import LinkCard from '../components/content/LinkCard.astro'
 import Music from '../components/content/Music.astro'
 import Pic from '../components/content/Pic.astro'
-import Poetry from '../components/content/Poetry.astro'
 import ProjectGroup from '../components/content/ProjectGroup.astro'
 import Quote from '../components/content/Quote.astro'
 import ResourceList from '../components/content/ResourceList.astro'
-import SeriesGroup from '../components/content/SeriesGroup.astro'
 import Tab from '../components/content/Tab.astro'
-import Timeline from '../components/content/Timeline.astro'
 import Tip from '../components/content/Tip.astro'
 import VideoEmbed from '../components/content/VideoEmbed.astro'
 
@@ -60,12 +56,8 @@ export const contentComponents = {
 	Badge,
 	Blur,
 	InfoCard,
-	Poetry,
 	Chat,
 	ResourceList,
-	Timeline,
 	Tip,
-	EmojiClock,
-	SeriesGroup,
 	BlogHeader,
 }

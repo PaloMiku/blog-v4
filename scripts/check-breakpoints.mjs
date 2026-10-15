@@ -55,7 +55,6 @@ import { REPO_ROOT } from './lib/paths.mjs'
 const KNOWN = {
 	'480px': '窄手机。Collection 与 PostRelated 收起次要信息（序号、图标文字）。',
 	'528px': '正文窄屏档。封面切为顶部整幅、表格与资源列表改单列。多数组件的「手机」都指这一档。',
-	'640px': '仅 SeriesGroup：合集条目从并排改为换行。与 528 同属窄屏，无从属关系；若日后收敛应并入 528。',
 	'768px': '侧栏断点。JS 侧 LAYOUT_BREAKPOINTS.sidebar 的唯一来源。',
 	'769px': '768 的补集（min-width 写法）。与 768 配对使用，只在需要「宽屏才做 X」时出现。',
 	'1080px': '右侧栏断点。JS 侧 LAYOUT_BREAKPOINTS.aside 的唯一来源。',

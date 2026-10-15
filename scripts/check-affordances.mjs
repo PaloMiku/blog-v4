@@ -110,32 +110,17 @@ const PARITY_BLANK_NO_NOREFERRER = {
 }
 
 /**
- * 「站内链接却带 noopener」的 parity 登记，语义与上面那张表**不同**，单列。
+ * 「站内链接却带 noopener」的登记表——2026-10-15 起为空。
  *
- * 上一张表放行的是「外链只写 noopener、漏了 noreferrer」；这里放行的是
- * 「`isExtLink` 判为站内、却仍然带 `noopener noreferrer`」。
+ * 曾登记 `detail-link`（`SeriesGroup.astro` 的「查看详情」显式
+ * `target="_blank"`，NuxtLink 据此补 rel，与 isExtLink 无关）；
+ * SeriesGroup 组件随示例页专属组件的清理退役，产物里不再有该 class，
+ * 登记随之删除。若再有组件产出站内链接却带 noopener，本表未登记即红。
  *
- * 判据本来的假设是「NuxtLink 只给外链加 rel」。它成立——**除非调用方手写了
- * `target="_blank"`**。`SeriesGroup.vue` 的「查看详情」就是这么写的：
- *
- *     <NuxtLink v-if="link" :to="link" class="detail-link" target="_blank" title="查看详情">
- *
- * NuxtLink 见到显式 `target="_blank"` 就补 `rel="noopener noreferrer"`，
- * 与 `link` 是不是站内无关。Nuxt 基线逐字（`.output/public/previews/example/index.html`）：
- *
- *     <a href="/games/galgames/aokana" rel="noopener noreferrer" target="_blank"
- *        class="detail-link" title="查看详情" data-v-1244c887>
- *
- * Astro 侧 `SeriesGroup.astro:111-116` 现在逐属性一致。
- * **把它改成「按 isExtLink 决定 rel」会主动制造一处与线上的差异**，
- * 而本次迁移的要求就是与 Nuxt 一致，所以登记为 parity 而不是改代码。
- *
- * ⚠️ 放行范围同样是这几个 class，不是整类：未登记的 class 照红，
+ * ⚠️ 放行范围以 class 为键，不是整类：未登记的 class 照红，
  * 站内链接**完全没有** noopener 也照红。
  */
-const PARITY_SAME_ORIGIN_NOOPENER = {
-	'detail-link': 'SeriesGroup.astro:111-116 显式 target="_blank"，照搬 SeriesGroup.vue 的 <NuxtLink target="_blank">；NuxtLink 据此补 rel，与 isExtLink 无关。基线同形',
-}
+const PARITY_SAME_ORIGIN_NOOPENER = {}
 
 /** 只认行首/独立的 `<a` 开始标签，取出属性 */
 function anchors(html) {
@@ -458,11 +443,12 @@ const SELF_TESTS = [
 		expect: ['同源链接带了 noopener'],
 	},
 	{
-		// 下面两条给新加的 PARITY_SAME_ORIGIN_NOOPENER 上边界：
-		// 登记的那个 class 放行，**换个 class 立刻照红**。放行范围必须窄。
-		name: 't) 站内链接带 noopener 且 class 已登记为 parity → 不算失败',
+		// PARITY_SAME_ORIGIN_NOOPENER 已空表：曾登记的 detail-link（SeriesGroup）
+		// 随组件退役删除。表为空时「同源却带 noopener」不再有任何放行，
+		// 换任何 class 都必须照红（u 与本条同向，保留两条钉住不同 target 形态）。
+		name: 't) 站内链接带 noopener、曾登记的 detail-link class → 现在也照红（登记已随组件退役）',
 		art: withPage(good, GOOD_PAGE.replace('<a href="/about" class="sidebar-nav-item">', '<a href="/about" class="detail-link" target="_blank" rel="noopener noreferrer">')),
-		expect: [],
+		expect: ['同源链接带了 noopener'],
 	},
 	{
 		name: 'u) 同样带 noopener，但 class 没登记 → 照红（放行范围不能是整类）',

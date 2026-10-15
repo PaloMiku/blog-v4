@@ -405,14 +405,6 @@ pyftsubset ./AlimamaFangYuanTi.ttf --text=Header文本 --flavor=woff2
 
 语言从 `src/lib/shared/str.ts` 的 `getPromptLanguage` 里根据命令提示符前缀推断，使用 [plain-shiki](https://github.com/KazariEX/plain-shiki) 高亮。和之前的 Markdown 代码块使用相同的高亮语言和高亮主题配置。
 
-### EmojiClock
-
-> 现在几点了？
-
-```Component [EmojiClock.astro]
-<EmojiClock /> (半小时) <EmojiClock rotate={true} /> (5分钟) <EmojiClock datetime="2024-11-09 23:39:30" /> (指定时间)
-```
-
 ### FeedCard 和 FeedGroup
 
 > 用于在友链页面展示链接，由于友链页面的 Markdown 部分要可能会显示这个组件，就放在这个目录下大家都能调用了。去友链页面看看吧。
@@ -501,21 +493,6 @@ pyftsubset ./AlimamaFangYuanTi.ttf --text=Header文本 --flavor=woff2
 <Pic src="https://picsum.photos/480/240" caption="说明文字，还支持通过 width 或 height 属性指定尺寸" />
 ```
 
-### Poetry
-
-> 在文章的 type 为 `tech` 或 `story` 时，它有不同的样式。
-
-```Component [Poetry.astro]
-<Poetry title="诗有诗的标题" author="一名作者" footer="可选的落款">
-
-如你所见，
-我,
-是一首——
-*诗*。
-
-</Poetry>
-```
-
 ### Quote
 
 > 在文章的 type 为 `tech` 或 `story` 时，它有不同的样式。
@@ -550,14 +527,6 @@ pyftsubset ./AlimamaFangYuanTi.ttf --text=Header文本 --flavor=woff2
 <ProjectGroup title="开发工具" items={[{"title":"VS Code","description":"IDE","icon":"devicon:vscode","link":"https://code.visualstudio.com/"},{"title":"PyCharm","description":"IDE","icon":"devicon:pycharm","link":"https://www.jetbrains.com/pycharm/"},{"title":"WebStorm","description":"IDE","icon":"devicon:webstorm","link":"https://www.jetbrains.com/webstorm/"}]} />
 
 <ProjectGroup title="框架" items={[{"title":"Vue","description":"渐进式 JavaScript 框架","icon":"devicon:vuejs","link":"https://vuejs.org/"},{"title":"Nuxt","description":"Vue 全栈框架","icon":"devicon:nuxtjs","link":"https://nuxt.com/"},{"title":"React","description":"用于构建用户界面的库","icon":"devicon:react","link":"https://react.dev/"}]} />
-```
-
-### SeriesGroup
-
-> 展示单一系列的整合卡片组件，用于展示一个完整的系列。支持多张封面图的展开显示，卡片上方为图片区域，下方为系列信息。
-
-```Component [SeriesGroup.astro]
-<SeriesGroup title="苍之彼方的四重奏 系列" description="《苍之彼方的四重奏》，《苍之彼方的四重奏 Extra 1》，《苍之彼方的四重奏 Extra 2》" cover={["https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/1044620/header_schinese.jpg","https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/1340130/header_schinese.jpg","https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2206340/header_schinese.jpg"]} count={3} link="/games/galgames/aokana" />
 ```
 
 ### Tab
@@ -674,22 +643,6 @@ Angular 是一个由 Google 开发的完整前端框架，适合大型应用。
 
 </Tab>
 ````
-
-### Timeline
-
-```Component [Timeline.astro]
-<Timeline items={[
-	{ caption: "前天", body: "看到了小兔" },
-	{ caption: "昨天", body: "是小鹿" },
-	{ caption: "今天", body: "是你。" }
-]} />
-
-<Timeline items={[
-	{ caption: "今日无事", body: "" },
-	{ caption: "今日依旧无事", body: "" },
-	{ caption: "然后——", body: "一件事\n两件事。\n\n*再添一笔*。" }
-]} />
-```
 
 ### Tip
 
