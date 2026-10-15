@@ -64,7 +64,6 @@ const originalLinks = entries.map(entry => entry.link)
 	data-feed-group-root
 	data-shuffle={shuffle ? '' : undefined}
 	data-entry-links={JSON.stringify(originalLinks)}
-	data-gamepad-region="main"
 >
 	<h3 class="feed-title">
 		{shuffle
@@ -74,7 +73,6 @@ const originalLinks = entries.map(entry => entry.link)
 					role="button"
 					title="点击随机排序，按住修饰键点击可取消随机排序"
 					data-feed-shuffle
-					data-gamepad-focus
 					data-list-key="feed:shuffle"
 				>
 					{name}
@@ -86,15 +84,6 @@ const originalLinks = entries.map(entry => entry.link)
 	</h3>
 	<p class="feed-desc">{desc}</p>
 
-	{/*
-	 * `data-gamepad-region="main"` + 卡片的 focus/key 是**手柄可达性**的唯一来源：
-	 * `gamepad-focus.ts` 的 `resolveRegion()` 对 `closest('[data-gamepad-region]')`
-	 * 为 null 的元素直接跳过（`collect()` 不收），所以没有区域声明的友链卡片
-	 * **一个都选不中**。`/link` 的正文就是这些卡片——少了它，整页只有 Tab 按钮可达。
-	 *
-	 * 区域的落点是 `<section>`（组件根），因此**用户自己的页面只需渲染 FeedGroup**
-	 * 就自动获得区域，不必在每个使用处重复声明。
-	 */}
 	<menu class="feed-list" name="float-in">
 		{entries.map(entry => (
 			<li style={`--delay: ${getCardDelay(entry.link)}s;`} data-feed-entry={entry.link}>

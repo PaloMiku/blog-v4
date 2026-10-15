@@ -129,7 +129,6 @@ const formattedUpdatedDate = formatDate(updated)
 						<a
 							href={blogConfig.copyright.url}
 							class="value copyright-link"
-							data-gamepad-focus
 							data-list-key="post-footer:copyright"
 						>
 							{blogConfig.copyright.name}
@@ -153,15 +152,13 @@ const formattedUpdatedDate = formatDate(updated)
 						{references.map((ref, i) => (
 							<li key={i}>
 								{/*
-								 * 参考链接是阅读页里最典型的一组外链控制（Task 7 Step 4）。
 								 * key 用**序号**而不是 URL：同一篇文章的参考链接顺序是稳定的
 								 * 内容事实，而 URL 可能是空串（`ref.link || ''`），
-								 * 空 href 会让读侧回落到 `path:` 并把身份绑在 DOM 结构上。
+								 * 空 href 会让身份绑在 DOM 结构上。
 								 */}
 								<a
 									href={ref.link || ''}
 									class="prose-a"
-									data-gamepad-focus
 									data-list-key={`post-footer:reference:${i}`}
 								>
 									{isExtLink(ref.link) && <Icon name={getDomainIcon(ref.link!)} class="prose-a-icon" />}

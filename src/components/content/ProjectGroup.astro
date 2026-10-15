@@ -18,7 +18,7 @@ import { joinWith } from '../../lib/shared'
  * 3. `icon` 具名插槽：原 Vue 版多项目模式是 `<slot name="icon" :item="item">`，
  *    逐项传 slot prop，而 MDX 无法表达带 prop 的具名 slot。
  *    这里退化为「有 icon 插槽就替换所有项的图标」，没有则用默认解析结果。
- *    现有内容（about.mdx、noctalia-plugin-process-reporter.mdx、example.mdx）
+ *    现有内容（about.mdx、example.mdx）
  *    均未使用该插槽，故无实际影响。
  */
 interface ProjectItem {
@@ -100,15 +100,8 @@ const group = isSingleMode
 	}))
 
 /**
- * 手柄大屏模式（Task 7 Step 5）：项目卡片是「游戏 / 关于」页的主要控制。
- *
- * key 用 `project:<title>`：项目标题是内容里的稳定身份（同一分组内不会重复），
- * 而 `link` 可能缺失（无链接卡片）或指向同一个站点。
- *
- * ⚠️ **无链接卡片也要显式 `data-gamepad-focus`**：它不是语义元素（裸 `<div>`），
- * 不加这个属性就永远进不了手柄导航。加了之后焦点管理器会按需临时补
- * `tabindex="-1"`（见 `gamepad-focus.ts` 头注），退出模式时再撤掉——
- * 这正是契约里「不要给全部目标硬写 tabindex」那条的落点。
+ * 项目卡片的列表身份。key 用 `project:<title>`：项目标题是内容里的稳定身份
+ * （同一分组内不会重复），而 `link` 可能缺失（无链接卡片）或指向同一个站点。
  */
 const projectKey = (card: ProjectItem) => `project:${card.title}`
 ---
@@ -123,7 +116,6 @@ const projectKey = (card: ProjectItem) => `project:${card.title}`
 				target="_blank"
 				rel="noopener noreferrer"
 				title={card.titleAttr}
-				data-gamepad-focus
 				data-list-key={projectKey(card)}
 			>
 				<slot name="icon" />
@@ -149,7 +141,6 @@ const projectKey = (card: ProjectItem) => `project:${card.title}`
 			<div
 				class:list={['project-card', className]}
 				title={card.titleAttr}
-				data-gamepad-focus
 				data-list-key={projectKey(card)}
 			>
 				{card.resolved?.type === 'iconify' && (
@@ -190,7 +181,6 @@ const projectKey = (card: ProjectItem) => `project:${card.title}`
 							target="_blank"
 							rel="noopener noreferrer"
 							title={card.titleAttr}
-							data-gamepad-focus
 							data-list-key={projectKey(card)}
 						>
 							<slot name="icon" />
@@ -216,7 +206,6 @@ const projectKey = (card: ProjectItem) => `project:${card.title}`
 						<div
 							class="project-card"
 							title={card.titleAttr}
-							data-gamepad-focus
 							data-list-key={projectKey(card)}
 						>
 							<slot name="icon" />

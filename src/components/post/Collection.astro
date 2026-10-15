@@ -7,8 +7,7 @@
  *
  * 1. **折叠用原生 `<details>`**，不用 `div + class` 切换。plumz 那版是
  *    `<div onclick>`，不可聚焦、键盘不可达、没有 `aria-expanded`——那是缺陷不是设计。
- *    原生 `<details>` 的键盘与无障碍由浏览器提供，且 `gamepad-focus.ts:251-260`
- *    已经认识「未展开 details 内部不可选」，手柄侧无需额外接线。
+ *    原生 `<details>` 的键盘与无障碍由浏览器提供，不需要额外接线。
  * 2. **图标 / 主题色 / 描述留在 `COLLECTION_SETTINGS`**，不共用同一个书本图标。
  *
  * 数据来源：`src/lib/content.ts` 的 `getByCollection()`（按 collection 过滤 + 日期升序）。
@@ -129,13 +128,7 @@ const countLabel = currentIndex >= 0 ? `${currentIndex + 1} / ${total}` : `${tot
 
 {collectionKey && items.length > 0
 	? (
-		/*
-		 * `data-gamepad-region="main"`：合集块是阅读页正文流的一部分（不是侧栏、
-		 * 不是弹层），自成一个区域后手柄可以整体跳到「合集」再上下选项。
-		 * 最近祖先区域生效，所以这里的声明会盖过外层可能存在的同区标记，
-		 * 语义上正是「这一块自己是一站」。
-		 */
-		<section class="post-collection" data-gamepad-region="main">
+		<section class="post-collection">
 			{/*
 			 * 默认折叠（对应 plumz 的初始态）。原生 `<details>` 无 JS 状态，
 			 * 键盘与无障碍支持由浏览器提供；`summary` 因此必须是**第一个**子元素。
@@ -164,7 +157,7 @@ const countLabel = currentIndex >= 0 ? `${currentIndex + 1} / ${total}` : `${tot
 					 * SearchModal 在打开时读走并预填。
 					 *
 					 * **必须是 `<button>`**：它是动作（打开弹层）而非导航，
-					 * 且 `<a>` 无 href 不可聚焦；button 天然进 Tab 顺序与手柄候选。
+					 * 且 `<a>` 无 href 不可聚焦；button 天然进 Tab 顺序。
 					 */}
 					{setting && (
 						<button
@@ -201,13 +194,12 @@ const countLabel = currentIndex >= 0 ? `${currentIndex + 1} / ${total}` : `${tot
 								{/*
 								 * key 用**文章 id**（不是序号）：合集列表顺序由日期升序决定，
 								 * 同一天新增文章会整体位移；而 id 是「同一个东西」的稳定凭据。
-								 * `list:collection:<id>` 与其它命名空间不会撞。
+								 * `collection:` 前缀与其它命名空间不会撞。
 								 */}
 								<a
 									class="collection-link"
 									href={toPath(item)}
 									aria-current={currentPageHref(toPath(item), currentPath)}
-									data-gamepad-focus
 									data-list-key={`collection:${item.id}`}
 								>
 									{/*
@@ -252,8 +244,6 @@ const countLabel = currentIndex >= 0 ? `${currentIndex + 1} / ${total}` : `${tot
 	 *    否则之后从侧栏 / Ctrl+K 打开搜索时，这个种子会顶掉用户自己输入的词。
 	 *    所以真正的**传递**走 `document.documentElement` 上的一次性属性：
 	 *    这里写入，SearchModal 读取后立即删除。
-	 *
-	 *    手柄按 A 走的是 `element.click()`，同样触发本监听，无需额外接线。
 	 */
 	function initCollectionArchive(root) {
 		if (!(root instanceof HTMLElement) || root.dataset.collectionArchiveReady)
@@ -278,8 +268,6 @@ const countLabel = currentIndex >= 0 ? `${currentIndex + 1} / ${total}` : `${tot
 		 *    否则从侧栏 / Ctrl+K 打开搜索时也会被这个种子覆盖掉用户自己输入的词。
 		 *    所以真正的**传递**走 `document.documentElement` 上的一次性属性：
 		 *    这里写入，SearchModal 读取后立即删除。
-		 *
-		 *    手柄按 A 走的是 `element.click()`，同样触发本监听，无需额外接线。
 		 */
 		root.addEventListener('click', (e) => {
 			const button = e.target.closest?.('[data-collection-archive]')

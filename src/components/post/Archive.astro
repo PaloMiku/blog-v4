@@ -80,7 +80,6 @@ const {
 	style: styleProp,
 	delay,
 	'data-list-key': listKey,
-	'data-gamepad-initial-focus': initialFocus,
 	...rest
 } = Astro.props
 
@@ -115,15 +114,10 @@ const style = { '--delay': delay === undefined ? undefined : `${delay.toFixed(2)
 
 	<div class="gradient-card" style={{ '--c-accent': accent }}>
 		{/*
-		 * 手柄标记落在 `<a>`（真正可点的那个），**不落在外层 `<li>`**。
-		 *
-		 * 先前把手柄属性透传到组件根（`<li>`）上，于是归档页的首选焦点是一个
-		 * 裸 `<li>`：按 A 调它的 `click()` 不导航、无任何 DOM 变化，实测表现为
-		 * 「A 在归档页没有可观察效果」。可操作的是这个 `<a>`，标记就必须在它身上。
-		 *
-		 * `data-list-key` 依旧留在 `<li>`：它是**列表项身份**，由 archive.astro
-		 * 的克隆/重排逻辑在行级别读写（见该文件 `apply()`），两处职责不同。
-		 */}
+			`data-list-key` 同时落在 `<a>` 与外层 `<li>` 上，职责不同：
+			`<a>` 这份是构建期的身份，`<li>` 那份是**列表项身份**，由 archive.astro
+		 * 的克隆 / 重排逻辑在行级别读写（见该文件 `apply()`）。
+		*/}
 		<a
 			class="article-link scrollbar-hidden scrollcheck-x"
 			href={href}
@@ -131,9 +125,7 @@ const style = { '--delay': delay === undefined ? undefined : `${delay.toFixed(2)
 			target={!href.startsWith('#') && isExtLink(href) ? '_blank' : undefined}
 			rel={!href.startsWith('#') && isExtLink(href) ? 'noopener noreferrer' : undefined}
 			data-transition-key={href}
-			data-gamepad-focus
 			data-list-key={listKey}
-			data-gamepad-initial-focus={initialFocus}
 		>
 			<span class="article-title">
 				{showCategory && <Icon name={getCategoryIcon(categories?.[0])} />}

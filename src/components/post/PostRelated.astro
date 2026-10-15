@@ -48,14 +48,7 @@ const items = await getRelated(currentId)
 ---
 
 {items.length > 0 && (
-	/*
-	 * `data-gamepad-region="main"`：本块是阅读页正文流的收尾（不是侧栏、不是弹层），
-	 * 自成一个区域后手柄可以整体跳到「相关阅读」再上下选条目。
-	 * 不标的话整块在手柄下**不可达**——`gamepad-focus.ts` 判定「不在任何区域里的
-	 * 元素不是候选」（该文件 :13-16），且静态扫描只看属性在不在，看不见这层语义。
-	 * 同 `Collection.astro` / `Pagination.astro` / `OrderToggle.astro` 的处理。
-	 */
-	<section class="post-related" data-gamepad-region="main" aria-labelledby="post-related-title">
+	<section class="post-related" aria-labelledby="post-related-title">
 		<h2 id="post-related-title" class="related-heading">
 			<Icon name="tabler:sparkles" />
 			相关阅读
@@ -66,16 +59,13 @@ const items = await getRelated(currentId)
 				<li class="related-item">
 					{/*
 					 * key 用**文章 id** 而不是序号：候选顺序随文章增删会整体位移，
-					 * 而 id 是「同一个东西」的稳定凭据。手柄模式退出再进入要靠 key
-					 * 认回同一项（`gamepad-focus.ts` 的 `list:` 命名空间），
-					 * 用序号会让焦点跳到读者没选过的那一条上。
+					 * 而 id 是「同一个东西」的稳定凭据。
 					 * 与 `Collection.astro` 同一理由。
 					 */}
 					<a
 						class="related-link"
 						href={toPath(item)}
 						data-transition-key={toPath(item)}
-						data-gamepad-focus
 						data-list-key={`related:${item.id}`}
 					>
 						{/* 序号与 Collection 列表同形：等宽、右对齐、定宽，标题左缘对齐 */}
@@ -164,7 +154,7 @@ const items = await getRelated(currentId)
 	/*
 	 * 交互反馈是这一块**唯一**的视觉事件，所以它必须比容器本体更明确：
 	 * 去掉 hover 时的 border（原本是给有边框的块用的），改为「底色 + 文字转主色」。
-	 * 键盘焦点走 `gamepad-focus.ts` 的 `.gamepad-focus` 与浏览器默认 outline，不在此处理。
+	 * 键盘焦点走浏览器默认 outline，不在此处理。
 	 */
 	&:hover {
 		background-color: var(--c-bg-soft);

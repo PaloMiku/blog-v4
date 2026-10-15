@@ -46,12 +46,6 @@ interface Props {
 	/** 入场动画延迟（秒），对应 Nuxt 侧的 getFixedDelay(index * 0.05) */
 	delay?: number
 	'data-list-key'?: string
-	/**
-	 * 列表项的稳定身份。与 `data-list-key` 是同一机制的两种拼写
-	 * （`gamepad-focus.ts` 两个都读，`data-list-key` 优先），
-	 * 调用方传哪个都能被认，这里原样透传。
-	 */
-	'data-gamepad-key'?: string
 }
 
 const {
@@ -68,15 +62,7 @@ const {
 	style: styleProp,
 	delay,
 	'data-list-key': listKey,
-	'data-gamepad-key': gamepadKey,
 } = Astro.props
-
-/*
- * `gamepad-focus.ts` 读 key 的顺序是 `data-list-key` → `data-gamepad-key` → `href`。
- * 这里把两种拼写归一：两个都没传时**不写属性**，让读侧回落到 `href:` 命名空间，
- * 而不是写出两个空属性（空串会被 `readTrimmed` 当没写，等价，但产物更干净）。
- */
-const focusKey = listKey ?? gamepadKey
 
 /* —— 内联自 app/utils/article.ts —— */
 function getCategoryIcon(category?: string) {
@@ -95,21 +81,15 @@ const style = { '--delay': delay === undefined ? undefined : `${delay.toFixed(2)
 ---
 
 {/*
- * `data-gamepad-focus` 显式声明本卡片可选：`<a href>` 本来就在 `FOCUS_SELECTOR` 里，
- * 但计划书 Task 7 要求列表项**自己**声明，免得日后有人把这张卡片换成裸 `<div>`
- * （比如无链接的占位卡）时静默从手柄导航里消失。
- *
- * `data-list-key` 归一后透传：调用方两种拼写都没传时 `focusKey` 是 `undefined`，
- * Astro 对 `undefined` **不输出该属性**，读侧于是回落到 `href:<归一化路径>`
- * 命名空间——这正是「不写 key 也能被认回」的既有行为，不要在这里写空串。
+ * `data-list-key` 是 FLIP 列表动画的条目身份（`lib/list-transition.ts` 按它收集条目）。
+ * 调用方没传时它是 `undefined`，Astro **不输出该属性**，所以不要在这里写空串。
  */}
 <a
 	class:list={['article-card', 'card', 'upraise', className]}
 	href={path}
 	style={style}
 	data-transition-key={path}
-	data-gamepad-focus
-	data-list-key={focusKey}
+	data-list-key={listKey}
 	data-transition-enter
 >
 	{image && <img class="article-cover" src={image} alt={title} loading="lazy" />}

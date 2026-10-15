@@ -38,22 +38,16 @@ export type LayoutState = 'none' | 'sidebar' | 'aside' | 'search' | 'lightbox'
  *
  * ## 为什么它必须只有一份
  * 同一个数字此前出现在三处，且彼此只靠注释保持一致：
- *   - `src/styles/big-picture.css` 的 `@media` 查询（决定盒子是常驻列还是抽屉）
+ *   - `src/layouts/Blog.astro` 的 `<style>` 里的 `@media`（决定盒子是常驻列还是抽屉）
  *   - `src/layouts/Blog.astro` 的 `COLUMNS`（决定 `aria-hidden` / `inert`）
  *   - `src/layouts/Blog.astro` 的 `<style>` 注释（`hide-above-*` 工具类）
  * 一旦漂移，症状是**「抽屉已经滑出画布却仍可 Tab 进去」**：CSS 认为它是抽屉，
  * JS 认为它是常驻列，于是收起时没有写 `inert`——正是 `applyColumnVisibility()`
  * 存在的理由被自己捅穿。
  *
- * ## CSS 怎么读到它
- * CSS 读不到 TS 常量，所以**消费方向反过来**：断点以字面量写在
- * `src/styles/big-picture.css` 的 `@custom-media` 里（构建期由 Lightning CSS 内联），
- * 而这里用**字符串字面量**而不是计算式——两边都从 `@custom-media` 的源头各自写一次，
- * 并由 `scripts/check-big-picture-layout.mjs` 在门禁里比对它们是否逐字一致。
- * 那道门禁是这份「唯一」的**实际保证**：注释不是，改名不是，只有会红的那道门禁是。
- *
- * ⚠️ 两侧的漂移检查与阅读态布局检查在**同一道门禁**里，因为它们是同一类断言：
- * 「CSS 与 JS 对同一个结构事实的认知必须一致」。
+ * ⚠️ 两处 `@media` 真的**要各写一次**（媒体查询条件里不能插值 `var()`，
+ * 所以全站断点只能靠字面量 + 门禁把住，见 `scripts/check-breakpoints.mjs`），
+ * 改任何一侧都要核另一侧。
  */
 export const LAYOUT_BREAKPOINTS = {
 	/** `#blog-sidebar`：≤768px 成为左侧抽屉（与 `.hide-above-mobile` 同值） */
@@ -94,8 +88,8 @@ export function closeLayout() {
 
 /**
  * 读当前抽屉状态，**不发命令**。
- * 存在是因为大屏模式需要「按抽屉当前形态决定焦点与滚动范围」：
- * 侧栏开着和关着时可选目标不是同一批，没有理由为了看一眼就把状态重设一遍。
+ * 存在是因为要按抽屉当前形态决定侧栏可见性与滚动范围：侧栏开着和关着时
+ * 不是同一回事，没有理由为了看一眼就把状态重设一遍。
  * 只读单个值而不导出订阅者集合，是为了不把「谁在听」变成外部可改的东西——
  * 那会让订阅集在模块外被遍历或替换，emit 的复制遍历也就失去意义。
  */

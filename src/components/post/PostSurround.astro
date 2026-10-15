@@ -29,15 +29,12 @@ const { currentId } = Astro.props
 const { prev, next } = await getSurroundings(currentId)
 
 /*
- * 手柄大屏模式（Task 7 Step 4）：上下篇是阅读页的主要内容控制，显式声明可选。
+ * key 用**文章路径**而不是「上一篇 / 下一篇」：路径是「同一个东西」的稳定凭据。
+ * 用序号的话，从 A 篇进 B 篇时身份会停在「上一篇」槽位上，而那个槽位指向的
+ * 文章已经换了。
  *
- * key 用**文章路径**而不是「上一篇 / 下一篇」：手柄模式退出再进入要靠 key
- * 认回「同一个东西」（`gamepad-focus.ts` 的 `list:` 命名空间）。用序号的话，
- * 从 A 篇进 B 篇时焦点会停在「上一篇」槽位上，而那个槽位指向的文章已经换了。
- *
- * `href` 存在时读侧本来也能从 `href:` 命名空间拿到身份；但这里两条链接都可能
- * 没有 `href`（到尽头时的占位），那时身份会退化成 `path:` 的 DOM 路径。
- * 显式给 key 让「有链接」与「占位」两种情况身份都稳定，且不随 DOM 结构变化。
+ * `href` 存在时路径也能从 `href` 读到；但两条链接都可能没有 `href`（到尽头时的
+ * 占位），那时身份会退化成 DOM 位置。显式给 key 让两种情况都稳定。
  */
 const prevKey = prev ? `surround:prev:${toPath(prev)}` : 'surround:prev'
 const nextKey = next ? `surround:next:${toPath(next)}` : 'surround:next'
@@ -51,7 +48,6 @@ const nextKey = next ? `surround:next:${toPath(next)}` : 'surround:next'
 				href={next ? toPath(next) : undefined}
 				data-transition-key={next ? toPath(next) : undefined}
 				class:list={{ 'align-end': false }}
-				data-gamepad-focus
 				data-list-key={nextKey}
 			>
 				<Icon class:list={{ 'rtl-flip': Boolean(next) }} name={next ? 'tabler:arrow-left' : 'tabler:file-plus'} />
@@ -68,7 +64,6 @@ const nextKey = next ? `surround:next:${toPath(next)}` : 'surround:next'
 				href={prev ? toPath(prev) : undefined}
 				data-transition-key={prev ? toPath(prev) : undefined}
 				class:list={{ 'align-end': true }}
-				data-gamepad-focus
 				data-list-key={prevKey}
 			>
 				<Icon class:list={{ 'rtl-flip': Boolean(prev) }} name={prev ? 'tabler:arrow-right' : 'tabler:movie'} />

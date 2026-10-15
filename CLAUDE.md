@@ -6,8 +6,8 @@ Nuxt 4 源码树已整体删除。
 这份文件只写**下次不看到就会犯错**的东西。写作纪律：
 
 - 只写**可复用的判据**，不写一次性事故叙事——那些在 git 里
-  （tag `archive/astro-migration-2026` 与 `git log -p -- CLAUDE.md`），本仓库的
-  `docs/` 不入库，所以判据必须自足：不能靠指向另一份本地文件来解释。
+  （tag `archive/astro-migration-2026` 与 `git log -p -- CLAUDE.md`），`docs/` 不入库，
+  所以判据必须自足：不能靠指向另一份本地文件来解释。
 - **不在这里复述可计算的计数**（门禁道数、页数、篇数）——本文件里的每个数字都漂过，
   至少五次。要数字就运行打印它的命令。
 - 同族教训合并成一条，不一个坑写两遍；失效的前提条件随条件消失一起删。
@@ -26,19 +26,17 @@ pnpm new                     # 新建文章（写 src/content/posts/<年>/<名>.
 pnpm summary                 # 摘要增量预览（只列待生成，不写盘）；--write 才调模型并写盘
 pnpm accept                  # 发布档（release）：构建 + 发布必需门禁；清单只在 scripts/accept.mjs
 pnpm accept:maintenance      # 深度维护审计：发布档全量 + CSS/DOM/台账/CDN 等深度门禁
-pnpm accept:parity           # 迁移对拍档：基线/线上比较，耗时 20+ 分钟，仅切换 / 发布前跑
 pnpm interaction-check       # 交互门禁，**单独跑**，刻意不进验收流水线
 node scripts/accept.mjs --skip-build          # 复用现有 dist/，只跑门禁
 node scripts/accept.mjs --only check-dates    # 只跑某几道（调试用）
 node scripts/accept.mjs --print-policies      # 只打印门禁的跳过策略矩阵，不跑门禁
 ACCEPT_FORCE_CI=1 node scripts/accept.mjs     # 本机按 CI 判定跑（验 CI 上的判据）
 node scripts/check-expirations.mjs --selftest # 豁免台账门禁的自检（不读真实台账）
-node scripts/probe-subtree.mjs --sel='<css>'  # 逐节点几何对比（诊断工具）
 ```
 
 ## 技术栈与结构
 
-- Astro 7（站点根即仓库根，`src/pages` 文件路由）+ `@astrojs/mdx` v8 + `remark-mdc`；
+- Astro 7（站点根即仓库根，`src/pages` 文件路由）+ `@astrojs/mdx` v8；
   pnpm 12 + **catalogs 集中管版本**（版本只在 `pnpm-workspace.yaml` 出现一次）
 - **零 Vue 岛**：`src/` 下 0 个 `.vue` 文件，`vue` / `@astrojs/vue` 已不在依赖里。
   交互一律走组件内原生 `<script>` + `data-*` 定位；确实要引入岛时先把 `vue()` 加回
@@ -73,13 +71,6 @@ node scripts/probe-subtree.mjs --sel='<css>'  # 逐节点几何对比（诊断�
   链接本身不入库）。任何 `find dist -type f` / `du -sh dist` **都会返回 0**——
   `find` 与 `du` 默认不跟随符号链接。统计产物一律用 `find -L dist` / `du -shL dist`，
   或读门禁统一用的 `dist` 口径（坑位 32）
-- **手柄大屏模式**：`src/lib/` 下 7 个模块（`gamepad-input` → `gamepad` → `gamepad-navigation`
-  → `gamepad-focus` + `big-picture-state` / `big-picture-session` / `layout-state`），
-  Shell 在 `components/blog/BigPictureShell.astro`，样式 `styles/big-picture.css`
-  只写 `:root[data-big-picture]` 规则。契约见入库的 `docs/superpowers/specs/`——
-  那是 `docs/` 下**唯一入库的两份文件**（加进 `.gitignore` 之前就被跟踪的历史遗留）。
-  ⚠️ 不要在生产代码里引用 `docs/` 下其它路径：它们不入库，引用只在作者本机成立。
-  **实机手柄从未测试过**，所有验证结论均来自注入夹具。
 
 ## 验收
 
@@ -93,9 +84,6 @@ node scripts/probe-subtree.mjs --sel='<css>'  # 逐节点几何对比（诊断�
   CI 跑的就是这一档。
 - `maintenance`（`pnpm accept:maintenance`）= 发布档全量 + 深度审计（CSS 域 / 台账治理 /
   CDN 合同 / Windows 专属自测等）。
-- `parity`（`pnpm accept:parity`）= 迁移对拍档，打基线与线上站；需要外网、慢。基线缺失时
-  显示 NOT-RUN（不可运行），不计通过也不算违规。线上与本地早已同源，`live:*` 只能抓
-  **部署滞后漂移**（坑位 11）。
 
 三条原则，改动时别破坏：
 
@@ -123,7 +111,7 @@ node scripts/probe-subtree.mjs --sel='<css>'  # 逐节点几何对比（诊断�
    `check-ci-triggers.mjs` 的取名都要走 `gateName()`，否则会静默失配（坑位 27）。
 
 门禁全部是 Node、仓库内 0 个 `.ps1`：跨平台与「本机能跑 = CI 能跑」是**结构保证而不是
-约定**。依赖基线 / 外网的比较门禁都收在 parity 档，不进 CI 名单；CI 跑发布档全量。
+约定**。CI 跑发布档全量。
 
 ## 提交
 
@@ -401,8 +389,4 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
 | --- | --- | --- |
 | 产物 CSS 里有约四分之一类名在全站找不到落点 | 其中一部分是 Vue transition 残留（`*-enter-active` 等），另有 Twikoo 运行时渲染的 `tk-*`、katex/shiki 的内部类名 | **未处理**。做成门禁要上百条 allowlist，不划算；但 Vue transition 那批是迁移残留，删掉能实打实减小产物。动 `src/styles/` 前先确认没有组件在运行时加这些 class。要现状就自己 grep 产物重新统计，别引用任何文档里的数字 |
 | Twikoo 评论库查不到任何评论 | 对全站文章调 `GET_COMMENTS_COUNT`，带/不带尾斜杠都返回 `count: 0` | **pending**（envId 那处已修，见 incidents 档案；若预期有历史评论，要查 Netlify 上那个函数的数据库） |
-| `probe-subtree` 的 profile 模式（垂直剖面 / 空隙 / 对账）该不该并进 `compare-ui-parity` | 它现在不在任何门禁名单里，作为「门禁」等于不存在 | 未处理。它的 tree 模式已被 `--sel=` 完全覆盖，profile 模式是唯一能说清「空隙」的仪器 |
-| `compare-dom-live` 退役后丢掉的覆盖 | 它独有的是 head meta 与侧栏 widget/footer 计数，且只硬编码 8 页 | 2026-10-04 退役时未回填。`compare-ui-parity` 的 `SEM_RULES` 已含 head meta，但只有加重档会跑 |
-| 手柄大屏模式未做实机测试 | 所有验证（test/typecheck/lint/accept/interaction-check）均通过，但覆盖全部来自 `interaction-check.mjs` 注入的 `navigator.getGamepads` 夹具 | **未测试**。Steam Deck 与 Xbox/DualSense 列入实机覆盖目标。交付报告必须把「注入夹具覆盖」与「物理设备覆盖」分开写，不因标准映射模拟通过就声明全部兼容 |
-| parity 档是否该整体降级为诊断工具 | `live:ui-parity` 拿线上（= 本站上一版产物）当基线，上一版随时被 force-push 覆盖；`probe-subtree` + 三个 `lib/` 模块约 3200 行只服务这一档 | **未处理**。它们仍是唯一能量「线上有没有漂移」的仪器，删了就只能靠人看。要降级需先决定放弃这项能力 |
 | `AI excerpt` / `excerpt-content` 两条断言的自动覆盖 | 原 `check-integration` 有这两条，精简时移交给了 `interaction-check.mjs`——但那道门禁**不进流水线** | **未处理**。若要它们自动生效，应加进 `check-affordances`（release 档、只读 dist）而不是加回 `check-integration` |

@@ -98,8 +98,7 @@ Astro 7 项目结构（站点根即仓库根）：
 │   │   ├── previews # 草稿文章，仅可被站内搜索
 │   │   └── games # 游戏页
 │   ├── lib # 框架无关共享层（app-config.ts 导航/页脚/交互默认值；
-│   │        手柄大屏相关：gamepad-input / gamepad / gamepad-navigation /
-│   │        gamepad-focus / big-picture-state / big-picture-session / layout-state）★
+│   │        layout-state.ts 抽屉状态、list-transition.ts FLIP 列表动画）★
 │   ├── loaders # 内容加载器
 │   ├── pages # 文件路由与端点（atom.xml / llms.txt / search-index / raw/*.md）
 │   ├── plugins # remark/rehype 管线（component-fence / heading-ids / math-code / prose）
@@ -177,9 +176,6 @@ typecheck + build + `node scripts/accept.mjs --skip-build`（release 档全部�
   运行 `node scripts/accept.mjs --print-policies` 打印的就是权威版本，含每道门的跳过策略。
 - `pnpm accept:maintenance` = release 档全量 + 深度维护审计（CSS 域、豁免台账、CDN
   合同、Windows 专属自测等）。发布前深度检查跑它。
-- `pnpm accept:parity` = 迁移对拍档（`compare-urls` / `live:sitemap` / `live:ui-parity`），
-  **约 20–25 分钟**（大头是 `live:ui-parity`，逐页 × 两侧）。切换上线前与发布前各跑
-  一次；日常改动不必跑。基线不在 checkout 里时显示 `NOT-RUN`（不可运行），不计通过。
 - 运行、部署项目时 Node.js 版本需遵照 `package.json` 的 engines 限制。
 
 ## 贡献

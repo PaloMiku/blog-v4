@@ -4,11 +4,6 @@ dist
 .astro
 .pnpm-store
 
-# Frozen Nuxt baseline (scripts/freeze-baseline.mjs). Local-only anchor for the
-# offline gates; see baseline/nuxt/BASELINE.md. Decided on 2026-10-03 to stay
-# uncommitted during the migration -- revisit when the takeover wraps up.
-baseline/
-
 # Comparison artifacts and screenshots (tools write them, they are not source)
 .astro-compare
 .astro-shots/

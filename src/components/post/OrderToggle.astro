@@ -72,21 +72,10 @@ const orderKeys = Object.keys(orderMap)
 const allowAscending = appConfig.pagination.allowAscending ? !disableAscending : enableAscending
 ---
 
-<!--
-	手柄大屏模式标记（契约见 src/lib/gamepad-focus.ts 头部）。**只加属性**：
-	`data-gamepad-region="main"` 把控制条圈进正文区（不声明区域的元素不是焦点目标
-	——「不在任何区域里的元素不是焦点目标」是契约里写死的负向约束）。
-
-	三个按钮都是原生 `<button>`，本就在发现选择器里；这里的 `data-gamepad-focus`
-	是显式声明而非必需，作用是让「这一排是可操作控件」在源码里可读，
-	且不受将来把它们换成裸元素的影响。分类面板里的 `[data-category-item]` 是
-	Dropdown 渲染的、处于弹层语义下，其区域由 Dropdown/弹层自己负责，这里不代标。
--->
 <div
 	class="order-toggle"
 	style={{ '--secret-delay': secretDelay }}
 	data-order-toggle-root
-	data-gamepad-region="main"
 	data-category={category ?? ''}
 	data-sort-order={sortOrder}
 	data-ascending={String(isAscending)}
@@ -95,7 +84,7 @@ const allowAscending = appConfig.pagination.allowAscending ? !disableAscending :
 	<slot />
 
 	<Dropdown trigger="focusin" tabindex="0">
-		<button type="button" disabled={!categories} data-category-btn data-gamepad-focus>
+		<button type="button" disabled={!categories} data-category-btn>
 			<Icon name={getCategoryIcon(category)} />
 			<span class="order-text">{category ?? '全部分类'}</span>
 		</button>
@@ -132,7 +121,6 @@ const allowAscending = appConfig.pagination.allowAscending ? !disableAscending :
 				aria-label="切换排序方向"
 				class="direction-btn"
 				data-order-direction
-				data-gamepad-focus
 			>
 				<span class="toggle-direction" class:list={{ ascending: isAscending }} aria-hidden="true">
 					<Icon name="tabler:sort-descending" />
@@ -143,7 +131,6 @@ const allowAscending = appConfig.pagination.allowAscending ? !disableAscending :
 		<button
 			type="button"
 			data-order-sort
-			data-gamepad-focus
 			data-order-keys={orderKeys.join(',')}
 			data-order-labels={JSON.stringify(orderMap)}
 		>

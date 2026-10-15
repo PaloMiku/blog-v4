@@ -18,7 +18,6 @@ import path from 'node:path'
  * 用法：
  *   node scripts/accept.mjs                        # 默认档 release（发布必需，15 道）
  *   node scripts/accept.mjs --profile maintenance  # release + 深度维护审计（31 道）
- *   node scripts/accept.mjs --profile parity       # 迁移对拍档（基线/线上比较，显式点名才跑）
  *   node scripts/accept.mjs --skip-build           # 复用现有 dist/，只跑门禁
  *   node scripts/accept.mjs --only check-dates     # 只跑某几道（调试用，逗号分隔）
  *   node scripts/accept.mjs --print-policies       # 只打印门禁的跳过策略矩阵，不跑门禁
@@ -28,9 +27,6 @@ import path from 'node:path'
  *   release      —— 决定一次提交能否发布。快、稳、与当前 Astro 直接相关；CI 只跑这一档。
  *   maintenance  —— 全量 DOM/CSS 域审计、豁免台账到期审计、CDN 合同、Windows 专属自测。
  *                   包含 release 的全部内容，发布前深度检查跑它。
- *   parity       —— 对 Nuxt 冻结基线或线上站的比较。基线缺失时显示「不可运行」（NOT-RUN），
- *                   绝不显示为通过；它不参与发布判定，因为线上自 2026-10-03 起
- *                   就是本站自己的产物，live 比较的含义是「新产物没有意外漂移」。
  *
  * 退出码：
  *   0  全绿
@@ -38,10 +34,8 @@ import path from 'node:path'
  *   2  用法错 / 环境跑不起来 / 门禁进程被杀
  *
  * ⚠️ **门禁自己的退出码比这套多，本 runner 一律按「非 0 = FAIL」处理**，
- * 也就是说门禁的细分码到这一层就压平了。目前有两处已知会被压平：
- * `probe-subtree.mjs` 用 `exitCode = 3` 表示「后代元素越出了根盒子」
- * （探测器的几何结论，不是通过/不通过），用 `130` 表示 SIGINT。
- * 两者都不是「判据判红」，但在 accept 的语境里都应该红——所以压平是对的。
+ * 也就是说门禁的细分码到这一层就压平了。目前有一处已知会被压平：
+ * `130`（SIGINT）。它不是「判据判红」，但在 accept 的语境里应该红——所以压平是对的。
  * **新门禁若要引入新的非 0 码，请在这里补一行**，否则下一个人会以为
  * 退出码只有 0/1/2 三档。
  */
@@ -90,7 +84,7 @@ function gatePolicy(g) {
 	return p
 }
 
-/** 门禁 → 实际脚本文件。显式给 `script` 时用原名（含点号的自测脚本、parity 的比较器）。 */
+/** 门禁 → 实际脚本文件。显式给 `script` 时用原名（含点号的自测脚本等）。 */
 function gateScriptOf(g) {
 	return typeof g === 'object' && g.script ? g.script : `${gateName(g)}.mjs`
 }
@@ -115,18 +109,11 @@ const IS_CI = process.env.ACCEPT_FORCE_CI === '1'
  *
  * 不在这里的都去哪了（EC-003 分层）：
  *   - 宽域 DOM/CSS/台账审计、专项接线深检、外部 CDN 合同 → MAINTENANCE_GATES
- *   - 对基线/线上的比较 → PARITY_GATES
  */
 const RELEASE_GATES = [
 	// 结构与内容：产物里该有的东西在不在
 	'check-integration',
 	'check-layout',
-	// 大屏阅读态的几何不变量（Task 6）。它量的是**计算后的盒子**而不是标记：
-	// 该布局曾因一条「重复属性选择器」被移除而从 860px 静默退回 457px，
-	// 而当时 17/17 门禁与 374 个测试全绿——没有任何东西读这个布局。
-	// skip 用 'env-dependent'：它要起无头 Chrome，内存不足时该自我放弃；
-	// 但它在脚本里刻意不输出 SKIP（缺产物/起不来一律 exit 1），避免「跑没跑」被误判。
-	{ name: 'check-big-picture-layout', skip: 'env-dependent', why: '起 preview + 无头 Chrome（约 700MB）实测大屏阅读态几何。内存不足时本机可以跳过；CI runner 是 ubuntu-latest 4 核 / 16GB，在那里跳过说明环境退化。' },
 	'check-prose-layer',
 	'check-content-preservation',
 	'check-dates',
@@ -202,24 +189,9 @@ const MAINTENANCE_GATES = [
 	},
 ]
 
-/**
- * parity 档：迁移对拍。只在显式 `--profile parity` 时跑（约 20+ 分钟，要网络）。
- * 这一档里门禁「没跑成」显示为 NOT-RUN（不可运行），不计通过也不算违规——
- * 基线本来就不在 checkout 里，硬凑一个绿才是骗人。
- */
-const PARITY_GATES = [
-	// 原先这里还有一道 `compare-urls`（比 baseline/nuxt/urls.txt），已删：
-	// baseline/ 在 .gitignore 里、git 未跟踪，干净 CI 上那道门禁结构性不可运行；
-	// 而线上自 2026-10-03 起就是本站自己的产物，拿冻结的 Nuxt 快照比对已经没有
-	// 判据意义。路由漂移由下面的 live:sitemap 守（它的事实源在线、不随基线失效）。
-	{ name: 'live:sitemap', script: 'compare-remote-sitemap.mjs', why: '线上 sitemap vs 本地产物' },
-	{ name: 'live:ui-parity', script: 'compare-ui-parity.mjs', why: '逐页对比线上与本地产物（大头，约 20 min）' },
-]
-
 const PROFILES = {
 	release: RELEASE_GATES,
 	maintenance: [...RELEASE_GATES, ...MAINTENANCE_GATES],
-	parity: PARITY_GATES,
 }
 
 /** 默认档没有独立步骤，靠 --build-log 拿到日志单独跑。 */
@@ -243,7 +215,7 @@ function parseArgs(argv) {
 	}
 	// 错档直接拒，不静默回落——「悄悄用了一个更松的默认值」和「悄悄丢了一道门禁」
 	// 是同一种错。旧的 `offline`/`full` 档位名一并拒绝：改名是刻意的，
-	// 「full 到底 full 在哪」答不出来，而 release/maintenance/parity 一眼分明。
+	// 「full 到底 full 在哪」答不出来，而 release/maintenance 一眼分明。
 	if (!Object.hasOwn(PROFILES, opt.profile)) {
 		return { error: `-Profile ${opt.profile} 不是合法档位（合法值：${Object.keys(PROFILES).join(' / ')}）。这是参数错误，不是静默回落。` }
 	}
@@ -264,7 +236,7 @@ function record(step, exit, seconds, note, skipped) {
  * 这道 runner 用正则判定子进程输出：`SKIP_MARKERS = /^SKIP(?:PED)?\b/m` 决定
  * 「这道门禁是不是自己放弃了」，`lastResultLine` 用 `startsWith('RESULT:')`
  * 决定汇总表那一列填什么。**两个都是逐行前缀匹配**——而门禁里 9 个脚本自发
- * ANSI 颜色（`compare-ui-parity` 12 处、`check-dropped-css` 8 处、
+ * ANSI 颜色（`check-dropped-css` 8 处、
  * `audit-css-blocks` / `audit-dead-scope` 各 7 处、`check-runtime-dom` 4 处）。
  *
  * 只要有谁给 `RESULT:` 或 `SKIP:` 那一行加了颜色前缀，**判定会静默失效**：
@@ -374,7 +346,6 @@ function printPolicies() {
 	const all = [
 		...RELEASE_GATES.map(g => ({ g, tier: 'release' })),
 		...MAINTENANCE_GATES.map(g => ({ g, tier: 'maintenance' })),
-		...PARITY_GATES.map(g => ({ g, tier: 'parity' })),
 	]
 	const rows = all.map(({ g, tier }) => {
 		const p = gatePolicy(g)
@@ -387,7 +358,7 @@ function printPolicies() {
 			理由: typeof g === 'object' && g.why ? g.why : '',
 		}
 	})
-	console.log(`门禁 ${rows.length} 道（release ${RELEASE_GATES.length} / maintenance +${MAINTENANCE_GATES.length} / parity ${PARITY_GATES.length}）；判定环境：${IS_CI ? 'CI' : '本机'}${process.env.ACCEPT_FORCE_CI === '1' && !process.env.GITHUB_ACTIONS ? '（ACCEPT_FORCE_CI=1 强制）' : ''}`)
+	console.log(`门禁 ${rows.length} 道（release ${RELEASE_GATES.length} / maintenance +${MAINTENANCE_GATES.length}）；判定环境：${IS_CI ? 'CI' : '本机'}${process.env.ACCEPT_FORCE_CI === '1' && !process.env.GITHUB_ACTIONS ? '（ACCEPT_FORCE_CI=1 强制）' : ''}`)
 	for (const r of rows) {
 		console.log(`\n  ${r.门禁}  [${r.tier}/${r.策略}]  本机跳过→${r.本机跳过}  CI跳过→${r.CI跳过}`)
 		if (r.理由)
@@ -456,8 +427,6 @@ function main() {
 	console.log(`验收 runner  档位=${opt.profile}${IS_CI ? '  [按 CI 判定跳过策略]' : ''}`)
 	stepBuild(opt.skipBuild)
 
-	// parity 档不重复跑发布检查：它只回答「与基线/线上一致吗」。
-	// 发布判定由 release 档负责，两个档各自能独立跑（EC-003 验收）。
 	let gates = PROFILES[opt.profile]
 	if (opt.only)
 		gates = gates.filter(g => opt.only.includes(gateName(g)))
@@ -474,8 +443,7 @@ function main() {
 		process.exit(2)
 	}
 
-	const isParity = opt.profile === 'parity'
-	section(`门禁（${gates.length} 道${isParity ? '，parity：跳过=不可运行，不计通过' : ''}）`)
+	section(`门禁（${gates.length} 道）`)
 	let missing = 0
 	const violations = []
 	for (const g of gates) {
@@ -484,8 +452,8 @@ function main() {
 		const r = runGate(g)
 		if (r.missing)
 			missing++
-		const badge = r.status !== 0 ? 'FAIL' : r.skipped ? (isParity ? 'N/A ' : 'SKIP') : 'OK  '
-		if (r.skipped && !isParity) {
+		const badge = r.status !== 0 ? 'FAIL' : r.skipped ? 'SKIP' : 'OK  '
+		if (r.skipped) {
 			const v = skipViolation(name, policy)
 			if (v)
 				violations.push(v)
@@ -499,8 +467,7 @@ function main() {
 	// --skip-build 时仍然跑，只要那份日志还在——CI 正是这么用的：它自己 build，
 	// 把日志 tee 到同一个路径，然后 `--skip-build` 复用产物。这样「零告警构建」
 	// 在 CI 里也自动获得覆盖，而不用再手写一遍门禁列表。
-	// parity 档不跑它：它属于发布判定，parity 只回答一致性。
-	if (!isParity && (!opt.only || opt.only.includes(BUILD_WARNING_GATE))) {
+	if (!opt.only || opt.only.includes(BUILD_WARNING_GATE)) {
 		section('构建告警（读构建日志）')
 		if (opt.skipBuild && !fs.existsSync(BUILD_LOG)) {
 			record(`${BUILD_WARNING_GATE} (skipped)`, 0, 0, '没有构建日志可读', true)
@@ -518,7 +485,7 @@ function main() {
 	// ── 汇总 ─────────────────────────────────────────────────────────────────
 	section('汇总')
 	for (const r of results) {
-		const badge = r.exit !== 0 ? 'FAIL' : r.skipped ? (isParity ? 'NOT-RUN' : 'SKIP') : 'OK  '
+		const badge = r.exit !== 0 ? 'FAIL' : r.skipped ? 'SKIP' : 'OK  '
 		console.log(`  ${badge}  ${r.step.padEnd(26)} ${r.seconds.toFixed(1).padStart(6)}s  ${r.note}`)
 	}
 	const failed = results.filter(r => r.exit !== 0)
@@ -528,11 +495,7 @@ function main() {
 	// 违规跳过：门禁没跑，且按它的 skip 策略，这次不该跑得起。绿灯必须红。
 	const allowedSkipped = skipped.length - violations.length
 	console.log(`\ntotal: ${results.length}   passed: ${passed}   failed: ${failed.length}   skipped: ${skipped.length}   (合规跳过 ${allowedSkipped} / 违规跳过 ${violations.length})`)
-	if (isParity && skipped.length) {
-		console.log(`\n注意：${skipped.length} 项 parity 检查**不可运行**（基线缺失 / 网络不可达）。`)
-		console.log('      它们显示为 NOT-RUN，不计入通过——「不可运行」不是「通过」，也不是缺陷。')
-	}
-	if (skipped.length && !isParity) {
+	if (skipped.length) {
 		console.log(`\n注意：${skipped.length} 道门禁**没有真正运行**（脚本自己放弃了：内存不够 / 基线缺失 / 网络不可达）。`)
 		console.log('      它们不计入通过。上面的备注写了各自的原因——「全绿」不包括它们。')
 	}
@@ -557,13 +520,13 @@ function main() {
 		console.log(`\nFAILED: ${violations.length} 道门禁违规跳过，「全绿」不成立。`)
 		process.exit(1)
 	}
-	if (isParity && skipped.length)
-		console.log(`PARTIAL: parity 没有失败，但 ${skipped.length} 项不可运行（NOT-RUN，见上）——没有把它记成通过。`)
+	if (skipped.length)
+		console.log('ACCEPTED: no failures, but see the skipped steps above')
 	else
-		console.log(skipped.length ? 'ACCEPTED: no failures, but see the skipped steps above' : 'ACCEPTED: all steps green')
+		console.log('ACCEPTED: all steps green')
 	process.exit(0)
 }
 
 // 名单在底部导出，是为了让 check-ci-triggers.mjs 能 import 它校验
 // 「名单里的脚本都真实存在」——CI 不再手抄名单。
-export { BUILD_WARNING_GATE, gateName, gatePolicy, gateScriptOf, IS_CI, MAINTENANCE_GATES, PARITY_GATES, PROFILES, RELEASE_GATES }
+export { BUILD_WARNING_GATE, gateName, gatePolicy, gateScriptOf, IS_CI, MAINTENANCE_GATES, PROFILES, RELEASE_GATES }

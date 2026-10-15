@@ -91,19 +91,18 @@ const headingCount = headings.length
 /**
  * 目录树 → HTML 字符串。
  *
- * ⚠️ **marker 必须写在这个字符串里**：目录树是 `set:html` 注入的，
+ * ⚠️ **属性必须写在这个字符串里**：目录树是 `set:html` 注入的，
  * 这些 `<a>` / `<li>` 不经过 Astro 的模板编译，写在模板上的任何属性都到不了它们身上。
  * 反过来，`data-astro-cid` 也不会出现在这些节点上（CLAUDE.md 坑位 4）——
- * 所以样式侧本来就靠 `:global(.toc …)`，这里的 marker 走的是同一条路。
+ * 所以样式侧靠 `:global(.toc …)`，属性同理只能写进这个字符串。
  *
- * 手柄大屏模式（Task 7 Step 4）：目录项是阅读页 aside 区里最主要的控制。
- * key 用**标题 slug**：它是锚点目标，天然唯一且稳定，
- * 而标题文本可能重复（同名小节）。`list:` 命名空间与页内其它列表不会撞。
+ * 目录项的 `data-list-key` 用**标题 slug**：它是锚点目标，天然唯一且稳定，
+ * 而标题文本可能重复（同名小节）。`toc:` 命名空间与页内其它列表不会撞。
  */
 function renderToc(tree: TocLink[]): string {
 	const li = tree.map((entry) => {
 		const child = entry.children?.length ? renderToc(entry.children) : ''
-		return `<li data-toc-id="${entry.id}"><a href="#${entry.id}" title="${escapeAttr(entry.text)}" data-gamepad-focus data-list-key="toc:${escapeAttr(entry.id)}">${escapeText(entry.text)}</a>${child}</li>`
+		return `<li data-toc-id="${entry.id}"><a href="#${entry.id}" title="${escapeAttr(entry.text)}" data-list-key="toc:${escapeAttr(entry.id)}">${escapeText(entry.text)}</a>${child}</li>`
 	}).join('')
 	return `<ol>${li}</ol>`
 }
@@ -130,33 +129,20 @@ const tocHtml = links.length ? renderToc(links) : ''
 	<Fragment slot="action">
 		<!-- use <a> for anchor -->
 		{/*
-			手柄模式：这两个是 aside 区里的固定动作。Widget 的 action 槽是**具名 slot**，
-			节点由本组件渲染（不是 `set:html` 字符串），所以 marker 写在模板上即可。
+			这两个是 aside 区里的固定动作。Widget 的 action 槽是**具名 slot**，
+			节点由本组件渲染（不是 `set:html` 字符串），所以属性写在模板上即可。
 		*/}
-		<a href="#main-content" aria-label="返回开头" data-gamepad-focus data-list-key="toc:action:top">
+		<a href="#main-content" aria-label="返回开头" data-list-key="toc:action:top">
 			<Icon name="tabler:arrow-bar-to-up" />
 		</a>
 
-		<a href="#twikoo" aria-label="评论区" data-gamepad-focus data-list-key="toc:action:comments">
+		<a href="#twikoo" aria-label="评论区" data-list-key="toc:action:comments">
 			<Icon name="tabler:message-dots" />
 		</a>
 	</Fragment>
 
-	{/*
-		手柄大屏模式（Task 7 Step 4）。
-
-		`data-gamepad-region="aside"` **只加在有目录项的那一支**，这不是随手写的：
-		`BigPictureShell.enterMode()` 判「顶部『目录』按钮要不要出现」用的正是
-		`Boolean(document.querySelector('[data-gamepad-region="aside"]'))`。
-		若把它无条件挂到整个 Widget 上，无目录的页面（`.no-toc` 占位）也会亮出一个
-		「目录」按钮，点开是空抽屉——判据是「这一区真有可选目标」，
-		所以标在**含 `<a>` 的那一层**、且只在该层真存在时输出。
-
-		区域名 `aside` 与布局层 `#blog-aside` 同名不是巧合：契约里区域是页面声明的
-		布局契约，而这份目录就是 aside 里的内容。
-	*/}
 	{tocHtml
-		? <div class="toc" data-toc data-gamepad-region="aside" set:html={tocHtml} />
+		? <div class="toc" data-toc set:html={tocHtml} />
 		: <p class="no-toc">暂无目录信息</p>}
 </BlogWidget>
 

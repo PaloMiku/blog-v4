@@ -6,7 +6,7 @@
  * 页面主流程只引用本模块，不再就地藏 `const PARITY_x = true`。
  * 散落在各文件、无法用开关表达的 URL/SEO 合同类条目（标题锚点 slugger、
  * `hidePostPrefix`、`smartypants: false`、robots 静态名单等）各有就地注释说明
- * 保留理由与退出条件，不在此重复。验证命令：`pnpm accept:parity`。
+ * 保留理由与退出条件，不在此重复。
  *
  * 能通过产品行为修复的兼容点，不继续用这里的开关隐藏问题。
  */

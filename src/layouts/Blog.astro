@@ -10,26 +10,15 @@ import BlogAside from '../components/blog/BlogAside.astro'
 import BlogFooter from '../components/blog/BlogFooter.astro'
 import BlogPanel from '../components/blog/BlogPanel.astro'
 import BlogSidebar from '../components/blog/BlogSidebar.astro'
-import BigPictureShell from '../components/blog/BigPictureShell.astro'
 import SkipToContent from '../components/blog/SkipToContent.astro'
 import Base from './Base.astro'
 import ModalHost from '../components/ModalHost.astro'
 import '../styles/index.css'
-import { BIG_PICTURE_PAGES } from '../lib/big-picture-state'
-import type { BigPicturePage } from '../lib/big-picture-state'
 
 interface Props {
 	title: string
 	/** 是否有具名 aside 插槽（对应 Nuxt 的 provideLayoutSlots().aside） */
 	hasAside?: boolean
-	/**
-	 * 本页的大屏页面类型（spec §模式与布局状态）。
-	 *
-	 * **由页面显式声明，布局不猜**：文章可以用 frontmatter `permalink` 改成任何路径，
-	 * 按 URL 前缀判「是不是文章」必然出错。缺省 `'off'` 是安全的缺省——停用本页增强，
-	 * 但会话意图仍保留，返回核心页面后自动恢复。
-	 */
-	bigPicturePage?: BigPicturePage
 	/**
 	 * 以下三项只往 Base.astro 透传，让各页自己声明 SEO 数据。
 	 *
@@ -52,7 +41,6 @@ interface Props {
 const {
 	title,
 	hasAside = false,
-	bigPicturePage = 'off',
 	description,
 	image,
 	ogType,
@@ -60,14 +48,6 @@ const {
 	minimalSeo,
 	jsonLd,
 } = Astro.props
-
-/*
- * 页型归一化。与 `BigPictureShell.astro` 里那次收敛同规则，但**在这里先做一次**：
- * `<main data-big-picture-page>` 是 CSS 与 `layout-state` 共同读的页型来源，
- * 若原样输出一个拼错的字符串，两侧会拿到不同的值——CSS 一个页型都不匹配，
- * JS 却按 `'off'` 之外的分支走。
- */
-const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(bigPicturePage) ? bigPicturePage : 'off'
 ---
 
 <Base title={title} description={description} image={image} ogType={ogType} noindex={noindex} minimalSeo={minimalSeo} jsonLd={jsonLd}>
@@ -82,23 +62,7 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(b
 
 	<BlogSidebar />
 
-	{/*
-		`data-big-picture-page` 是**页型**的唯一对外投影，与传给 Shell 的
-		`bigPicturePage` 同源（Task 6）。三处消费它：
-
-		1. `src/styles/big-picture.css`：按页型切布局（阅读态收栏、首页两列卡片、
-		   友链列表……）。写成 `<main>` 上的属性而不是只留在 Shell 上，是为了让 CSS
-		   能用普通的后代选择器命中——否则就得写 `#blog-root:has(.big-picture-shell…)`，
-		   每条规则都多一圈 `:has()`。
-		2. `src/lib/layout-state.ts` 的 `applyColumnVisibility()`：读它决定两侧栏
-		   是否收起（`aria-hidden` + `inert`）。**CSS 与 JS 因此同源**，
-		   resize 不可能只更新一边。
-		3. `scripts/interaction-check.mjs`：断言「友链页不被当成阅读页」这类性质。
-
-		刻意**不**放在 `<html>` 或 `<body>` 上——那两个元素由 `Base.astro` 拥有，
-		而页型是本布局层的事。
-	*/}
-	<main id="main-content" data-big-picture-page={page}>
+	<main id="main-content">
 		<slot />
 	</main>
 
@@ -121,14 +85,6 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(b
 	<BlogFooter />
 	<BlogPanel hasAside={hasAside} />
 
-	{/*
-		手柄大屏模式的常驻 Shell。挂在 `#modal-root` **之前**是刻意的：
-		弹层要在它之上（`data-big-picture-region="overlay"` 只给最上层弹层用），
-		而脚本自己按栈顶动态给弹层根补标记，不依赖文档顺序。
-		普通模式下它的所有控件都带 `hidden`，根节点高度为 0，不动现有布局几何。
-	*/}
-	<BigPictureShell page={page} />
-
 	{/* 模态栈宿主：搜索、灯箱等弹窗的唯一挂载点（@bikariya/modals 的替代） */}
 	<div id="modal-root">
 		<ModalHost />
@@ -148,51 +104,34 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(b
 	 *
 	 * ## 判据只有三份输入，全部可读、全部同源
 	 * 1. `layout-state` 的当前状态（抽屉开没开）；
-	 * 2. 视口（`matchMedia`），由**本函数自己**持有监听；
-	 * 3. `<main data-big-picture-page>` + `:root[data-big-picture]`（页型与模式）。
+	 * 2. 视口（`matchMedia`），由**本函数自己**持有监听。
 	 *
-	 * CSS 侧的收起规则读的是同一份 3，JS 侧写 `aria-hidden` / `inert` 读的也是同一份 3，
+	 * CSS 侧的收起规则读的是视口，JS 侧写 `aria-hidden` / `inert` 读的也是视口，
 	 * 两侧因此不可能分叉——这是「不创建两个真相源」的具体落点。
 	 *
 	 * ## 为什么 `aria-hidden` 与 `inert` 要一起写
 	 * `aria-hidden` 挡读屏，`inert` 挡 Tab 顺序与点击。只写前者时，
-	 * 手柄焦点管理器（`gamepad-focus.ts` 的 `blockedByAttribute()`）仍会因为
-	 * `inert` 缺失而把栏内的项算作可选目标，于是「收起了」的侧栏仍能被摇杆选中。
-	 * 只写 `inert` 则读屏软件仍会念出整栏目录。
+	 * 收起状态下栏内的项仍能被键盘聚焦进去，于是「收起了」的侧栏变成一条
+	 * 看不见的焦点通路；只写 `inert` 则读屏软件仍会念出整栏目录。
 	 */
 	import { bindLayoutGlobals, drawerMediaQuery, getLayoutState, subscribeLayout } from '../lib/layout-state'
-	import { subscribeBigPicture } from '../lib/big-picture-state'
 
 	/**
 	 * 一侧栏的静态配置。
 	 *
 	 * 断点来自 `layout-state.ts` 的 `LAYOUT_BREAKPOINTS`（唯一定义处），
 	 * **不再在这里手写 `(max-width: …)`**：此前 CSS 与本文件各写一份、只靠注释同步，
-	 * 漂移的症状是「抽屉已滑出画布却仍可 Tab 进去」——
-	 * `scripts/check-big-picture-layout.mjs` 现在会比对两边是否逐字一致。
+	 * 漂移的症状是「抽屉已滑出画布却仍可 Tab 进去」。
 	 */
 	const COLUMNS = [
 		{ id: 'blog-sidebar', key: 'sidebar', drawer: drawerMediaQuery('sidebar') },
 		{ id: 'blog-aside', key: 'aside', drawer: drawerMediaQuery('aside') },
 	]
 
-	/** 本页是不是「两侧栏默认收起」的阅读态 */
-	function isReadingPage() {
-		return document.documentElement.hasAttribute('data-big-picture')
-			&& document.querySelector('main#main-content')?.dataset.bigPicturePage === 'reading'
-	}
-
 	/**
 	 * 这一侧此刻是否应当收起。**唯一**的判据，`.show` 与 `aria-hidden` / `inert` 都由它推出。
 	 *
-	 * 两种收起：
-	 * - 抽屉态收起：视口窄于该列的 `drawer` 断点，且这侧抽屉没开；
-	 * - 阅读态收起：大屏 + `reading` 页型，两侧栏默认收起，
-	 *   由顶部的「导航」「目录」按钮（即同一个 `layout-state` 开关）打开。
-	 *
-	 * ⚠️ 阅读态**不**另开一份状态：它与抽屉共用 `layout-state` 的那一个枚举值。
-	 * 规格要的是「关闭抽屉后归还焦点」，那由 `BigPictureShell` 依据
-	 * `subscribeLayout` 完成——若这里另开一份状态，Shell 与 Aside 就会写相反的东西。
+	 * 收起条件只有一条：视口窄于该列的 `drawer` 断点，且这侧抽屉没开。
 	 *
 	 * 空侧栏（`is-empty`）不在这里判：它在 `applyColumnVisibility()` 开头就被整块跳过
 	 * （那是构建期写在模板上的事实），留一个永远走不到这里的分支只会误导下一个人。
@@ -200,7 +139,7 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(b
 	function isCollapsed(key, media) {
 		if (getLayoutState() === key)
 			return false
-		return media.matches || isReadingPage()
+		return media.matches
 	}
 
 	/**
@@ -250,9 +189,6 @@ const page: BigPicturePage = (BIG_PICTURE_PAGES as readonly string[]).includes(b
 
 			subscribeLayout(apply)
 			media.addEventListener('change', apply)
-			// 模式切换改变的是 `isReadingPage()` 的第二个输入，所以要跟着重算；
-			// 退出时也走这一条，于是「退出模式按当前视口重算抽屉状态」自然成立
-			subscribeBigPicture(apply)
 			apply()
 		}
 	}

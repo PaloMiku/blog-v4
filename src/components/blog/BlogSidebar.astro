@@ -363,8 +363,8 @@ const iconNav = appConfig.footer.iconNav
 		 * `.show` / `aria-hidden` / `inert` **不在这里写**——统一由
 		 * `src/layouts/Blog.astro` 的 `applyColumnVisibility()` 负责。
 		 * 本组件原先有一份只切 `.show` 的 `subscribeLayout`，与
-		 * `BlogAside` 那份是**两套并行实现**：大屏阅读态下两侧栏要一起收起，
-		 * 两套各写各的就会出现「一边收起一边展开」。
+		 * `BlogAside` 那份是**两套并行实现**，两套各写各的就会出现
+		 * 「一边收起一边展开」。
 		 * 本组件仍然 import `toggleLayout`（折叠动画与搜索键要用）。
 		 */
 
