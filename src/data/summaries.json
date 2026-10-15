@@ -29,11 +29,6 @@
       "seo": "面向 1Panel 用户说明编写 1Panel 应用商店第三方程序的方法，涵盖初始化模板、应用声明、参数表单和 Docker Compose 配置，便于把自定义应用接入应用商店实现一键部署。",
       "sourceHash": "c6aa51b4dbbdc883"
     },
-    "2024/12/break-change-2024": {
-      "summary": "作者记录了自己博客的又一次破坏性迁移：域名换到 blog 子域名，评论数据不保留，部分旧文章被删除或重订。原因是长期把时间花在站点架构、域名和服务器调整上。此次迁移后，服务器与域名均已续费到 2026 年 9 月，系统换成 Huawei Cloud EulerOS，因此承诺在此之前不再迁移，站点可保持稳定运行，文章更新仍会缓慢。",
-      "seo": "博客破坏型迁移记录：域名迁至 blog 子域名、评论与旧文不再保留，服务器改用 Huawei Cloud EulerOS，并承诺 2026 年 9 月前不再迁移，保证站点稳定。",
-      "sourceHash": "195a1a3c606146e8"
-    },
     "2024/12/oyiso-tianligpt": {
       "summary": "记录在 WordPress 的 Oyiso 主题上接入 TianliGPT 摘要功能的过程。做法是先安装 PostChat 插件并在后台填入 Key，只需要摘要时可关闭智能对话；再在主题的自定义代码中插入官方提供的 CSS 与 JS，把 tianliGPT_postSelector 指向文章内容容器、tianliGPT_key 换成自己的 Key，保存后即可生效。最终实现了文章自动生成 AI 摘要，无需人工干预，且再次生成不消耗额度。作者也提到升级版 PostChat 因按月收费暂未采用。",
       "seo": "在 WordPress 的 Oyiso 主题中引入 TianliGPT 摘要：通过 PostChat 插件配置 Key，并在自定义代码里加入官方 CSS 与 JS，即可让文章自动生成 AI 摘要。",
@@ -109,11 +104,6 @@
       "seo": "Affine 部署教程：使用 Docker Compose 自托管类 Notion 知识库系统，包含存储、CPU、内存配置要求与完整环境变量配置步骤，并对比 Outline 给出选型建议。",
       "sourceHash": "d91f8d51eb8fb8b3"
     },
-    "2025/10/clarity-resource-list": {
-      "summary": "在 Clarity 博客主题（纸鹿修改版）的 /app/components/content/ 目录下新建 ResourceList.vue，即可获得一个资源列表与下载组件，用于替换部分页面组件并预留后续下载需求。组件通过 items 数组接收数据，每项支持 id、标题、副标题、摘要、标签、下载链接以及解压密码和下载密码，模板用 v-for 渲染卡片，有链接时显示可点击的下载按钮，无链接时按钮置灰禁用。样式基于 grid 与 flex 布局，窄屏自动转为纵向排列，配色沿用主题的 CSS 变量。在 Markdown 中用 ::resource-list 指令传入 items 的 YAML 配置即可调用，渲染出示例效果即表示接入成功。",
-      "seo": "为 Clarity 博客主题添加 ResourceList 资源列表组件的完整步骤：新建 Vue 组件、配置 items 数据字段、在 Markdown 中以 ::resource-list 指令调用，支持下载链接与解压、下载密码展示。",
-      "sourceHash": "45357f323d960c1f"
-    },
     "2025/10/fnos-vps-started": {
       "summary": "作者用性价比高的大盘鸡 VPS（2c2g、15G 系统盘加 500G 数据盘）做实验，借助开源项目 bin456789/reinstall 的 DD 脚本把基于 Debian 的国产 NAS 系统 FnOS 直接安装到 VPS 上。安装后通过 IP:5666 进入 WebUI 完成初始化，再从应用中心一键部署飞牛影视、下载管理器、Ani Rss 与 AutoBangumi，实现自动订阅、离线下载、刮削字幕并搭建个人影视库。体验结论是 FnOS 对硬件要求低、图形化管理省事，配合飞牛 APP 与 FN Connect 免费穿透可满足个人追番需求；但作为商业 IP 的 VPS，它无法自定义 Nginx 和 SSL 证书、不能给第三方应用绑定域名，网络管理偏弱，权限与影视库可定制性也不如 Emby 专业方案。",
       "seo": "在低配大盘鸡 VPS 上用 DD 脚本安装 FnOS 个人 NAS 系统，配合飞牛影视与自动订阅下载打造动漫影视库，并总结其优缺点与适用场景。",
@@ -188,11 +178,6 @@
       "summary": "荣耀 X16 锐龙版（2024，R5-7640HS）装上 CachyOS 后出现两类问题：合盖睡眠后唤醒需 8 秒以上甚至睡死，以及 HDMI 外接显示器画面灰白发亮、KDE 中切换 RGB 与 YCbCr 色彩范围均无效。前者源于荣耀 BIOS 阉割了 S3、只剩 Modern Standby，通过在 UAFB 中打开 AMD RAID Mode 恢复正常秒唤醒；后者经排查无果，改用 USB-C 扩展坞走 DisplayPort 输出后色彩正常。作者认为该机 BIOS 精简过多、Linux 下问题难根治，不推荐 Linux 用户购买，但在 Windows 下表现良好。",
       "seo": "荣耀 X16 锐龙版（2024）安装 Linux 后的睡眠唤醒慢与 HDMI 外接显示器色彩失真问题记录，含开启 AMD RAID Mode、改用 USB-C 转 DP 的解决办法与体验评价。",
       "sourceHash": "de1990f491d4151d"
-    },
-    "2026/03/noctalia-plugin-process-reporter": {
-      "summary": "作者把主力机换成 Arch+Niri+Noctalia 后，用 GPT 5.3-Codex 的 Agent 能力开发了一个 Noctalia 插件 Process Reporter，用于把当前聚焦窗口信息和媒体播放状态合并上报到博客云函数。插件放在个人插件库 PaloMiku/noctalia-plugins 中，可通过自定义插件源安装更新，上报 JSON 包含窗口 appId、应用名、曲目标题、艺术家、封面与播放状态，并带 token 鉴权和限流防止滥用。经云函数处理后数据呈现在博客组件栏，实现实时在线状态展示。作者认为即使不熟悉 QT/QML 也能借 AI 配合文档写出功能完整的插件。",
-      "seo": "用 Codex 开发 Noctalia 插件 Process Reporter，在 Arch+Niri 环境下采集聚焦窗口与媒体播放信息，经云函数上报并展示到博客在线状态栏。",
-      "sourceHash": "cc21a556dfef24e8"
     }
   }
 }
