@@ -454,13 +454,23 @@ function onParagraphQuote(event: Event) {
 	if (!text)
 		return
 
-	const twikoo = (window as unknown as { Twikoo?: unknown }).Twikoo
-	if (!twikoo) {
-		flash(button, '评论未就绪', 1200)
-		return
-	}
-	// Twikoo 全局对象只是「评论区已加载」的信号，插入走的是它的 DOM
-	// （查 #twikoo 里的输入框，不调 Twikoo 方法）。
+	/*
+	 * ⚠️ 这里**不许**再判「评论区就绪」的闸门。
+	 *
+	 * 迁移时这里加过一道 `window.Twikoo`，它有两个问题，任一个都足以让功能失效：
+	 *   1. **大小写错了**。Twikoo 2.x 挂的是**小写** `window.twikoo`
+	 *      （`twikoo.min.js` 是 UMD，`Comment.astro` 读的也正是小写）。
+	 *      于是 `window.Twikoo` 恒为 `undefined`，按钮**永远**闪「评论未就绪」，
+	 *      引用功能等于从来没有过——而实测同一时刻 `typeof window.twikoo === 'object'`。
+	 *   2. 就算把大小写写对，这道闸门也是多余的：
+	 *      `initParagraphQuote` 只在「页面上有 `#twikoo`」时才启用按钮，
+	 *      而 `insertQuote` 自己会等输入框最多 6s、等不到就退回剪贴板并如实回报。
+	 *      原 Nuxt 实现（`app/composables/useCommentQuote.ts`）就没有这道闸门。
+	 *
+	 * 判据同理：**「第三方全局对象存在」不等于「DOM 可用」**。
+	 * 真想判就判 DOM（`getCommentInput()`），而不是猜全局名——
+	 * 猜错了不会报错，只会静默地把功能关掉。
+	 */
 	void insertQuote(text).then((inserted) => {
 		// 只有真的写进输入框才说「已插入」；退回剪贴板要说另一句，否则等于骗人。
 		// 「已复制」沿用代码块复制按钮的既有说法，不新造词。
