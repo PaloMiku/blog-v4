@@ -148,6 +148,23 @@
 	background-color: transparent;
 	tab-size: inherit;
 
+	/*
+	 * ⚠️ `--shiki-dark-bg` 也要在**这一层**作废，否则深色模式下每个 token 都会刷上
+	 * 一块自己的背景，代码区浮出一条比块底色浅的横带（实测 #202327 上叠 #282c34）。
+	 *
+	 * 成因是两侧 shiki 的**结构差异**，不是这条规则本身写错了：
+	 * Nuxt 的 ProsePre 挂 `transformerUnwrap`（useShiki.ts），把 shiki 自带的
+	 * `<pre>` 整层丢掉，`--shiki-dark-bg` 因此**不存在**，`main.css` 里
+	 * `.dark &` 那条 `background-color: var(--shiki-dark-bg)` 是一条死规则；
+	 * Astro 保留 shiki 的 `<pre class="astro-code">`，变量就以**行内 style**
+	 * 落在它身上，而自定义属性**可继承** ⇒ 后代 span 真的读到了它，死规则复活。
+	 *
+	 * 必须用 `initial`（对自定义属性即「保证无效值」，`var()` 随之失效、
+	 * `background-color` 退回初始值 `transparent`）；`unset` 会退回继承值，
+	 * 等于没写。变量在行内 style 上，作者样式表只有带 `!important` 才压得过。
+	 */
+	--shiki-dark-bg: initial !important;
+
 	&.wrap {
 		white-space: pre-wrap;
 	}
