@@ -69,6 +69,7 @@ import BlogStats from '../components/widget/BlogStats.astro'
 import BlogTech from '../components/widget/BlogTech.astro'
 import CommGroup from '../components/widget/CommGroup.astro'
 import ListTransition from '../components/util/ListTransition.astro'
+import RecentComments from '../components/widget/RecentComments.astro'
 import Blog from '../layouts/Blog.astro'
 import { appConfig } from '../lib/app-config'
 import { categorizeArticles, getAllContent, getRecommended, sortArticles, toPath } from '../lib/content'
@@ -215,6 +216,7 @@ const previewCount = all.filter(entry => entry.id.startsWith('previews/')).lengt
 	<Fragment slot="aside">
 		<BlogStats stats={stats} />
 		<BlogTech />
+		<RecentComments />
 		<CommGroup />
 	</Fragment>
 </Blog>

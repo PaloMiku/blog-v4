@@ -1,0 +1,428 @@
+---
+/**
+ * RecentComments 组件（Astro 版）：右侧栏「最新评论」widget。
+ *
+ * ## 两个事件、两次请求
+ * 组件要显示的东西分成两半，**分别只在两个事件里存在**（实测，不是推断）：
+ *
+ *   - `GET_RECENT_COMMENTS`（全站最新；带 `includeReply: true` 才把「回复」也算进最新，
+ *     否则后端加 `query.rid = ABSENT`，回复整批消失）
+ *     给 `id / url / nick / avatar / comment / commentText / created`。
+ *     **不给** `master`——所以「谁是博主」它答不了。
+ *   - `COMMENT_GET`（**按单个页面**取，必须传 `url`）给完整树，
+ *     每条带 `master`。它的 `avatar` 恒为 `null`（服务端 `getAvatar()` 只在
+ *     `GET_RECENT_COMMENTS` 的 DTO 里被调用过；`COMMENT_GET` 走 `parseComment`，
+ *     没走那一步）。
+ *
+ * 于是做法是**合并**：主列表取 `GET_RECENT_COMMENTS`（要它的 avatar），
+ * 再对列表里出现过的页面各发一次 `COMMENT_GET`，只取 `master` 一样，
+ * 按 `id` 贴回主列表，用来挂「博主」徽章。
+ *
+ * ⚠️ `COMMENT_GET` **忽略 `includeReply`**——它在处理器里无条件回查 `rid ∈ 主楼`
+ * 的回复（参数是被 `validate` 白名单之外的字段，传了也不读）。所以这里不传它。
+ *
+ * ⚠️ 事件名必须与线上云函数实际支持的**逐字一致**。本项目踩过一次：
+ * 探针发 `GET_COMMENTS` 得到 `{"code":1001,"message":"请更新 Twikoo 云函数至最新版本"}`
+ * ——看着像后端版本落后，其实是**该事件名在这个版本里根本不存在**（已改名
+ * `COMMENT_GET`，参数形状也不同：要 `url`，不是 `urls`）。
+ * 判据是「拿不到东西先怀疑探针」，不是「相信报错文案」。
+ * `GET_RECENT_COMMENTS` 则**必须**在 payload 里带 `envId`（不带则答 `参数"urls"不合法`），
+ * `COMMENT_GET` 带不带都行，这里统一带上。
+ *
+ * ## 代价与退化
+ * 「1 + 出现过的页面数」个请求（本页上限 1+3）并发发出。多出来的那几个**只做装饰**
+ * （博主徽章）：任一失败就退化成不带徽章的普通条目，列表照常出——所以它们不参与
+ * 成功/失败的判定，只在 `console.warn` 里留痕。
+ *
+ * 还有一层查得到查不到：`COMMENT_GET` 只返回该页**第一页**的主楼（及其回复），
+ * 所以评论若比它所在页面的首屏更旧，就在这一批里查不到，同样退化成无徽章。
+ *
+ * ## 为什么数据不进构建期
+ * 评论是**运行期**数据，构建时抓一次就冻住了。静态站没有后端可问，
+ * 只能客户端 fetch——所以这里是「SSR 出壳 + 脚本填内容」，
+ * 与全站「零 Vue 岛、原生脚本 + data-* 定位」的约定一致。
+ *
+ * ## 三态必须都显式处理
+ * 加载中 / 失败 / 成功但为空。少任何一态的后果是**空盒子**：
+ * 页高不变、计算样式查不到（压根没有元素），两道几何门禁都看不见，
+ * 而读者只看到侧栏少了一块。
+ *
+ * ## 正文为什么走 `commentText` 而不是 `comment`
+ * 接口同时给 `comment`（HTML 串）与 `commentText`（纯文本）。
+ * 这里取后者：侧栏只有 280px 宽，一行容不下富文本，
+ * 而 `commentText` 已经替我们做好了标签剥离，零解析风险。
+ * 真要上富文本，得先解决「HTML 串进侧栏小盒子」的排版问题，不在本次范围内。
+ *
+ * ## 头像为什么不走 Icon、也不用内联 SVG
+ * 头像是**运行期**建出来的节点，`astro-icon` 的 `<symbol>` 定义内联在构建期产物里、
+ * 且 sprite 会被 `menu.replaceChildren()` 之类整块替换连坐删除（见
+ * `lib/icon-sprite.ts` 的文件头）。运行期建 DOM 时用图标，等于把那条已知缺陷
+ * 再请回来一次——所以这里只用文字，一个图标都不引入。
+ */
+import BlogWidget from '../blog/BlogWidget.astro'
+import { twikoo } from '../../config/integrations'
+
+/** 与上面 AskUserQuestion 里定的 3 条一致 */
+const PAGE_SIZE = 3
+---
+<BlogWidget card title="最新评论">
+	<div class="z-recent-comments" data-recent-comments data-env={twikoo.envId} data-page-size={PAGE_SIZE}>
+		{/*
+			占位必须在 SSR 里输出，不能等脚本建：`widget-body` 有 padding，
+			空态会让整个 widget 塌成一条线，而「本来就这么高」没人会发现。
+			脚本成功后就地替换掉它（`hidden` + 列表可见）。
+		*/}
+		<p class="recent-state" data-recent-state>评论加载中…</p>
+
+		{/* 由脚本填充；容器本身不带内容，避免与上面的占位同时可见 */}
+		<menu class="recent-list" data-recent-list hidden />
+	</div>
+</BlogWidget>
+
+<script>
+	import { escapeHtml } from '../../lib/client'
+
+	/**
+	 * 相对时间。与 `lib/relative-time.ts` 的 `formatRelative` 同措辞，
+	 * 但**刻意不复用**——那个文件顶层 import 整个 blog 配置（`config/blog`），
+	 * 进客户端 chunk 就是 4.4 KB 站点配置（见 `lib/client.ts` 的文件头）。
+	 * 这里就地内联一份，代价是措辞逻辑有第二处，修改时两处都要动。
+	 */
+	const RELATIVE_UNITS = [
+		{ unit: 'second', seconds: 1, threshold: 60 },
+		{ unit: 'minute', seconds: 60, threshold: 60 },
+		{ unit: 'hour', seconds: 3600, threshold: 24 },
+		{ unit: 'day', seconds: 86400, threshold: 30 },
+		{ unit: 'month', seconds: 2592e3, threshold: 12 },
+		{ unit: 'year', seconds: 31536e3, threshold: Infinity },
+	]
+
+	function relativeTime(ms) {
+		const diff = (ms - Date.now()) / 1e3
+		const step = RELATIVE_UNITS.find(({ seconds, threshold }) => Math.abs(diff / seconds) < threshold)
+			?? RELATIVE_UNITS[RELATIVE_UNITS.length - 1]
+		return new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' }).format(Math.round(diff / step.seconds), step.unit)
+	}
+
+	/** 头像兜底。`GET_RECENT_COMMENTS` 的 avatar 实测非空，但字段是选填的 */
+	const FALLBACK_AVATAR = '/favicon.ico'
+
+	/** 评论页里的锚点由 `Comment.astro` 渲染（`id="twikoo"`），点进去落到评论区 */
+	function commentHref(url) {
+		const path = String(url ?? '').trim()
+		if (!path)
+			return ''
+		return `${path.startsWith('/') ? path : `/${path}`}#twikoo`
+	}
+
+	/**
+	 * 画一条。
+	 *
+	 * `isMaster` 是合并进来的（可能为假——查不到就没徽章）。
+	 * 昵称可能是空串：那时不渲染 `.recent-nick`，让时间独占那一行，
+	 * 免得出现一个高度不同的空行。
+	 */
+	function renderItem(item, meta) {
+		const nick = String(item.nick ?? '').trim()
+		const text = String(item.commentText ?? '').trim()
+		const when = typeof item.created === 'number' ? relativeTime(item.created) : ''
+		const avatar = String(item.avatar ?? '').trim() || FALLBACK_AVATAR
+		const href = commentHref(item.url)
+
+		/*
+		 * 「回复 @某人」已按需求移除：侧栏 meta 行实测只有 222px，
+		 * 头像 + 昵称 + 博主 + `@对方` + 时间挤进去会把**短昵称也截断**
+		 * （实测 `PaloMiku` 被截成 `Palo...`，看起来像坏了）。
+		 * `COMMENT_GET` 仍要发——博主徽章只能从它拿。
+		 */
+		const masterBadge = meta?.master
+			? '<span class="recent-master">博主</span>'
+			: ''
+
+		/*
+		 * 版面是「正文在上、元信息压成**一行**在下」：侧栏只有 280px 宽，
+		 * 原来「昵称行 + 回复行 + 正文」三层要占掉四行，三条评论就把 widget 撑得很长。
+		 * 现在正文最多四行，头像 / 昵称 / 徽章 / 时间并进同一条 meta 行。
+		 */
+		const inner = `
+			<p class="recent-text">${escapeHtml(text)}</p>
+			<p class="recent-meta">
+				<img class="recent-avatar" src="${escapeHtml(avatar)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+				${nick ? `<strong class="recent-nick">${escapeHtml(nick)}</strong>` : ''}
+				${masterBadge}
+				${when ? `<time class="recent-time">${escapeHtml(when)}</time>` : ''}
+			</p>`
+
+		// 有 href 才用 <a>：`<a>` 没有 href 是不可聚焦的伪链接，不如退成 <div>
+		return `<li class="recent-item">${href
+			? `<a class="recent-link" href="${escapeHtml(href)}">${inner}</a>`
+			: `<div class="recent-link">${inner}</div>`}</li>`
+	}
+
+	function setState(root, text) {
+		const state = root.querySelector('[data-recent-state]')
+		const list = root.querySelector('[data-recent-list]')
+		if (state) {
+			state.textContent = text
+			state.hidden = false
+		}
+		// 失败/空态必须把列表一并收掉，否则上一轮的内容会留在那儿
+		if (list)
+			list.hidden = true
+	}
+
+	function showList(root, items, metaById) {
+		const state = root.querySelector('[data-recent-state]')
+		const list = root.querySelector('[data-recent-list]')
+		if (state)
+			state.hidden = true
+		if (!list)
+			return
+		list.innerHTML = items.map(item => renderItem(item, metaById.get(String(item.id)))).join('')
+		list.hidden = false
+	}
+
+	/** 与 `fetch` 同形的 POST，返回已解包的成功码校验后的 `data` */
+	async function request(env, body) {
+		const res = await fetch(env, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ envId: env, ...body }),
+		})
+		if (!res.ok)
+			throw new Error(`HTTP ${res.status}`)
+
+		// ⚠️ 后端答非 2xx 之外的成功码也可能是错误体，故先看 code 再取 data
+		const payload = await res.json()
+		if (payload?.code)
+			throw new Error(`backend code ${payload.code}`)
+		return payload?.data
+	}
+
+	/**
+	 * 取「谁是博主」：对列表里出现过的每个页面各查一次 `COMMENT_GET`，
+	 * 把 `master` 按 **id** 摊平进一张表（只要 `true` 的进表，省一半条目）。
+	 *
+	 * 递归走 `replies`：回复也是评论，博主在一栋楼里回帖时那条回复同样要挂徽章。
+	 *
+	 * 上限 `MAX_PAGES`：列表只有 3 条，多查无益；这个数只是防止某天 PAGE_SIZE 变大后
+	 * 请求数跟着失控。**整体不抛**——这是装饰性数据，失败就整批放弃徽章。
+	 */
+	const MAX_PAGES = 3
+
+	function collectMasters(comment, out) {
+		if (!comment)
+			return
+		if (comment.master === true)
+			out.set(String(comment.id), { master: true })
+		for (const reply of comment.replies ?? [])
+			collectMasters(reply, out)
+	}
+
+	async function loadReplyMeta(env, items) {
+		const metaById = new Map()
+		const urls = [...new Set(items.map(item => String(item.url ?? '').trim()).filter(Boolean))]
+			.slice(0, MAX_PAGES)
+		if (!urls.length)
+			return metaById
+
+		const results = await Promise.all(urls.map(async (url) => {
+			try {
+				// 不传 `includeReply`：`COMMENT_GET` 无条件回查回复，传了也不读
+				return await request(env, { event: 'COMMENT_GET', url })
+			}
+			catch (error) {
+				// 不打请求体/头（与 scripts/lib/llm.mjs 同一纪律），只报状态
+				console.warn('[recent-comments] master meta failed', url, error)
+				return null
+			}
+		}))
+
+		for (const list of results) {
+			if (!Array.isArray(list))
+				continue
+			for (const comment of list)
+				collectMasters(comment, metaById)
+		}
+		return metaById
+	}
+
+	async function load(root) {
+		const env = root.dataset.env
+		if (!env) {
+			setState(root, '评论未配置')
+			return
+		}
+
+		try {
+			const items = await request(env, {
+				event: 'GET_RECENT_COMMENTS',
+				pageSize: Number(root.dataset.pageSize) || 3,
+				// 不加这个字段时后端只返回顶级评论（`query.rid = ABSENT`），回复整批消失
+				includeReply: true,
+			})
+			const list = Array.isArray(items) ? items : []
+			if (!list.length) {
+				setState(root, '还没有评论')
+				return
+			}
+			// 主列表先出：标注要等第二次请求，没必要让 3 条评论一起等
+			showList(root, list, new Map())
+			showList(root, list, await loadReplyMeta(env, list))
+		}
+		catch (error) {
+			console.warn('[recent-comments] load failed', error)
+			setState(root, '评论加载失败')
+		}
+	}
+
+	function initRecentComments() {
+		for (const root of document.querySelectorAll('[data-recent-comments]')) {
+			if (root.dataset.recentReady)
+				continue
+			root.dataset.recentReady = '1'
+			load(root)
+		}
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initRecentComments)
+	else
+		initRecentComments()
+	document.addEventListener('astro:page-load', initRecentComments)
+</script>
+
+<style>
+/*
+ * ⚠️ 这里用**锚定的** `:global(...)`，不是顶层裸 `:global()`。
+ *
+ * 坑位 4 的形态：`renderItem()` 用 `innerHTML` 在**运行期**拼出整条 `<li>`，
+ * 而 `data-astro-cid-*` 是**构建期**写进 HTML 的属性，脚本重建的节点一个都没有。
+ * 不加 `:global()` 时编译出的 `.recent-item[data-astro-cid-x]` 永不匹配，
+ * 样式**静默全掉**——而症状是「看不出哪里错了」：分隔线查出来是 `0px none`、
+ * 两行截断查出来是 `none`。页面照样有内容、只是不对，肉眼很容易当成「就这样」。
+ *
+ * 但顶层裸 `:global()` 也不行：`.z-recent-comments` 是**本组件 SSR 渲染的**，
+ * 带着本组件的 cid，完全可以当锚点。写成 `.z-recent-comments :global(.recent-x)`
+ * 之后，编译结果是 `.z-recent-comments[cid] .recent-x`——**一个**属性选择器做锚点，
+ * 既是 scoped 的正确形态，又照样命中运行期建出来的子节点。
+ *
+ * 这同时是 `check-scope-anchors.mjs` 的账：那道门禁只认**以 `:global(` 开头**的
+ * 选择器。锚定写法不以它开头，因此不需要往 `scripts/exemptions.json` 里添条目、
+ * 也不用抬 `meta.baseline` 棘轮——那两件事正是为「真的加不了锚点」准备的
+ * （主体由子组件渲染 / slot 注入 / 第三方库 DOM），这里不属于那三种。
+ *
+ * 排查判据（与坑位 4 一致）：`grep -rn "innerHTML" src`，
+ * 逐个问「这个脚本建出来的节点，有没有 class 命中带 cid 的规则」。
+ */
+.z-recent-comments {
+	/* 加载中也占住高度，避免三态之间跳一下 */
+	min-height: 5em;
+}
+
+.z-recent-comments :global(.recent-state) {
+	color: var(--c-text-3);
+	font-size: 0.9em;
+}
+
+.z-recent-comments :global(.recent-list) {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4em;
+}
+
+/*
+ * 整条做成可点区域，hover 用 `--c-bg-soft`（与 `.card` 之类的浮起色同族）。
+ * 单列纵向：正文在上、meta 行在下。头像不再是独立的一列——
+ * 它现在坐在 meta 行里，所以这里不需要 `grid` 了。
+ */
+.z-recent-comments :global(.recent-link) {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25em;
+	padding: 0.4rem 0.5rem;
+	border-radius: 0.5rem;
+	transition: background-color 0.2s;
+}
+
+.z-recent-comments :global(.recent-link:hover) {
+	background-color: var(--c-bg-soft);
+}
+
+/*
+ * meta 行：头像 / 昵称 / 博主 / 时间挤在同一行。
+ *
+ * `min-width: 0` 是这一行不溢出侧栏的关键（flex 项默认 `min-width: auto`，
+ * 会被内容顶破容器），配合下面昵称的 `text-overflow` 生效。
+ * `overflow: hidden` 兜住「昵称长到放不下」的极端情况。
+ */
+.z-recent-comments :global(.recent-meta) {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+	min-width: 0;
+	overflow: hidden;
+	font-size: 0.84em;
+	line-height: 1.3;
+}
+
+.z-recent-comments :global(.recent-avatar) {
+	flex-shrink: 0;
+	width: 1.5em;
+	height: 1.5em;
+	border-radius: 50%;
+	object-fit: cover;
+	/* 头像加载前的底色，也是给透明 PNG 兜底 */
+	background-color: var(--c-bg-3);
+}
+
+/* 昵称是这一行里唯一允许被压缩的项；`flex: 0 1 auto` + `min-width: 0`
+   才能让 `text-overflow` 真的生效（flex 项默认 min-width: auto） */
+.z-recent-comments :global(.recent-nick) {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: var(--font-creative);
+	font-weight: 550;
+	color: var(--c-text-1);
+}
+
+/* 徽章压成小一号，别和昵称抢地方；实测「头像+昵称+博主+时间」在 222px 内排得下 */
+.z-recent-comments :global(.recent-master) {
+	flex-shrink: 0;
+	padding: 0 0.3em;
+	border-radius: 0.3em;
+	background-color: var(--c-primary-soft);
+	color: var(--c-primary);
+	font-size: 0.8em;
+	line-height: 1.6;
+}
+
+/* 时间推到最右；`margin-inline-start: auto` 而不是 `justify-content`，
+   这样挤压时先压昵称（它能截断），时间始终完整可读 */
+.z-recent-comments :global(.recent-time) {
+	flex-shrink: 0;
+	margin-inline-start: auto;
+	color: var(--c-text-3);
+}
+
+.z-recent-comments :global(.recent-text) {
+	/*
+	 * 截断到四行（「最大 4 行」：短评论按实际高度撑开，长的到 4 行截断）。
+	 * `-webkit-box` 那套与 `LinkCard.astro` 里 `.link-card-title`
+	 * 同形；`line-clamp` 是标准属性，不能省（Safari 要靠它）。
+	 * `word-break`：中文无所谓，但成员里有超长 URL/英文单词时不会溢出侧栏。
+	 */
+	display: -webkit-box;
+	overflow: hidden;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 4;
+	line-clamp: 4;
+	font-size: 0.88em;
+	line-height: 1.4;
+	word-break: break-word;
+	color: var(--c-text);
+}
+</style>
