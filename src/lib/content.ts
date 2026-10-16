@@ -140,25 +140,45 @@ function withinDays(a: string | undefined, b: string | undefined, days: number):
 }
 
 /**
- * 两个 `YYYY-MM-DD hh:mm:ss` 墙钟串相隔的天数（绝对值向下取整），
- * 任一串缺失或不可解析时返回 null。
+ * `YYYY-MM-DD` 前缀 → 数字三元组（年、月、日）。不可解析时返回 `null`。
+ *
+ * ⚠️ 必须同时接受**空格与 `T` 两种分隔符**：原实现用 `split(/[- ]/)`，遇
+ * `2025-11-04T18:30:00` 会得到 `[2025, 11, NaN]`，于是「不可解析」被判真、
+ * 返回 null，进而让调用方的 `recency` 权重**静默归零**——没有任何报错。
+ * 一条带引号的 frontmatter 日期（`date: "2025-11-04T18:30:00"`，YAML 给字符串而非
+ * `Date`，绕过了 schema 的格式化）就能触发。见 tests/content.test.mjs 的回归用例。
+ */
+function dateParts(value: string): [number, number, number] | null {
+	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim())
+	if (!m)
+		return null
+	return [Number(m[1]), Number(m[2]), Number(m[3])]
+}
+
+/**
+ * 两个 `YYYY-MM-DD` 日期相隔的天数（绝对值向下取整），任一串缺失或不可解析时返回 null。
  *
  * ⚠️ frontmatter 的日期是**裸墙钟**（无时区），schema 已把它还原成字符串原样
- * （见 `content.config.ts` 的 `toDateStringFromUtc`）。这里只做「日期字符串之间」的
+ * （见 `content.config.ts` 的 `toDateStringFromUtc`）。这里只做「日期部分之间」的
  * 相减，两侧都不带时区，相减结果与真实时间差一致，因此**不需要**也不能引入
- * 时区转换——`Temporal` 在这里只会引入构建机时区依赖，正是 PostFooter 注释里
- * 记的那次 2026-10-03 事故的成因。
+ * 时区转换——任何带瞬间的日期类型（`Temporal.ZonedDateTime` / `Instant`）都会引入
+ * 构建机时区依赖，正是 PostFooter 注释里记的那次 2026-10-03 事故的成因。
+ *
+ * 另：**刻意不用 `Temporal.PlainDate`**。它虽然只解析日历日、不涉及时区，
+ * 但 `temporal-polyfill` 在本仓库有过一次代价记录（`Excerpt.astro` 头注：顶层 import
+ * 让 56 KB 的 polyfill 进了客户端 chunk）。这里只需要「取前 10 个字符再拆」，
+ * 一个正则足够，不值得为它拉进一个依赖。
  */
 function daysBetween(a: string | undefined, b: string | undefined): number | null {
 	if (!a || !b)
 		return null
-	const [y1, m1, d1] = a.split(/[- ]/).map(Number)
-	const [y2, m2, d2] = b.split(/[- ]/).map(Number)
-	if (!y1 || !m1 || !d1 || !y2 || !m2 || !d2)
+	const p1 = dateParts(a)
+	const p2 = dateParts(b)
+	if (!p1 || !p2)
 		return null
 	const MS_PER_DAY = 86400000
-	const t1 = Date.UTC(y1, m1 - 1, d1)
-	const t2 = Date.UTC(y2, m2 - 1, d2)
+	const t1 = Date.UTC(p1[0], p1[1] - 1, p1[2])
+	const t2 = Date.UTC(p2[0], p2[1] - 1, p2[2])
 	return Math.floor(Math.abs(t1 - t2) / MS_PER_DAY)
 }
 

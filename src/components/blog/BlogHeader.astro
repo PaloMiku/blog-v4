@@ -53,10 +53,16 @@ const ariaCurrent = currentPageHref(to, Astro.url.pathname)
 ---
 
 <Target class:list={['blog-header', className]} href={to} aria-current={ariaCurrent}>
+	<!--
+		Logo 是常驻首屏元素：不加 `loading`（`<img>` 默认 `eager`，写出来只增噪音），
+		但显式给 `fetchpriority="high"`——否则它与页面上其余几十张图同优先级排队。
+		不支持该属性的浏览器直接忽略，无回退成本。
+	-->
 	<img
 		src={header.logo}
 		class:list={['blog-logo', 'round-cobblestone', { circle: header.showTitle }]}
 		alt={title}
+		fetchpriority="high"
 	/>
 
 	{header.showTitle && (
@@ -122,6 +128,18 @@ const ariaCurrent = currentPageHref(to, Astro.url.pathname)
 	}
 }
 
+/*
+ * ⚠️ 这个字族的**唯一消费者是 `public/assets/atom.css`**（Atom feed 的 XSL 样式，
+ * 它由 `public/assets/atom.xsl` 引入，只在浏览器直接打开 `/atom.xml` 时加载）。
+ *
+ * HTML 页面用不到它：`.header-title` 的 font-family（下方）写的是 `"LXGW WenKai"`（带空格）
+ * 与 `"LXGW WenKai Screen"`，最终由 `Base.astro` 里那条 zstatic CDN 的 lxgw-wenkai-screen
+ * 样式表提供——与这里的 `LXGWWenKai`（无空格）**是两个不同字族名，CSS 精确匹配、永不相互兜底**。
+ *
+ * 因此**不要**在页面 `<head>` 里给它加 `rel="preload"`：2026-10-16 移除过一条，它让全站
+ * 每页都发一次最高优先级的无效字体请求。若将来要让标题真用上这个本地文件，
+ * 先确认它的字形覆盖（仅 17 KB，多半是子集），再统一字族名。
+ */
 @font-face {
 	font-family: LXGWWenKai;
 	src: url("/fonts/LXGWWenKai.woff2");

@@ -52,6 +52,13 @@ const showTitle = appConfig.component.slide?.showTitle ?? true
 	<div class="z-slide-body" dir="ltr" data-slide-root>
 		<div class="slide-list">
 			{list.map((article, index) => (
+				/*
+				 * 首张封面是**首屏 LCP 候选**（轮播紧跟 `<main>`，一次只显示一张），
+				 * 所以它必须 eager + `fetchpriority="high"`：给它加 `loading="lazy"`
+				 * 会把它推迟到布局完成后才开始下载，直接推后 LCP。
+				 * 其余项仍在视口外，保持 lazy；整列都设 high 会让它们竞争同一条带宽。
+				 * `fetchpriority` 不支持时被忽略、退回默认优先级，无需回退代码。
+				 */
 				<a
 					class="slide-item"
 					title={article.description}
@@ -59,7 +66,16 @@ const showTitle = appConfig.component.slide?.showTitle ?? true
 					data-slide-index={index}
 					data-list-key={`slide:${article.path}`}
 				>
-					{article.image && <img class="cover" src={article.image} alt={showTitle ? '' : (article.title ?? '')} loading="lazy" decoding="async" />}
+					{article.image && (
+						<img
+							class="cover"
+							src={article.image}
+							alt={showTitle ? '' : (article.title ?? '')}
+							loading={index === 0 ? 'eager' : 'lazy'}
+							fetchpriority={index === 0 ? 'high' : undefined}
+							decoding="async"
+						/>
+					)}
 
 					{showTitle && <div class="stable-info text-creative">{article.title}</div>}
 

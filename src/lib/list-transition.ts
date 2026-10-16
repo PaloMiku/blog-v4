@@ -17,8 +17,11 @@
  *
  *   1. `pointerdown` / `keydown` / `focusin`（捕获阶段、passive）→ 刷新缓存。
  *      任何用户触发的重排都必然先经过这三者之一，这是最稳的取样点。
- *   2. `scroll` / `resize`（passive、rAF 节流）→ 刷新缓存，
+ *   2. `scrollend` / `resize`（passive、rAF 节流）→ 刷新缓存，
  *      否则「先滚动再点排序」会拿到过期的坐标。
+ *      用 `scrollend` 而非 `scroll`：FLIP 只在 DOM 变更时消费快照，滚动途中的
+ *      坐标没有任何消费者，逐帧量全表是纯浪费（`/archive/` 有 214 个条目）。
+ *      不支持 `scrollend` 的浏览器（Safari < 26.2）退回 `scroll`，见下方实现处的注释。
  *   3. 元素自己带入场动画或尺寸变化时，公开的 `refresh()` 供页面主动调用。
  *   4. 每轮动画结束后自动刷新一次。
  *
@@ -264,7 +267,20 @@ export function initListTransition(
 
 	// 取样点：任何用户交互都先经过这三者之一
 	const onUserIntent = () => refresh()
-	// 滚动 / 缩放会让缓存过期，rAF 节流避免滚动时逐帧量全表
+	/*
+	 * 视口变化会让缓存过期，但**滚动过程中的每一次刷新都是浪费**：
+	 * FLIP 只在 DOM 变更时消费快照，而滚动中的坐标没有任何消费者。
+	 * 所以优先用 `scrollend`——它表达「滚动停下来的那个准确位置」，一次替代每帧。
+	 * 代价是滚动期间的快照会偏旧，但「先滚动、后点击」这条路径由上面的
+	 * `pointerdown` 取样点兜住（点击前必然先刷新一次），正确性不依赖这里。
+	 *
+	 * ⚠️ `scrollend` 的支持面比想象的窄：Chrome 114 / Firefox 109 / **Safari 26.2**。
+	 * Safari 用户会长期走 `scroll` 退路，所以两条分支都必须保持正确，
+	 * 不要按「迟早都会支持」把它删掉。
+	 */
+	const hasScrollEnd = 'onscrollend' in window
+	// rAF 合并仍然保留：`scroll` 分支逐帧触发，退路下它承担节流；
+	// `scrollend` 分支只来一次，这一层对它无害。
 	let scrollFrame = 0
 	const onViewport = () => {
 		if (scrollFrame)
@@ -278,7 +294,14 @@ export function initListTransition(
 	win.addEventListener('pointerdown', onUserIntent, { capture: true, passive: true })
 	win.addEventListener('keydown', onUserIntent, { capture: true, passive: true })
 	win.addEventListener('focusin', onUserIntent, { capture: true, passive: true })
-	win.addEventListener('scroll', onViewport, { capture: true, passive: true })
+	/*
+	 * 两条都用 capture：`scroll` / `scrollend` **都不冒泡**，但捕获阶段能从
+	 * window 收到内层滚动容器（`#blog-aside` 等）派发的事件。丢了 capture
+	 * 就只剩文档滚动会被观察到。
+	 */
+	const scrollEvent = hasScrollEnd ? 'scrollend' : 'scroll'
+	win.addEventListener(scrollEvent, onViewport, { capture: true, passive: true })
+	// resize 没有「结束」事件，继续走 rAF 节流
 	win.addEventListener('resize', onViewport, { passive: true })
 
 	refresh()
@@ -293,7 +316,8 @@ export function initListTransition(
 			win.removeEventListener('pointerdown', onUserIntent, { capture: true })
 			win.removeEventListener('keydown', onUserIntent, { capture: true })
 			win.removeEventListener('focusin', onUserIntent, { capture: true })
-			win.removeEventListener('scroll', onViewport, { capture: true })
+			// 必须用与注册时同一个 `scrollEvent`，否则会「注册 scrollend、移除 scroll」静默泄漏
+			win.removeEventListener(scrollEvent, onViewport, { capture: true })
 			win.removeEventListener('resize', onViewport)
 			if (frame)
 				cancelAnimationFrame(frame)

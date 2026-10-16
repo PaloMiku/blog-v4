@@ -154,34 +154,80 @@ const tocHtml = links.length ? renderToc(links) : ''
 
 		const items = [...root.querySelectorAll('[data-toc-id]')]
 
-		/** 标题 id → 文档内绝对 top；倒序排列，便于从后往前找命中项 */
-		const offsets = items
-			.map((li) => {
-				const heading = document.getElementById(li.dataset.tocId)
-				return {
-					id: li.dataset.tocId,
-					offsetTop: heading
-						? heading.getBoundingClientRect().top + (window.scrollY ?? 0)
-						: undefined,
-				}
-			})
-			.reverse()
+		/*
+		 * 目录项 → 正文标题元素。目录是正文标题的镜像，所以 `items` 的下标就是文档序；
+		 * 判定「当前章节」靠的就是这个下标（取**已越线标题里下标最大的那个**）。
+		 * 取不到对应标题的目录项直接排除（原实现也会给它们留 undefined 偏移）。
+		 */
+		const targets = items
+			.map((li, index) => ({
+				li,
+				id: li.dataset.tocId,
+				index,
+				el: li.dataset.tocId ? document.getElementById(li.dataset.tocId) : null,
+			}))
+			.filter(t => t.id && t.el)
+
+		if (!targets.length)
+			return
 
 		// Nuxt 侧是 `useTemplateRef('toc').body`，即 BlogWidget 暴露的 .widget-body
 		const scrollableEl = root.closest('.blog-widget')?.querySelector('.widget-body')
 
-		function getActiveHeading() {
-			// 主题可能给 html 上的自定义属性留了 scroll-margin-top
-			const scrollMargin = Number.parseFloat(
-				getComputedStyle(document.documentElement).getPropertyValue('scroll-margin-top'),
-			)
-			const scrollOffset = window.scrollY + (scrollMargin || 64)
-			// 为兼容性不使用 findLast，而是使用倒序的 offsets
-			return offsets.find(item => item.offsetTop && item.offsetTop <= scrollOffset)?.id
+		/*
+		 * 判定线：吸顶头下方的一条 1px 横带，标题 top 越过它就认为「该章节开始」。
+		 *
+		 * 为什么是硬编码 64 而不是像旧代码那样读 `scroll-margin-top`：那行代码读的是
+		 * `document.documentElement` 上的 `scroll-margin-top`，而**全站从未设置过这个属性**
+		 * （src/、public/ 与产物 CSS 里都搜不到），所以它一直回落到 64。
+		 * 真正生效的吸顶量是 `main.css` 的 `scroll-padding: 2rem`——那是给浏览器的
+		 * 锚点滚动消费的，与这条判定线无关。保留 64 = 保留原有行为。
+		 */
+		const LINE_Y = 64
+
+		/*
+		 * 已越线的标题集合。
+		 *
+		 * ⚠️ 不能只记「当前正在那条 1px 带上的标题」：标题一旦越线就立刻离开带子，
+		 * 按那样判定的话绝大多数时刻集合为空、高亮会整片消失。
+		 * 「越线后持续算数，直到向下滚过它才移除」才等价于原实现的
+		 * `find(offsetTop <= scrollOffset)`，即**最后一个越线的标题**——这才是「当前章节」。
+		 */
+		const crossed = new Set()
+
+		let activeId
+		function setActive(id) {
+			activeId = id
+			for (const t of targets)
+				t.li.classList.toggle('active', t.id === activeId)
+			/*
+			 * 祖先的 `has-active` 不再由脚本维护：CSS 侧用 `:has(.active)` 表达同一语义，
+			 * 省掉每个目录项一次的祖先链遍历（原实现见 git 历史）。
+			 */
+		}
+
+		function currentId() {
+			let best
+			for (const id of crossed) {
+				const index = targets.find(t => t.id === id)?.index
+				if (index === undefined)
+					continue
+				if (!best || index > best.index)
+					best = { id, index }
+			}
+			return best?.id
+		}
+
+		function recompute() {
+			const next = currentId()
+			if (next === activeId)
+				return
+			setActive(next)
+			scrollToActiveTocItem(next)
 		}
 
 		function scrollToActiveTocItem(activeId) {
-			const active = root.querySelector(`a[href="#${activeId}"]`)
+			const active = activeId ? root.querySelector(`a[href="#${activeId}"]`) : null
 			if (scrollableEl && active) {
 				scrollableEl.scrollTo({
 					top: active.offsetTop - scrollableEl.clientHeight / 4,
@@ -190,48 +236,74 @@ const tocHtml = links.length ? renderToc(links) : ''
 			}
 		}
 
-		function sync(activeId) {
-			for (const li of items) {
-				li.classList.toggle('active', li.dataset.tocId === activeId)
-
-				// has-active：本节点自身、或任一祖先 <li> 是当前高亮项
-				let hasActive = false
-				for (let node = li; node; node = node.parentElement?.closest('li')) {
-					if (node.dataset.tocId === activeId) {
-						hasActive = true
-						break
-					}
-				}
-				li.classList.toggle('has-active', hasActive)
+		/*
+		 * 从实时几何重建集合。两处用到：
+		 * 1. 初始化——深链接直接进入某节、或刷新在页面中部时，浏览器已经滚到目标位置，
+		 *    而观察器对每个目标只在**下一帧**才开始投递回调。不先同步种一遍，
+		 *    高亮会空着直到用户动一下。原实现靠「读当前位置比大小」天然免疫，这里必须显式补。
+		 * 2. resize——`rootMargin` 的下边距依赖 `innerHeight`，重建观察器后同样需要重新播种。
+		 */
+		function seed() {
+			crossed.clear()
+			for (const t of targets) {
+				if (t.el.getBoundingClientRect().top < LINE_Y)
+					crossed.add(t.id)
 			}
 		}
 
-		let last
-		function update() {
-			const activeId = getActiveHeading()
-			if (activeId === last)
-				return
-			last = activeId
-			sync(activeId)
-			scrollToActiveTocItem(activeId)
+		function onIntersect(entries) {
+			for (const entry of entries) {
+				const id = entry.target.id
+				const target = targets.find(t => t.id === id)
+				if (!target)
+					continue
+				/*
+				 * `entry.boundingClientRect` 是回调时刻的实时几何，不是缓存——
+				 * 图片/字体迟到导致的位移会在下一次回调里自然反映出来，
+				 * 这正是旧实现（一次性算好 offsets、此后再不重算）缺的那一环。
+				 */
+				if (entry.isIntersecting || entry.boundingClientRect.top < LINE_Y) {
+					crossed.add(id)
+				}
+				else {
+					// 已退回线下方：它自己与它之后的标题都没越线
+					for (const other of targets) {
+						if (other.index >= target.index)
+							crossed.delete(other.id)
+					}
+				}
+			}
+			recompute()
 		}
 
-		// 原版用 refThrottled(scrollY)，这里用 rAF 自己做节流
-		let ticking = false
-		function onScroll() {
-			if (ticking)
-				return
-			ticking = true
-			requestAnimationFrame(() => {
-				ticking = false
-				update()
+		let observer
+		function buildObserver() {
+			observer?.disconnect()
+			const bottom = Math.max(0, window.innerHeight - LINE_Y - 1)
+			observer = new IntersectionObserver(onIntersect, {
+				rootMargin: `-${LINE_Y}px 0px -${bottom}px 0px`,
 			})
+			for (const t of targets)
+				observer.observe(t.el)
 		}
 
-		window.addEventListener('scroll', onScroll, { passive: true })
-		// 正文高度变化（图片/代码块加载完）要重算 offset
-		window.addEventListener('resize', onScroll, { passive: true })
-		update()
+		seed()
+		setActive(currentId())
+		buildObserver()
+
+		// resize 没有「结束」事件，用 rAF 合并
+		let resizing = false
+		window.addEventListener('resize', () => {
+			if (resizing)
+				return
+			resizing = true
+			requestAnimationFrame(() => {
+				resizing = false
+				seed()
+				buildObserver()
+				recompute()
+			})
+		}, { passive: true })
 	}
 
 	function initAll() {
@@ -279,7 +351,12 @@ const tocHtml = links.length ? renderToc(links) : ''
 		opacity: 0.94;
 	}
 
-	&.has-active, &.active {
+	/*
+	 * `:has(.active)` 是原来脚本维护的 `has-active` 类的等价物：
+	 * 「自身是 active，或**其后代里有** active」——目录嵌套时父项随子项一起提亮。
+	 * 交给 CSS 之后脚本不必再为每个目录项遍历一次祖先链（见 Toc 脚本处的说明）。
+	 */
+	&:has(.active), &.active {
 		opacity: 1;
 		font-size: 1em;
 	}

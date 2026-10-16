@@ -291,10 +291,24 @@ const modifiers = [
 		}
 	})
 
-	document.addEventListener('blur', () => {
+	/*
+	 * 失焦时清掉所有修饰键高亮。
+	 *
+	 * ⚠️ 原来是 `document.addEventListener('blur', …)`，**两条路径都不生效**：
+	 *   - `blur` **不冒泡**，元素失焦的事件到不了 `document`（这也是本仓库
+	 *     `Dropdown.astro` 在同类场景改用 `focusin` 的原因，那里有同样的注释）；
+	 *   - 窗口失焦时 `blur` 的目标是 `window`，也不会下达到 `document`。
+	 * 后果是「按住 Ctrl 再点别处」高亮会一直挂着。
+	 *
+	 * 两条都要挂，它们覆盖不同情形：`focusout`（冒泡版）管元素失焦，
+	 * `window` 上的 `blur` 管切到别的应用——那时 `keyup` 永远不会送达。
+	 */
+	function clearActiveKeys() {
 		for (const root of document.querySelectorAll('[data-key-root]'))
 			root.classList.remove('active')
-	})
+	}
+	document.addEventListener('focusout', clearActiveKeys)
+	window.addEventListener('blur', clearActiveKeys)
 
 	if (document.readyState === 'loading')
 		document.addEventListener('DOMContentLoaded', initAll)

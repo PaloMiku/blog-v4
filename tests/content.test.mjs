@@ -231,6 +231,55 @@ describe('getRelated', () => {
 		__setCollection(() => FIXTURE)
 	}))
 
+	/*
+	 * 回归：`daysBetween` 曾用 `split(/[- ]/)` 解析日期，遇 `T` 分隔符得 `[y, m, NaN]`，
+	 * `!d1` 成立 → 返回 null → `withinDays` 为 false → **recency 权重静默归零**。
+	 *
+	 * 为什么当前线上不发作：裸写的 `2025-11-04T18:30:00` 会被 YAML 解析成 `Date`，
+	 * schema 的 `toDateStringFromUtc` 又把它还原成空格格式。但 frontmatter 里给日期**加引号**
+	 * 时 YAML 给的是字符串，`T` 会原样穿透到 `daysBetween` —— 一条引号就能触发。
+	 */
+	it('T 分隔符的日期同样参与新近度权重（不再静默归零）', withFixture(async () => {
+		__setCollection(() => [
+			e('cur', { isPost: true, date: '2025-06-01 00:00:00', tags: ['x'] }),
+			// 距 cur 12 天 → 应命中 recency（窗口 90 天）
+			e('t-near', { isPost: true, date: '2025-05-20T00:00:00', tags: ['x'] }),
+			// 距 cur 三年多 → 不命中 recency，靠 recommend 抢破平
+			e('plain-far-hot', { isPost: true, date: '2022-01-01 00:00:00', tags: ['x'], recommend: 5 }),
+		])
+		try {
+			const list = await getRelated('cur')
+			// 三条 tag 权重恒等（各 +2）：修正后 t-near = 2+1 = 3 > 2；
+			// 缺陷下 t-near 也是 2，会被 plain-far-hot 的 recommend 反超 → 本断言必红。
+			assert.ok(
+				list.findIndex(x => x.id === 't-near') < list.findIndex(x => x.id === 'plain-far-hot'),
+				't-near 拿到 recency 权重后应压过仅靠 recommend 的 plain-far-hot',
+			)
+		}
+		finally {
+			__setCollection(() => FIXTURE)
+		}
+	}))
+
+	it('两种日期书写格式（空格 / T）都拿到 recency，且都压过纯 recommend 的条目', withFixture(async () => {
+		__setCollection(() => [
+			e('cur', { isPost: true, date: '2025-06-01 00:00:00', tags: ['x'] }),
+			e('spaced-near', { isPost: true, date: '2025-05-20 00:00:00', tags: ['x'] }),
+			e('iso-t-near', { isPost: true, date: '2025-05-20T00:00:00', tags: ['x'] }),
+			e('far-hot', { isPost: true, date: '2022-01-01 00:00:00', tags: ['x'], recommend: 5 }),
+		])
+		try {
+			const list = await getRelated('cur')
+			const farHot = list.findIndex(x => x.id === 'far-hot')
+			// 缺陷下 iso-t-near 只有 2 分，会被 far-hot 的 recommend 5 顶到它前面 → 本断言必红
+			for (const id of ['spaced-near', 'iso-t-near'])
+				assert.ok(list.findIndex(x => x.id === id) < farHot, `${id} 应排在 far-hot 之前`)
+		}
+		finally {
+			__setCollection(() => FIXTURE)
+		}
+	}))
+
 	it('limit 缺省取自 blogConfig.article.related.limit', async () => {
 		// 共享 FIXTURE 有 6 篇文章 → 排除自己后 5 个 ≥ W.limit
 		assert.equal((await getRelated('c-first')).length, blogConfig.article.related.limit)
