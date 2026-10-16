@@ -16,15 +16,11 @@
 
 > [!CAUTION]
 > - 部署前必须完成项目个性化配置与内容修改，不得将我的信息用于你的网站图标/名称，严禁将项目内我的文章以你的名义重新发布至公开环境。
-> - 部署前必须完成项目个性化配置与内容修改，不得将我的信息用于你的网站图标/名称，严禁将项目内我的文章以你的名义重新发布至公开环境。
-> - 部署前必须完成项目个性化配置与内容修改，不得将我的信息用于你的网站图标/名称，严禁将项目内我的文章以你的名义重新发布至公开环境。
 
 近期 Fork 项目后将我的文章部署在互联网且不遵守 CC 协议的行为增加，追查耗费了我大量精力，因此我将直接将侵权网站列在此标题，希望能减少此类现象的发生。
 
 <!-- 1. 2025-12-05 [钟神秀](https://github.com/zsxcoder/Nuxt-blog-v3)：blog.zsxcoder.top《我们的设备被拿来做了什么：软件的背景行为》 -->
 <!-- 2. 2025-12-28 [Axel Beta](https://github.com/ErenAxel/blog-v3)：sc.axel.xin《我们的设备被拿来做了什么：软件的背景行为》《深色模式开发的最佳实践》《寻不回手工油糕》 -->
-
--
 
 ## 使用本主题的博客
 
@@ -86,13 +82,14 @@ Astro 7 项目结构（站点根即仓库根）：
 ├── src # 站点源码
 │   ├── components # UI 组件
 │   │   ├── blog # 博客布局组件
-│   │   ├── content # MDX 组件（MDC 注册表）
+│   │   ├── content # MDX 组件（注册表在 src/lib/content-components.ts）
 │   │   ├── partial # 微型组件
 │   │   ├── popover # 弹窗组件
 │   │   ├── post # 文章组件
 │   │   ├── util # 功能组件
 │   │   └── widget # 侧栏小组件
-│   ├── config # blog.ts（内容/分类/友链）★
+│   ├── config # blog.ts（内容/分类/友链）/ integrations.ts（第三方脚本、评论、摘要文案）
+│   │          / compat.ts（迁移兼容开关）/ site-meta.ts（主题标识）★
 │   ├── content # 文章与页面内容（.mdx）
 │   │   ├── posts # 正式文章
 │   │   ├── previews # 草稿文章，仅可被站内搜索
@@ -101,7 +98,7 @@ Astro 7 项目结构（站点根即仓库根）：
 │   │        layout-state.ts 抽屉状态、list-transition.ts FLIP 列表动画）★
 │   ├── loaders # 内容加载器
 │   ├── pages # 文件路由与端点（atom.xml / llms.txt / search-index / raw/*.md）
-│   ├── plugins # remark/rehype 管线（component-fence / heading-ids / math-code / prose）
+│   ├── plugins # remark/rehype 管线（component-fence / tab-panels / heading-ids / prose）
 │   ├── styles # CSS 令牌与主题
 │   └── layouts # 页面骨架
 ├── public # 静态资源，生成在站点根目录
@@ -109,7 +106,7 @@ Astro 7 项目结构（站点根即仓库根）：
 │   └── fonts # 字体
 ├── scripts # 门禁与工具（accept.mjs 是单一验收入口，也是门禁名单的事实源）
 ├── astro.config.mjs # Astro 配置
-├── edgeone.json # EdgeOne 控制台配置（自媒体生效，不被流水线消费）
+├── edgeone.json # EdgeOne 控制台配置（仅在控制台侧生效，不被流水线消费）
 ├── CLAUDE.md # 工程决策、坑位与验收规则★
 └── package.json # pnpm 12，版本经 pnpm-workspace.yaml 的 catalogs 集中管理
 ```
@@ -126,8 +123,11 @@ pnpm i
 
 ### 初始配置
 
-三层配置分工：内容/分类/友链改 `src/config/blog.ts`；导航/页脚/交互默认值改
+配置分工：内容/分类/友链、站点地址与建站时间改 `src/config/blog.ts`；第三方脚本、评论
+（Twikoo）与摘要文案改 `src/config/integrations.ts`；导航/页脚/交互默认值改
 `src/lib/app-config.ts`；内容 schema 与 loader 改 `src/content.config.ts`。
+主题标识（名称与版本，用于 `generator` 等）在 `src/config/site-meta.ts`；为对齐上游
+旧行为而保留的兼容开关在 `src/config/compat.ts`。
 
 文章 URL 可在 frontmatter 用 `permalink` 自定义；`hidePostPrefix` 开启时 `/posts/xxx`
 显示为 `/xxx`。建站流程与门禁规则以 `CLAUDE.md` 为准。
@@ -166,8 +166,11 @@ typecheck + build + `node scripts/accept.mjs --skip-build`（release 档全部�
 
 - 验证部署一律用普通 URL：站点在 EdgeOne 后面，带 query 的 URL 是独立 cache key，
   `?cb=<时间戳>` 会命中尚未刷新的父层拿到旧内容；要绕过 CDN 就查 `blog-public` 的部署产物。
-- 订阅源需要绝对地址：自托管时把 `src/config/site-meta.ts` 的站点地址设为实际访问地址，
-  协议、主机保持一致。
+- 订阅源与绝对地址：自托管时站点地址有**两处**，都要改成实际访问地址（协议、主机保持一致），
+  否则订阅源、`llms.txt`、JSON-LD 里会留下旧域名——
+  `src/config/blog.ts` 的 `blogConfig.url`（atom.xml / llms.txt / JSON-LD 用），
+  以及 `astro.config.mjs` 的 `site`（`Astro.site` 与 sitemap 用）。
+  ⚠️ `src/config/site-meta.ts` 存的是**主题标识**（名称与版本），不是站点地址，改它无效。
 - `pnpm accept` 是唯一验收入口（`scripts/accept.mjs`），也是门禁名单的**唯一事实源**：
   默认跑 release 档，一次构建加门禁，零外网、只连 localhost。
   CI 跑的是同一条命令。门禁因内存不足或网络不可达而**自己跳过**时，汇总里单列成

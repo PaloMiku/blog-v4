@@ -50,9 +50,34 @@ node scripts/check-expirations.mjs --selftest # 豁免台账门禁的自检（�
   **摘要的真相源是 `src/data/summaries.json`**（不在 frontmatter，坑位 34）
 - **零 LLM 依赖**：`pnpm summary` 的模型调用是裸 fetch（`scripts/lib/llm.mjs`），
   打 OpenAI 兼容端点，配置在 `.env`（坑位 36）
-- 三层配置分工：内容/分类/友链 → `src/config/blog.ts`；导航/页脚/交互默认值 →
-  `src/lib/app-config.ts`；内容 schema 与 loader → `src/content.config.ts`；构建 →
-  `astro.config.mjs`
+- **配置分层（动手前先认准该写哪一层）**：内容/分类/友链 → `src/config/blog.ts`；
+  第三方脚本、评论（Twikoo）与摘要徽章文案 → `src/config/integrations.ts`（从 `blog.ts`
+  迁出，改统计或评论服务只碰这一个文件）；**为对齐旧栈行为而留的布尔开关** →
+  `src/config/compat.ts`（每个开关必须写全「保留原因 / 验证证据 / 退出条件 / 复核日期」，
+  页面主流程只引用它，不再就地藏 `const PARITY_x = true`）；冻结的主题标识字面量 →
+  `src/config/site-meta.ts`（**不要改成读 `package.json`**——会把 `<meta name="generator">`
+  从 `Clarity 3.8.0` 变成别的，atom 与页脚跟着变）；导航/页脚/交互默认值 →
+  `src/lib/app-config.ts`（**必须能在浏览器求值**，`BlogStats` / `Excerpt` 的内联脚本会
+  import 它，历史上一版用 `node:fs` 让 66/67 页抛 `ReferenceError`）；内容 schema 与
+  loader → `src/content.config.ts`；构建管线 → `astro.config.mjs`
+- **`src/lib/` 分三档，别混**：`src/lib/shared/*.ts` 是**零配置纯模块层**（不许 import
+  站点配置、不许碰 `node:`、不许有副作用），配置走**显式绑定口**灌入——
+  `configureContentId({ hidePostPrefix })`、`configureTime({ timeZone, language })`；
+  `src/lib/client.ts` 是**浏览器 bundle 的唯一入口**，另持一份零依赖复刻
+  （`escapeHtml` / `escapeRegExp` / `safelyDecodeUriComponent` / `highlightHtml`），
+  因为 `shared/time.ts` 顶层拖整个 blog 配置、`shared/link.ts` 拖 `parse-domain`
+  （实测为一个 5 行函数多进 4.4KB）。**barrel `src/lib/shared.ts` 刻意不转出
+  `summaries` / `pagination` / `seo`**——它们带 `node:fs` / `node:crypto`，而全站共用的
+  根布局会经 barrel 把 node 模块拖进客户端。两条纪律由工具守着：`eslint.config.mjs` 的
+  `no-restricted-imports` 禁客户端模块 import `parse-domain` / `config/blog` / shared
+  barrel；`tests/client-shared-parity.test.mjs` 用样例对账两份复刻，防「只靠注释约定」的漂移
+- **内容管线**：`src/loaders/with-article-meta.ts` 包住 glob loader，补
+  `readingTime` / `isPost` / `summary`+`seo`（后者来自 `src/data/summaries.json`）；
+  `src/plugins/` 四个 unified 插件**顺序即合同**——`component-fence`（展开 Component
+  围栏）与 `heading-ids`（Nuxt slugger 逐字一致的标题 id，**是线上 URL 合同，勿改**）
+  都必须排最前，因为 Astro 内建的 heading id 排在**所有**用户插件之后、却尊重已存在的
+  id。**MDX 条目走 `deferredRender` 分支、`entry.rendered` 全是 undefined**，所以标题 id
+  归一只能在 rehype 层做（坑位 12 的成因即此）
 - 端点（`src/pages/`）：`/api/stats`、`/atom.xml`、`/subscriptions.opml`、`/llms.txt`、
   `/search-index.json`、`/raw/*.md`
 - 文章可用 frontmatter `permalink` 自定义 URL；`hidePostPrefix` 开启时 /posts/xxx 显示为 /xxx
@@ -74,18 +99,53 @@ node scripts/check-expirations.mjs --selftest # 豁免台账门禁的自检（�
 
 ## 验收
 
+### 何时跑门禁（默认不跑）
+
+**默认：改完不主动跑门禁。** 交互式的一两次小改就整跑一遍 `pnpm accept`（含一次完整
+构建）太贵，收益却只在极少数改动上兑现。**只在这两种情况下跑**：
+
+1. **用户本次明确要求**（「跑一下门禁」「验收一下」）；
+2. **一次性的目标/计划型工作**——一次会话里要连着改许多文件、且需要一个终态验收。
+
+其余情况**改完直接汇报改了什么，把跑不跑交给用户**。别用「构建过了」代替验收，
+也**别默认去跑**——那是这条纪律要省掉的开销。
+
+⚠️ **不跑 ≠ 无法验证，但不许假装验过。** 要分清哪些文件动了也不影响任何判据：
+
+- **不被任何门禁读取**：`CLAUDE.md`、`README.md`、`docs/**`（后者还不入库）。
+- **被门禁读取**：`src/` 与 `scripts/` 下的源码、以及 ⚠️ **`.github/workflows/*.yml`**
+  ——`check-ci-triggers.mjs` 真读它（校验 YAML 可解析、门禁步骤引用的脚本存在、
+  部署目录是 `dist`、push main 会触发发布）。**改这个文件至少要保证它是合法 YAML、
+  且不引用不存在的脚本**，否则就是把一道门禁弄红。
+
+会进产物的源码改动，其风险由**既有两道兜底**接住——CI 在**部署之前**跑
+`pnpm typecheck` 与 `node scripts/accept.mjs --skip-build`
+（`.github/workflows/build.yml`，验收步先于 Deploy 步），所以「本地没验」不会变成
+「带着红门禁上线」。**据此可以说「按纪律未跑门禁」，但不能说「已验证通过」。**
+
+### 门禁本身
+
 `scripts/accept.mjs` 是**唯一入口**，也是门禁名单的**唯一事实源**：哪些门禁、几道、各挂
 什么跳过策略，都只在那一个文件里定义。本文件**不复述名单，也不复述任何计数**——
 `node scripts/accept.mjs --print-policies` 打印的就是权威版本。
 
-三个档位（`--profile`，默认 `release`）：
+两个档位（`--profile`，默认 `release`）：
 
 - `release`（`pnpm accept`）= 一次 `pnpm build` + 发布必需门禁。零外网，只连 localhost。
   CI 跑的就是这一档。
 - `maintenance`（`pnpm accept:maintenance`）= 发布档全量 + 深度审计（CSS 域 / 台账治理 /
   CDN 合同 / Windows 专属自测等）。
 
-三条原则，改动时别破坏：
+改动时别破坏下面三条原则。先说一个前提：**「不在名单里」有三种，别混为一谈。**
+名单是唯一事实源，但以下脚本**刻意不入档**，不是漏接线——`check-summaries-red.mjs` 与
+`tab-panels-red.mjs`（红控自检，每例要跑一次真门禁或整次 `pnpm build`，太贵，**单跑**）；
+`interaction-check.mjs`（真浏览器交互门禁，`pnpm interaction-check` 单独跑）。另有两个特例：
+`check-build-warnings` 由 `accept.mjs` 的 `BUILD_WARNING_GATE` 常量单独接线（读第一步写的
+日志，CI 正是自己 build 后 `--skip-build` 复用）；`preview-guard.selftest.mjs` **其实在
+maintenance 档**，只是以 `script:` 字段改名挂成 `preview-guard-selftest`。**⇒ 判断「某道门禁
+有没有接上」要看 `--print-policies` 的输出，不是拿文件名 grep 名单。**
+
+三条原则：
 
 1. **名单只有这一份。** 本地与 CI 跑的是同一个 `scripts/accept.mjs`，CI 侧只有一句
    `node scripts/accept.mjs --skip-build`。不许再手抄清单——`check-ci-triggers.mjs` 现在
@@ -125,6 +185,9 @@ node scripts/check-expirations.mjs --selftest # 豁免台账门禁的自检（�
   很容易被当成推送没生效
 - 提交前跑一次 `pnpm accept`（发布档）。**门禁红着不提交**；跑不动就明说哪几道没跑，
   拿「构建过了」代替验收等于没验
+- ⚠️ **上一句的例外见 `## 验收` 开头「何时跑门禁」**：交互式小改**默认不跑**，
+  只在用户本次要求、或一次性的目标/计划型工作时才跑。**Agent 自己不能把「不跑」
+  升级成「已验证」**——没跑就说没跑
 
 ## 部署
 
@@ -153,9 +216,17 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
 2. **`:global()` 只作用于紧邻的选择器，不向嵌套传播。** 每个面向 slot 内容的层级都要单独写。
    且 `<style>` 默认隔离，写 `.x .y` 会要求 Astro 的 scope id 落在**子组件**根元素上，而它带的是
    子组件自己的 id ⇒ 规则永不匹配。`check-scope-anchors.mjs` 盯这一类。
-3. **顶层 `:deep(X)` 搬到 Astro 必须把锚点补回去。** Vue 编译成 `[data-v-<hash>] X`，
-   那个属性选择器**要求祖先里有本组件的元素**。写成裸 `:global(X)` 锚点就没了，规则会跑到
-   组件外去。
+3. **顶层 `:global(X)` 是丢掉了锚点的规则——它会跑到组件外去。** 在 scoped 框架里，
+   顶层的 `:deep(X)` 编译成 `[data-v-<hash>] X`，那个属性选择器**要求祖先里有本组件的
+   元素**，它才是锚点；`:global(X)` 却是全站的 X。漏掉的后果不是「样式没生效」，
+   而是**样式在不该生效的地方生效了**——比死规则更难发现，因为它看起来是对的。
+   修法是把锚点自己写回去（`.feed-group :global(.feed-card)`）。
+   ⚠️ **样式迁移早已完工、Nuxt 源码树已删**：`src/` 里剩下的 `:deep(` 与真实 scope id 形态
+   `data-v-<hex>` **全部躺在解释这些规则的注释里**，没有一处是活代码。光看字面 `grep` 命中数
+   会得出「还有几十处待迁移」的错误结论——**判「还剩几处」要剥掉注释再数**（本文件不复述
+   这个计数，它会随注释增删而漂）。别把 `FeedCard.astro` 里的 `data-v-tippy` 算进去：
+   那是自定标签，不是 Vue scope id。判据一侧是 `check-scope-anchors.mjs`：棘轮 +
+   `scripts/exemptions.json` 台账，台账里的每条也必须在源码里对得上（双向）
 4. **`data-astro-cid` 是构建期属性，脚本重建的节点一个都没有。** 谁在客户端用
    `createElement` / `createElementNS` 重建了带样式的元素，那条规则就只对首屏那一个命中，
    换个选项 / 翻一页之后样式**静默全掉**（页码按钮糊成 `1234`、combobox 对勾退化成 ~90px）。
@@ -167,42 +238,54 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
    `hoistIconSprites(root)` 在替换子树**之前**把 symbol 搬到挂在 `document.body` 下的常驻宿主。
    宿主不能用 `display:none`（部分浏览器不给 `<use>` 展开影子树），用零尺寸 + `aria-hidden`。
    排查判据：`document.querySelectorAll('symbol[id^="ai:"]')` 的数量在交互前后对不上。
-6. **门禁必须先自检。** 这个仓库里已经有二十余次「门禁自己错了」而不是「站点错了」。
+6. **门禁必须先自检。** 这个仓库里已多次出现「门禁自己错了」而不是「站点错了」。
    **没被看过变红的门禁等于没有门禁。** 每次新门禁都要注入一个真实缺陷验它会红。
 7. **仪器自己也要能被证伪。** 两个仪器结论打架时先怀疑仪器。同源两例：断言用
    `if (/\n(?!\r)/.test(s))` 判「有没有裸 LF」——它匹配了**全部**换行（lookahead 看的是
    `\n` **之后**的字符），正确写法 `/(?<!\r)\n/`；以及后台任务读到的脚本可能不是你刚写的
    那份（起完任务先对一眼第一行输出）。
 8. **「判断产物变没变」不要用整目录哈希。** 实测连续两次同样源码的构建给出两个不同哈希，
-   追下去只有 4 个文件变，**全是构建时间戳**。
-9. **「连量两遍一致」不等于「页面是确定的」。** 线上装 10 次页高跨度 44px，根因是洗牌写在
-   `onMounted` 且那个逃生口在线上无效。判据已改成 `--samples`（默认 3）次判**极差**。
-   **静态站不要为了两边「看起来一样」把静态站也改成随机。**
+   追下去只有 4 个文件变，**全是构建时间戳**。（当初做这件事的比较工具已随 Nuxt 基线退役；
+   判据留着——任何重新引入的产物对比都会再踩一遍。）
+9. **「连量两遍一致」不等于「页面是确定的」。** 线上连量 10 次页高跨度 44px，根因是洗牌写在
+   `onMounted` 且那个逃生口在线上无效。定稿判据是多次采样判**极差**，而不是单次相等——
+   判据本身与工具无关，所以采样工具退役了它仍然成立。
+   **静态站不要为了两边「看起来一样」也跟着改成随机。**
 10. **断网测量会造出假阳性。** 离线路径拦截跨域 fetch，某页凭空多出 18px。**离线扫描报的
-    差值，先用 online 模式复核再定性**；`ARTIF`（同一浏览器复量落在 ±40 内）要单独列出，
+    差值，先用 online 模式复核再定性**。再有：同一浏览器复量只落在容差内的结果要**单列**出来，
     既不能混进「一致」也不能混进「超差」。
 11. **live 不是当前源码。** 每条线上差异只有「迁移缺陷 / **部署滞后漂移** / 内容漂移」三种
-    可能，**正确动作是部署，不是改 Astro**；绝不加进 `known`/`ACCEPTED`——那会把「源码还没
-    部署」这个信号永久静音。
+    可能，**正确动作是部署，不是改源码**；绝不把已知差异加进任何「预期一致」白名单——
+    那会把「源码还没部署」这个信号永久静音。
 12. **「构建通过 + 门禁全绿 + 产物一字未变」也可能是「代码根本没执行」。** 实测过：
     一批条目的 `entry.rendered` 全是 undefined，因为 glob loader 走 `deferredRender` 分支。
     **⇒ 没有「改完之后产物变了吗」这一项检查，一切「接上了」都是猜的。**
-13. **构建会改写正文字面，而所有几何门禁都看不见。** `remark-smartypants` 改的是字形不是盒子。
-    判据必须是**逐字符计数不等式**（产物次数 ≤ 源次数）。**一个从不报错的门禁比没有门禁更糟。**
-14. **「把字符串当 HTML 吐出去」= 静默空白；判据必须是「未求值即失败」。** rehype 侧存字符串
-    而非 AST ⇒ 侧栏 widget 整个空白，**页高看不见**（空白也是合法盒子），**计算样式看不见**
-    （压根没有元素）。`check-mdc-eval.mjs` 的判据是零歧义的：注册表里的组件名与 HTML 原生标签
-    **无一重名**。
-15. **Vue/MDX 的「属性」在两侧不在同一处；只读对、写错就静默无效。** `addClass` 对 MDX 节点
-    是无声空操作；新增的 MDX 属性对象**必须带 `type: 'mdxJsxAttribute'`**，裸 `{name,value}`
-    会被 hast→estree 静默丢弃。
-16. **用文本当元素键不成立；判据顺序必须是「先全量、再逐元素」。** `textContent` 前 40 字符的
-    签名会重复。定稿是**两道门槛**：`distDiff` 先算全量取值分布，分布相同的属性一律不报逐元素
-    差异。改这类核心比较逻辑**必须**注入真实缺陷验红绿双向。
-17. **读调用点不等于知道语义。** `useElementVisibility(anchorEl)` + `:class="{ expand }"`
-    看不出极性，最后靠四态滚动实测才定出来。`getComputedStyle().marginRight` 对 flex item 的
-    `margin: auto` 返回**解析后的实际像素**，两侧不同说明的是**容器剩余空间**不同。
-18. **「量了外框」可以连续错三次；列测量清单的依据必须是遍历出来的普查表。** 补到 17 条
+13. **构建会改写正文字面，而所有几何门禁都看不见。** `remark-smartypants` 换的是标点**字形**
+    不是盒子——它把 `"…"` 写成 `“…”`、`...` 写成 `…`，页高与计算样式一律量不出来。
+    ⚠️ 它在 Astro 侧**默认开着**（`@astrojs/markdown-remark` 判的是 `smartypants !== false`），
+    本仓库靠 `astro.config.mjs` 显式写 `smartypants: false` 关掉——**别把它打开**，
+    正文的字面形态是内容合同。判据必须是**逐字符计数不等式**（产物次数 ≤ 源次数），
+    即 `check-text-literal.mjs`。**一个从不报错的门禁比没有门禁更糟**：它的第一版判「每个
+    `…` 在源里都出现过」，结果源里本来就有，注入 `smartypants: true` 照样 exit 0。
+14. **「把字符串当 HTML 吐出去」= 静默空白；判据必须是「未求值即失败」。** 存字符串而非节点树
+    ⇒ 侧栏 widget 整个空白，**页高看不见**（空白也是合法盒子），**计算样式看不见**
+    （压根没有元素）。失效点现在是 `src/lib/meta-slot.ts`：它解析
+    `metaSlots[*].content`，**只认** `content-components.ts` 里注册过的 PascalCase 组件，
+    其余形态一律**抛错让构建失败**（静默渲染成空白是最坏的失败方式）。`check-mdc-eval.mjs`
+    是兜底判据且零歧义：注册表里的组件名与 HTML 原生标签**无一重名**，所以「产物里出现即未求值」
+    严格成立。**注册新组件时若名字撞上原生标签，这条判据就废了。**
+15. **MDX 节点的「属性」有两套形状；只读对、写错就静默无效。** `addClass` 对 MDX 节点
+    是无声空操作；新增的属性对象**必须带 `type: 'mdxJsxAttribute'`**，裸 `{name,value}`
+    会被 hast→estree 静默丢弃。就在 `src/plugins/prose.ts`，判据与成因写在文件里。
+16. **用文本当元素键不成立；判据顺序必须是「先全量、再逐元素」。** 用 `textContent` 前几十字符
+    当签名会重复。正确顺序是**两道门槛**：先算全量取值分布，分布相同的属性一律**不报**逐元素差异。
+    改这类核心比较逻辑**必须**注入真实缺陷验红绿双向。
+17. **读调用点不等于知道语义。** 典型是极性判断：`useElementVisibility(anchorEl)` 加
+    `:class="{ expand }"` 看不出是「可见时加」还是「不可见时加」，只能靠四种滚动状态实测定出来
+    （现役实例见 `src/components/partial/Pagination.astro`，`IntersectionObserver` 复现版
+    曾在极性上写反、四种状态全与线上相反）。同族：`getComputedStyle().marginRight` 对 flex item
+    的 `margin: auto` 返回**解析后的实际像素**，两侧不同说明的是**容器剩余空间**不同。
+18. **「量了外框」可以连续错三次；列测量清单的依据必须是遍历出来的普查表。** 补到十几条
     选择器后仍全绿，因为两侧都在 `visibility:hidden` 那一层就出局了。**判据在更上游的环节出局时，
     往下游补清单是白费力气。**
 19. **判断「某个资源到底用没用上」必须用与该问题定义相符的字段。** 实测
@@ -218,8 +301,11 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
 22. **「跨域被拦截」是客户端的推断，不是证据。** Twikoo 把 `xhr.status === 0` 一律映射成
     CORS 错误，而 0 的真实含义是「响应读不到」——404、连接被断、DNS 失败**全都是它**。
     **判据是 `curl -i -X POST <envId>` 看它返回什么，不是看组件的错误文案。**
-    同族：手写探针的事件名要对着所用库版本核实（`code 1001 请更新云函数` 看着像后端旧，
-    实际是探针写错了事件名：`code 1001` 是探针发错了事件名，后端当时就是最新的。
+    同族：手写探针的事件名要对着所用库版本核实。实测发 `GET_COMMENTS` 得到
+    `{"code":1001,"message":"请更新 Twikoo 云函数至最新版本"}`，看着像后端版本落后，
+    实际是**该事件名在这个版本里根本不存在**（已改名 `COMMENT_GET`，参数形状也不同）。
+    **判据是「拿不到东西先怀疑探针」，不是相信报错文案。**
+    （现役记录见 `src/components/widget/RecentComments.astro` 的文件头。）
 23. **白名单的键必须选稳定的那一层。** `audit-dead-scope` 的死规则白名单一度把**带内容哈希的
     CSS 文件名**算进键里，而 `Blog.*.css` 是共享 bundle ⇒ 同组任意一个组件改样式都会让**全部**
     键失效，「这个组件被改过」被放大成「这个 bundle 里所有规则都变过」，代价是每跑一次构建
@@ -233,8 +319,8 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
 25. **「在本机一直绿」不等于判据与环境无关；换台机器、换个时区就红。** `check-dates` 这类
     比较源与产物时刻的门禁，**折算必须钉在 `blogConfig.timeZone` 这个显式配置上**，
     偏移量用 `Intl` 按该时刻算，不要硬编码 `+08:00`，也不要 `new Date(裸墙钟)` 按本机时区
-    解析（原判据一直靠 +08:00 开发机兜着，CI 一换 `TZ=UTC` 就全线红，见
-    见本条前半的时区事故）。**验门禁要换时区重跑**：
+    解析（原判据一直靠 +08:00 开发机兜着，CI 一换 `TZ=UTC` 就全线红，见本条前半的时区事故）。
+    **验门禁要换时区重跑**：
     `TZ=UTC node scripts/accept.mjs --skip-build`。
 26. **门禁的失败路径必须把门禁自己的输出原样打出来，且「绿灯」要有定义。**
     两层含义：
@@ -254,19 +340,22 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
     得到 `[object Object]`，`existsSync` 一律 false，于是**把名单里每一道都报成
     「不存在」**——它自己会暴露，但那一堆假问题会把真正的缺失埋掉。
 28. **组件 `<style>` / 模板里的注释会被原样输出，所以探针会先信字面量。**
-    实测：在组件的说明注释里贴一句形如 `class="katex"` 的示例，
-    那段注释 Astro 原样写进**每一页**的 head，于是按 class 属性统计的探针在
-    **六十多个没有公式的页面**上各报出一个假命中。工具先看「文本里出现了」，
-    才发现它出现在注释里。
+    实测：在组件的说明注释里贴一句形如 `class="…"` 的示例，那段注释 Astro 原样写进
+    **每一页**的产物，于是按 class 属性统计的探针在**几十个根本没有该元素的页面**上
+    各报出一个假命中。工具先看「文本里出现了」，才发现它出现在注释里。
     **判据必须剥掉 `<!-- -->` 与 `<script>`/`<style>` 正文再数落点**，
-    且**认标签不认裸字符串**（数 `<span …class="…katex…">`，不是数「出现过 katex」）。
-    同族：写说明用词，别贴原始属性串。`check-critical-assets.mjs` 的
-    `--selftest` 里有两条专门钉这个（注释里的节点不算、注释里提到不算）。
+    且**认标签不认裸字符串**（数整个标签，不是数「出现过某个词」）。
+    同族：写说明用词，别贴原始属性串。`check-critical-assets.mjs --selftest` 有两条专门
+    钉这个：「注释里的样式表不算节点（假阳性回归）」「script 正文里的字符串不算节点」。
+    ⚠️ **判据的举例会漂，判据本身不会**：这条当初是照着 KaTeX 的假命中写的，而数学管线
+    已于 2026-10-15 整体摘除、katex 在 `src/` 里已不存在。**「剥注释、认标签」与那个例子
+    无关**，别因为例子死了就把判据一起删。
 29. **「改完靠记忆守着」不算接上线——判据要能被注入验证。**
     两个出口，缺一不可：
     - **新门禁/新行为必须走一次红绿双向**，注入的坏版本要能被抓住才算数。
-      实测过：把 `hasMath` 强制成 `false`，其余门禁全绿，是产物核对才发现公式页丢了样式
-      其余门禁全绿。**判据正确不等于有保护。**
+      ⚠️ **靶子要挑当下活着的**：本条原先举的例子是把 `hasMath` 强制成 `false`，
+      而 `hasMath` 已随数学管线（2026-10-15）零实现——照抄那个例子等于在验一段不存在的
+      代码，注入什么都不会变红。**判据正确不等于有保护。**
     - **失败路径不能是日志墙。** 逐页报错会刷屏把真正的落点埋掉，
       按「资源组合」聚合成一条才可用。
     同族前提：**「构建通过 + 门禁全绿 + 产物一字未变」也可能是「代码根本没执行」**——
@@ -278,8 +367,11 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
     判据要**双向**：只查「产物有没有少」，查不到「基线本来就少」。
     同族的第二个教训：**产物比基线多的差异也需要有人审**。
     它是改进还是回归，判据只有一条——看差异方向与根因，不能靠「与线上不一致」搁置。
-    覆盖：`check-content-preservation` 盯内容层丢段——一旦富内容渲染被摘掉（比如 `remark-mdc`
-    被移除），它会红。对这类判据**先复刻再下结论**（怀疑采样稀就先逐条复刻采样验证）。
+    覆盖：`check-content-preservation` 盯内容层丢段——它从源 `.mdx` 抽样散文行、在**渲染后的
+    页面**里找它们是否活着（映射必须逐字镜像 `generateId`，干草堆必须来自产物，两条都别动）。
+    ⚠️ 别再拿「摘掉 `remark-mdc` 会红」当它的例子：2026-10-15 摘掉时它**没有红**，因为摘除后
+    正文照样穿过管线——这条门禁证明的是「内容有没有穿过管线」，不是「某个插件还在不在」。
+    对这类判据**先复刻再下结论**（怀疑采样稀就先逐条复刻采样验证）。
 31. **「产物里某个数字大得离谱」先查清它是什么，再判是不是缺陷。**
     首页 HTML 大头是客户端排序数据集：`<template data-post-dataset>` 每篇 × 每种排序各一份，
     供 `OrderToggle` 在客户端换排序时重渲染（`<menu data-post-menu>` 只有可见的第一页）。
@@ -309,7 +401,7 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
     按全文 grep 的门禁会误报——判据必须限定在 frontmatter 边界内，见 `check-summaries`。
 34. **摘要真相源是 `src/data/summaries.json`，不在 frontmatter。** `summary`（完整长摘要，供
     Excerpt / JSON-LD / Atom / llms.txt / 列表卡片）与 `seo`（≤150 字，供 meta / og）是两个
-    字段，刻意分开：SEO 结果摘要在 155~160 字处截断，长摘要进 meta 是白占权重。
+    字段，刻意分开：SEO 结果摘要在 `SEO_DESCRIPTION_MAX`（=150 字）处截断，长摘要进 meta 是白占权重。
     键 = 条目 id（`content-id.ts` 的 URL 合同）。生成来源是**全局单值** `$meta.model`，
     **为空则徽章不渲染**——没有可信来源就不标，别显示一个猜的模型名。
     徽章显示的是它推导出的短名（坑位 37），不是完整 ID。
@@ -329,12 +421,12 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
     `check-summaries` 报绿、门禁全红绿。**一次网络抖动变成永久静默丢失，且零信号**
     ——坑位 29 的假绿，触发条件只是「写回时顺手把 hash 一起存了」。
     同族：`--only` 必须压过 `--force`（`ONLY ? id === ONLY : FORCE || …`），
-    写成 `FORCE || ONLY === id` 会让 `--force --only x` 静默变成全量重算 38 篇。
+    写成 `FORCE || ONLY === id` 会让 `--force --only x` 静默变成全量重算（条目数见 `summaries.json`）。
     副作用也要显式：写回后逐条打印新旧字数，让人看见「人工润色被覆盖了几条」。
 36. **模型配置在 `.env`，读法是 node 原生的 `--env-file-if-exists`**（见
     `package.json` 的 `summary` 脚本），**不装 dotenv**——全仓库维持零 LLM 依赖，
     `scripts/lib/llm.mjs` 是裸 fetch。`LLM_MODEL` 有两个身份：请求用的模型，
-    与写进 `$meta.model` 的徽章署名，**两者必须是同一个值**，否则 38 篇文章会署一个
+    与写进 `$meta.model` 的徽章署名，**两者必须是同一个值**，否则全站文章会署一个
     不是它们来源的名字。`$meta.model` 只在**真的生成过东西**时更新：
     跑个 no-op 就把全站署名改掉是另一种撒谎。
     密钥唯一的读取点是 `authHeaders`，错误路径只抛状态码与 provider 的 message，
@@ -356,16 +448,17 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
     那两张小集合是**拼写**不是厂商知识，可以留。
     完整 ID 始终留在 `$meta.model`（复现调用需要那个字符串），
     `$meta.modelLabel` 是可选的显式短名（`--model-label`），缺省即自动推导。
-    实测产物：`$meta.model = "deepseek/deepseek-flash"` ⇒ 38 页徽章渲染为 `Flash`。
+    实测产物：`$meta.model = "deepseek/deepseek-flash"` ⇒ 每页徽章渲染为 `Flash`（不是完整 ID）。
 38. **⚠️ 判据要能被证伪，而「中文没有词边界」是最常见的永红来源。**
     精简门禁时实测到两类绿灯失效，形态不同但同一根因——**没人注入过真实缺陷**：
     - **永红**：`audit-deferred` 的 `/留空/` 命中了 `placeholder: '留空表示未更新'`。
       中文没有 `\b`，照搬英文那两条 `TODO`/`stub` 的「单词」写法必然误伤正常文案。
       修法不是改文案迁就门禁，是给中文标记加**上下文**约束（这里用
       `(?:=|return)\s*["']…["']` 并排除 `placeholder`/`label` 这类「本就是提示用户」的字段）。
-    - **永绿**：`check-anchor-classes` 的 `.article` 与 `max-width:100%` 两条子串判据，
-      实测命中分别来自 `.article-card`(7 处) 与 `fit-content`/`min-width` 里的无关规则，
-      而目标文件早已被打进共享 bundle、不再是独立文件。
+    - **永绿**：已删除的 `check-anchor-classes` 曾用 `.article` 与 `max-width:100%` 两条
+      **子串**判据，实测命中分别来自 `.article-card` 与 `fit-content`/`min-width` 里的无关规则，
+      而目标文件早已被打进共享 bundle、不再是独立文件。**它因此从不报红，最后被删掉**——
+      这就是「永绿」比「永红」更隐蔽的地方：没有红灯提醒你它已经失效。
     **同族教训**：判据「看起来在测某件事」不等于它在测那件事。
     **每个子串/正则类判据都要问一句「这段文本还能从哪儿来」**——
     带前缀同族的 class（`.article` vs `.article-card`）、同属性的其它写法
@@ -373,7 +466,8 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
     要判唯一性就用**集合成员判定**（`cls.split(/\s+/).includes('article')`）或带否定前瞻的整词正则。
     这也是 CLAUDE.md 坑位 16「键必须选稳定的那一层」在选择器一侧的同型。
 39. **合并门禁前先证明重复是「逐字」或「真子集」，否则是在搬代码不是去重。**
-    实测：`check-flip-gates` 与 `check-list-controls` 的 Toggle/Slider 选择器判据
+    实测（这一例**已完成**：`check-flip-gates` 已并入 `check-list-controls` 并删除，
+    本条留的是判据不是待办）：两道门禁的 Toggle/Slider 选择器判据
     **md5 相同**、连报错文案都一样，`maskNonCode` 在三道门禁里也是逐字副本。
     判据是真子集时才可删：list-controls 的 wrapper 判据覆盖 3 页且多两个更严的
     `data-list-transition-*` 钩子，flip-gates 只覆盖 2 页的 class 形态 ⇒ 后者是前者子集。
@@ -387,6 +481,6 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
 
 | 项 | 证据 | 状态 |
 | --- | --- | --- |
-| 产物 CSS 里有约四分之一类名在全站找不到落点 | 其中一部分是 Vue transition 残留（`*-enter-active` 等），另有 Twikoo 运行时渲染的 `tk-*`、katex/shiki 的内部类名 | **未处理**。做成门禁要上百条 allowlist，不划算；但 Vue transition 那批是迁移残留，删掉能实打实减小产物。动 `src/styles/` 前先确认没有组件在运行时加这些 class。要现状就自己 grep 产物重新统计，别引用任何文档里的数字 |
+| 产物 CSS 里有约四分之一类名在全站找不到落点 | 其中一部分是**运行时才有**的类：Twikoo 渲染的 `tk-*`、Shiki 的内部类名、以及原生 `<script>` 挂上的 `*-enter-active` 等 | **未处理**，且**不要照「迁移残留」去删**。⚠️ 那些 `*-enter-*` **名字像 Vue transition，实现是手写 transition**：`src/styles/animation.css` 定义 `.collapse-enter-*` / `.float-in-*`，由 `src/components/blog/BlogSidebar.astro` 用 `COLLAPSE_ENTER`/`COLLAPSE_LEAVE` 数组在运行时切换（`src/components/content/Tab.astro` 另有 `.dropdown-enter-*`）。**删掉它们会直接删坏折叠动画。** 真正无人接手的是死 CSS：`audit-dead-scope.mjs` 明确把这一族排除在外，`check-dead-css` 已于 2026-10-04 退役。要现状就自己 grep **产物**重新统计，别引用任何文档里的数字 |
 | Twikoo 评论库查不到任何评论 | 对全站文章调 `GET_COMMENTS_COUNT`，带/不带尾斜杠都返回 `count: 0` | **pending**（envId 那处已修，见 incidents 档案；若预期有历史评论，要查 Netlify 上那个函数的数据库） |
 | `AI excerpt` / `excerpt-content` 两条断言的自动覆盖 | 原 `check-integration` 有这两条，精简时移交给了 `interaction-check.mjs`——但那道门禁**不进流水线** | **未处理**。若要它们自动生效，应加进 `check-affordances`（release 档、只读 dist）而不是加回 `check-integration` |

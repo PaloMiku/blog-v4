@@ -16,9 +16,10 @@ import path from 'node:path'
  *    原则。旧 runner 与 CLAUDE.md 各存一份名单，已经漂移过好几次。
  *
  * 用法：
- *   node scripts/accept.mjs                        # 默认档 release（发布必需，15 道）
- *   node scripts/accept.mjs --profile maintenance  # release + 深度维护审计（31 道）
+ *   node scripts/accept.mjs                        # 默认档 release（发布必需）
+ *   node scripts/accept.mjs --profile maintenance  # release + 深度维护审计
  *   node scripts/accept.mjs --skip-build           # 复用现有 dist/，只跑门禁
+ *   要各档的门禁道数与跳过策略，跑 `--print-policies`——别在本文件里复述计数（已漂过）。
  *   node scripts/accept.mjs --only check-dates     # 只跑某几道（调试用，逗号分隔）
  *   node scripts/accept.mjs --print-policies       # 只打印门禁的跳过策略矩阵，不跑门禁
  *   ACCEPT_FORCE_CI=1 node scripts/accept.mjs      # 本机按 CI 判定跑（验 CI 行为，见下）
