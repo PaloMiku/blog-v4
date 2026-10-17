@@ -154,28 +154,18 @@ const tocHtml = links.length ? renderToc(links) : ''
 
 		const items = [...root.querySelectorAll('[data-toc-id]')]
 
-		/*
-		 * 目录项 → 正文标题元素。目录是正文标题的镜像，所以 `items` 的下标就是文档序；
-		 * 判定「当前章节」靠的就是这个下标（取**已越线标题里下标最大的那个**）。
-		 * 取不到对应标题的目录项直接排除（原实现也会给它们留 undefined 偏移）。
-		 */
-		const targets = items
-			.map((li, index) => ({
-				li,
-				id: li.dataset.tocId,
-				index,
-				el: li.dataset.tocId ? document.getElementById(li.dataset.tocId) : null,
-			}))
-			.filter(t => t.id && t.el)
-
-		if (!targets.length)
-			return
+		/** 目录项 → 正文标题元素。取不到对应标题的项仍保留（与原实现一致，它只跳过 undefined 偏移） */
+		const entries = items.map(li => ({
+			li,
+			id: li.dataset.tocId,
+			el: li.dataset.tocId ? document.getElementById(li.dataset.tocId) : null,
+		}))
 
 		// Nuxt 侧是 `useTemplateRef('toc').body`，即 BlogWidget 暴露的 .widget-body
 		const scrollableEl = root.closest('.blog-widget')?.querySelector('.widget-body')
 
 		/*
-		 * 判定线：吸顶头下方的一条 1px 横带，标题 top 越过它就认为「该章节开始」。
+		 * 判定线：吸顶头下方，标题 top 越过它就认为「该章节开始」。
 		 *
 		 * 为什么是硬编码 64 而不是像旧代码那样读 `scroll-margin-top`：那行代码读的是
 		 * `document.documentElement` 上的 `scroll-margin-top`，而**全站从未设置过这个属性**
@@ -185,45 +175,32 @@ const tocHtml = links.length ? renderToc(links) : ''
 		 */
 		const LINE_Y = 64
 
-		/*
-		 * 已越线的标题集合。
+		/**
+		 * 标题 id → 文档内绝对 top；倒序排列，便于从后往前找命中项。
 		 *
-		 * ⚠️ 不能只记「当前正在那条 1px 带上的标题」：标题一旦越线就立刻离开带子，
-		 * 按那样判定的话绝大多数时刻集合为空、高亮会整片消失。
-		 * 「越线后持续算数，直到向下滚过它才移除」才等价于原实现的
-		 * `find(offsetTop <= scrollOffset)`，即**最后一个越线的标题**——这才是「当前章节」。
+		 * ⚠️ **这是本组件唯一需要读布局的地方**，只在「内容几何可能变了」时调用，
+		 * 不参与滚动逐帧路径：滚动只做 `scrollY` 与缓存值的算术比较。
 		 */
-		const crossed = new Set()
-
-		let activeId
-		function setActive(id) {
-			activeId = id
-			for (const t of targets)
-				t.li.classList.toggle('active', t.id === activeId)
-			/*
-			 * 祖先的 `has-active` 不再由脚本维护：CSS 侧用 `:has(.active)` 表达同一语义，
-			 * 省掉每个目录项一次的祖先链遍历（原实现见 git 历史）。
-			 */
+		let offsets = []
+		function refreshOffsets() {
+			offsets = entries
+				.map(({ id, el }) => ({
+					id,
+					offsetTop: el ? el.getBoundingClientRect().top + (window.scrollY ?? 0) : undefined,
+				}))
+				.reverse()
 		}
 
-		function currentId() {
-			let best
-			for (const id of crossed) {
-				const index = targets.find(t => t.id === id)?.index
-				if (index === undefined)
-					continue
-				if (!best || index > best.index)
-					best = { id, index }
-			}
-			return best?.id
-		}
-
-		function recompute() {
-			const next = currentId()
-			if (next === activeId)
-				return
-			setActive(next)
-			scrollToActiveTocItem(next)
+		/**
+		 * 当前章节 = **最后一个越过了判定线的标题**。
+		 *
+		 * 用「读当前位置比大小」而不是 `IntersectionObserver`：后者只在**相交状态变化**时投递条目，
+		 * 而快速滚动（一个滚轮刻度常超过 100px、End 键、拖拽滚动条）可以让标题在一帧内
+		 * 整段跨过任何固定高度的观察区而不产生条目，高亮就会滞后。位置比较天然免疫跳跃。
+		 */
+		function getActiveHeading() {
+			const scrollOffset = window.scrollY + LINE_Y
+			return offsets.find(item => item.offsetTop !== undefined && item.offsetTop <= scrollOffset)?.id
 		}
 
 		function scrollToActiveTocItem(activeId) {
@@ -236,74 +213,74 @@ const tocHtml = links.length ? renderToc(links) : ''
 			}
 		}
 
-		/*
-		 * 从实时几何重建集合。两处用到：
-		 * 1. 初始化——深链接直接进入某节、或刷新在页面中部时，浏览器已经滚到目标位置，
-		 *    而观察器对每个目标只在**下一帧**才开始投递回调。不先同步种一遍，
-		 *    高亮会空着直到用户动一下。原实现靠「读当前位置比大小」天然免疫，这里必须显式补。
-		 * 2. resize——`rootMargin` 的下边距依赖 `innerHeight`，重建观察器后同样需要重新播种。
-		 */
-		function seed() {
-			crossed.clear()
-			for (const t of targets) {
-				if (t.el.getBoundingClientRect().top < LINE_Y)
-					crossed.add(t.id)
-			}
+		let activeId
+		function setActive(id) {
+			activeId = id
+			for (const { li, id: itemId } of entries)
+				li.classList.toggle('active', itemId === id)
+			/*
+			 * 祖先的 `has-active` 不再由脚本维护：CSS 侧 `:has(.active)` 表达同一语义
+			 * （「自身或后代里有 active」），省掉每个目录项一次的祖先链遍历。
+			 */
 		}
 
-		function onIntersect(entries) {
-			for (const entry of entries) {
-				const id = entry.target.id
-				const target = targets.find(t => t.id === id)
-				if (!target)
-					continue
-				/*
-				 * `entry.boundingClientRect` 是回调时刻的实时几何，不是缓存——
-				 * 图片/字体迟到导致的位移会在下一次回调里自然反映出来，
-				 * 这正是旧实现（一次性算好 offsets、此后再不重算）缺的那一环。
-				 */
-				if (entry.isIntersecting || entry.boundingClientRect.top < LINE_Y) {
-					crossed.add(id)
-				}
-				else {
-					// 已退回线下方：它自己与它之后的标题都没越线
-					for (const other of targets) {
-						if (other.index >= target.index)
-							crossed.delete(other.id)
-					}
-				}
-			}
-			recompute()
-		}
-
-		let observer
-		function buildObserver() {
-			observer?.disconnect()
-			const bottom = Math.max(0, window.innerHeight - LINE_Y - 1)
-			observer = new IntersectionObserver(onIntersect, {
-				rootMargin: `-${LINE_Y}px 0px -${bottom}px 0px`,
-			})
-			for (const t of targets)
-				observer.observe(t.el)
-		}
-
-		seed()
-		setActive(currentId())
-		buildObserver()
-
-		// resize 没有「结束」事件，用 rAF 合并
-		let resizing = false
-		window.addEventListener('resize', () => {
-			if (resizing)
+		function update() {
+			const next = getActiveHeading()
+			if (next === activeId)
 				return
-			resizing = true
+			setActive(next)
+			scrollToActiveTocItem(next)
+		}
+
+		/** 重算偏移并立刻校正高亮——内容几何变化后必须与当前滚动位置重新对齐 */
+		function realign() {
+			refreshOffsets()
+			update()
+		}
+
+		// 原版用 refThrottled(scrollY)，这里用 rAF 自己做节流
+		let ticking = false
+		function onScroll() {
+			if (ticking)
+				return
+			ticking = true
 			requestAnimationFrame(() => {
-				resizing = false
-				seed()
-				buildObserver()
-				recompute()
+				ticking = false
+				update()
 			})
-		}, { passive: true })
+		}
+
+		window.addEventListener('scroll', onScroll, { passive: true })
+
+		/*
+		 * 正文高度变化时重算偏移。
+		 *
+		 * **这是原实现真正的缺陷所在**：它在初始化时算一次 `offsets` 之后再无写入，
+		 * 而 resize 监听只调用 `update()`（读的仍是那份陈旧缓存），所以注释里写的
+		 * 「正文高度变化要重算 offset」从来没有实现过。后果是迟到的图片/代码块/字体
+		 * 把标题推走之后，高亮会**永久**偏移——它只会在下一次页面加载时自愈。
+		 *
+		 * ResizeObserver 直接盯内容盒：图片撑开是高度变化，字体替换也是，两种情况都覆盖。
+		 * rAF 合并是因为一张长文里可能连续触发多次。
+		 */
+		let realigning = false
+		function onGeometryChange() {
+			if (realigning)
+				return
+			realigning = true
+			requestAnimationFrame(() => {
+				realigning = false
+				realign()
+			})
+		}
+
+		const geoObserver = new ResizeObserver(onGeometryChange)
+		// 观察正文容器：它的高度会随图片/字体到位而增长
+		const contentRoot = document.getElementById('main-content') ?? document.body
+		geoObserver.observe(contentRoot)
+
+		refreshOffsets()
+		setActive(getActiveHeading())
 	}
 
 	function initAll() {
