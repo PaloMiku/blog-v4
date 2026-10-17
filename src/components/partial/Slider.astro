@@ -219,10 +219,21 @@ const options = list?.map(v => (typeof v === 'string' ? { value: v } : v))
 		background-color: var(--c-bg-1);
 		transition: all 0.2s;
 		appearance: none;
+	}
 
-		:hover > & {
-			background-color: var(--c-bg-3);
-		}
+	/*
+	 * ⚠️ 悬停规则必须写在这一层（`&` 在**开头**），不能嵌进上面的
+	 * `&::-webkit-slider-thumb` 块里写成 `:hover > &`。
+	 *
+	 * Astro 只展平出现在**选择器开头**的 `&`；`&` 落在末尾时会被原样输出成
+	 * `[data-astro-cid-xxx]:hover>&` —— 非法 CSS，浏览器**整条丢弃**，
+	 * 表现为「悬停时滑块不变色」，且零报错。`check-layout.mjs` 第 4b 段盯的就是它。
+	 *
+	 * 放在这一层的另一个原因是正确性：`&` 已经展开成伪元素之后不能再接 `:hover` 回指
+	 * 宿主元素，否则会拼成 `::-webkit-slider-thumb:hover::-webkit-slider-thumb`。
+	 */
+	&:hover::-webkit-slider-thumb {
+		background-color: var(--c-bg-3);
 	}
 }
 

@@ -107,7 +107,18 @@
 		background-color: var(--c-bg-2);
 		transition: opacity 0.2s;
 
-		:hover > &, :focus-within > & {
+		/*
+		 * ⚠️ 写成完整选择器，不要写成 `:hover > &`。Astro 的 CSS 处理只展平出现在
+		 * **选择器开头**的 `&`；`&` 在中间或末尾时会被原样输出成
+		 * `[data-astro-cid-xxx]:hover>&` —— 非法 CSS，浏览器**整条规则静默丢弃**，
+		 * 表现为「悬停时操作按钮永远不出现」，且零报错。
+		 * `check-layout.mjs` 第 4b 段盯的就是这个形态。
+		 *
+		 * `&` 在这个块里指的是 `.z-codeblock figcaption`，所以悬停目标是**图注**，
+		 * 不是整个代码块——写成 `.z-codeblock:hover` 会改变触发区域。
+		 */
+		figcaption:hover > .operations,
+		figcaption:focus-within > .operations {
 			opacity: 1;
 		}
 
@@ -216,7 +227,12 @@
 			box-shadow: 0 0 0 100vmax color-mix(in srgb, transparent, var(--c-bg-2));
 		}
 
-		pre:hover > & {
+		/*
+		 * `&` 在这里指的是 `.z-codeblock .line` 自身，不是 `.line-indicator`——
+		 * 行指示器是 `.line::before` 伪元素，不参与选择器匹配。
+		 * 所以展平后必须写 `.line`，写成 `.line-indicator` 会变成一条永不命中的死规则。
+		 */
+		pre:hover > .line {
 			box-shadow: none;
 		}
 	}
@@ -538,8 +554,8 @@ code.shiki {
 	animation: none;
 	z-index: 2;
 
-	:hover > &,
-	:focus-within > & {
+	.md-table:hover > .md-table-toggle-box,
+	.md-table:focus-within > .md-table-toggle-box {
 		opacity: 1;
 		transition: opacity 0.2s 0.5s;
 	}

@@ -498,12 +498,8 @@ const listStates = ['date', 'updated'] as const
 	color: transparent;
 	transition: color 0.2s;
 
-	&::selection, :hover > & {
+	&::selection {
 		color: var(--c-text-3);
-	}
-
-	:hover > & .archive-age {
-		opacity: 0;
 	}
 
 	> .archive-year, > .archive-age {
@@ -535,5 +531,24 @@ const listStates = ['date', 'updated'] as const
 		justify-content: flex-end;
 		column-gap: 0.5em;
 	}
+}
+
+/*
+ * 悬停：整组高亮时显示年份标题、并让「几岁」淡出。
+ *
+ * ⚠️ 必须是**顶层完整选择器**，不能写成 `.archive-title { :hover > & { … } }`。
+ *
+ * Astro 的 CSS 处理只展平出现在**选择器开头**的 `&`。凡是要表达「父级悬停时作用于
+ * 自己」，`&` 都会落在末尾：轻则原样输出成 `[data-astro-cid-xxx]:hover>&`（非法 CSS，
+ * 浏览器整条静默丢弃），重则整条规则在构建期就被吞掉、产物里根本不出现——
+ * 两种都是「悬停效果全没了且零报错」，后者更难查，因为连搜都搜不到。
+ * `check-layout.mjs` 第 4b 段盯的正是这个形态。
+ */
+.archive-group:hover .archive-title {
+	color: var(--c-text-3);
+}
+
+.archive-group:hover .archive-title .archive-age {
+	opacity: 0;
 }
 </style>
