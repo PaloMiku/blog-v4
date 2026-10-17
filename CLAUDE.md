@@ -484,3 +484,17 @@ GitHub Actions（push main 触发）：`pnpm build` 后把 `dist/` 推送到 `Pa
 | 产物 CSS 里有约四分之一类名在全站找不到落点 | 其中一部分是**运行时才有**的类：Twikoo 渲染的 `tk-*`、Shiki 的内部类名、以及原生 `<script>` 挂上的 `*-enter-active` 等 | **未处理**，且**不要照「迁移残留」去删**。⚠️ 那些 `*-enter-*` **名字像 Vue transition，实现是手写 transition**：`src/styles/animation.css` 定义 `.collapse-enter-*` / `.float-in-*`，由 `src/components/blog/BlogSidebar.astro` 用 `COLLAPSE_ENTER`/`COLLAPSE_LEAVE` 数组在运行时切换（`src/components/content/Tab.astro` 另有 `.dropdown-enter-*`）。**删掉它们会直接删坏折叠动画。** 真正无人接手的是死 CSS：`audit-dead-scope.mjs` 明确把这一族排除在外，`check-dead-css` 已于 2026-10-04 退役。要现状就自己 grep **产物**重新统计，别引用任何文档里的数字 |
 | Twikoo 评论库查不到任何评论 | 对全站文章调 `GET_COMMENTS_COUNT`，带/不带尾斜杠都返回 `count: 0` | **pending**（envId 那处已修，见 incidents 档案；若预期有历史评论，要查 Netlify 上那个函数的数据库） |
 | `AI excerpt` / `excerpt-content` 两条断言的自动覆盖 | 原 `check-integration` 有这两条，精简时移交给了 `interaction-check.mjs`——但那道门禁**不进流水线** | **未处理**。若要它们自动生效，应加进 `check-affordances`（release 档、只读 dist）而不是加回 `check-integration` |
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues in `PaloMiku/blog-v4`; every `gh` command carries `-R PaloMiku/blog-v4`（本 clone 里 `gh` 会优先解析 `upstream`）. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical roles, label strings equal to the role names (`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`); `wayfinder:*` 不是 triage 角色. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+single-context（一个仓库共用根目录 `CONTEXT.md`，架构决定放 `docs/adr/`）. See `docs/agents/domain.md`.
