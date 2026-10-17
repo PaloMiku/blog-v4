@@ -269,7 +269,8 @@ const {
 		min-width: 0;
 
 		/*
-		 * 内容区阅读宽度（访客可在设置面板里调，见 `src/lib/user-settings.ts`）。
+		 * 内容区阅读宽度（写入方是 `src/lib/user-settings.ts`；面板**已暂时屏蔽**，
+		 * 所以现在恒为缺省 `784px`，即面板出现之前由外壳 `max-width` 推出来的那个值）。
 		 *
 		 * **绝不改 `--sidebar-width` / `--aside-width`**：那两者一动，侧边栏内部
 		 * 那些已经逐像素对齐过的排版就全乱了（见 `BlogSidebar.astro` 里关于

@@ -822,7 +822,12 @@ const categories = CATEGORIES.map((category, i) => ({
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
-	width: min(44rem, 100%);
+	/*
+	 * `46rem` 而不是 `44rem`：左栏导轨 10rem + 控件列 16.5rem + 间距吃掉约 15rem，
+	 * 留给「名称 + 说明」那一列的宽度直接决定 hint 会不会折成三行。
+	 * 44rem 时它只有约 11rem —— 面板里唯一真正需要读的散文就是那几行说明。
+	 */
+	width: min(46rem, 100%);
 	max-height: min(40rem, 100%);
 	border: 1px solid var(--c-primary);
 	border-radius: 1em;
@@ -871,6 +876,7 @@ const categories = CATEGORIES.map((category, i) => ({
 }
 
 .settings-close {
+	flex-shrink: 0;
 	padding: 0.3em;
 	border-radius: 0.5em;
 	color: var(--c-text-2);
@@ -879,6 +885,11 @@ const categories = CATEGORIES.map((category, i) => ({
 	&:hover {
 		background-color: var(--c-bg-soft);
 		color: var(--c-text);
+	}
+
+	&:focus-visible {
+		outline: 2px solid var(--c-primary);
+		outline-offset: 1px;
 	}
 }
 
@@ -904,9 +915,7 @@ const categories = CATEGORIES.map((category, i) => ({
 }
 
 /*
- * 分类项的几何逐条对应 `BlogSidebar.astro` 的 `.sidebar-nav-item`
- * （padding .5em 1em、1px transparent 边框、.5em 圆角、hover 与选中态），
- * 于是面板左栏与侧边栏读作同一种东西。
+ * 左栏导轨。窄屏下换成顶部横向标签条，所以两套方向都要给 `overflow` 让位。
  */
 .settings-nav {
 	display: flex;
@@ -925,6 +934,20 @@ const categories = CATEGORIES.map((category, i) => ({
 	}
 }
 
+/*
+ * 分类项的几何逐条对应 `BlogSidebar.astro` 的 `.sidebar-nav-item`
+ * （padding .5em 1em、1px transparent 边框、.5em 圆角），
+ * 于是面板左栏与侧边栏读作同一种东西。
+ *
+ * ⚠️ **但「选中」不能照抄侧边栏的「悬停」**。侧边栏里 hover 是转瞬即逝的，
+ * 而这里的选中是**持久状态**——两者曾经长得一模一样（都是主色描边 + 软底），
+ * 于是「我现在在哪个分类」完全看不出来。现在选中多一道**内嵌**主色条：
+ *
+ * - 用 `inset box-shadow` 而不是加粗 `border-inline-start`：边框宽度一变，
+ *   整列文字就横向跳 2px，切换分类时能看见它在动。
+ * - 底色改用 `--c-primary-soft`（浅 15% / 深 20% 透明），与 hover 的中性
+ *   `--c-bg-soft` 拉开的是**色相**而不只是深浅，两态在暗色模式下也分得开。
+ */
 .settings-nav-item {
 	display: flex;
 	align-items: center;
@@ -944,8 +967,25 @@ const categories = CATEGORIES.map((category, i) => ({
 
 	&.active {
 		border-color: var(--c-primary);
-		background-color: var(--c-bg-soft);
+		background-color: var(--c-primary-soft);
 		color: var(--c-text);
+		box-shadow: inset 2px 0 0 var(--c-primary);
+	}
+
+	/*
+	 * 面板实现了 ↑↓ 在分类间移动（见脚本里的 `keydown`），所以焦点必须**看得见**。
+	 * 用 `:focus-visible` 而不是 `:focus`：鼠标点过之后不该留下一个环。
+	 */
+	&:focus-visible {
+		outline: 2px solid var(--c-primary);
+		outline-offset: 1px;
+	}
+
+	/* 窄屏下导轨变成顶部横向标签条，内嵌左条要转成下沿，否则它指向的是空气 */
+	@media (max-width: 768px) {
+		&.active {
+			box-shadow: inset 0 -2px 0 var(--c-primary);
+		}
 	}
 }
 
@@ -980,7 +1020,8 @@ const categories = CATEGORIES.map((category, i) => ({
  * 它是**分组**不是标题，不该跟面板标题争重量。
  */
 .settings-group-title {
-	margin: 1.4rem 0 0;
+	/* 行本身上下 padding 各 .7rem，所以组标题要多出一截才能让两组真的断开 */
+	margin: 1.7rem 0 0;
 	padding-bottom: 0.5rem;
 	border-bottom: 1px solid var(--c-border);
 	font-family: var(--font-basic);
@@ -1019,6 +1060,29 @@ const categories = CATEGORIES.map((category, i) => ({
 	gap: 1.2rem 1.6rem;
 	padding: 0.7rem 0;
 	border-bottom: 1px solid var(--c-border);
+
+	/*
+	 * 每节最后一行不画线。原来是道线**加**下一个标题的留白，于是节与节之间
+	 * 出现「线—空—线」的双重边界；去掉尾线后，空本身成了分隔，节奏干净。
+	 */
+	&:last-child {
+		border-bottom: none;
+	}
+
+	/*
+	 * 窄屏折成上下两行。
+	 *
+	 * 之所以不是「让控件自己缩」：名称列是 `minmax(0, 1fr)`，控件列是 `auto`，
+	 * 而控件自己带 `min(16.5rem, 40vw)` 的下限，375px 视口下留给名称的宽度
+	 * 会掉到 9rem 出头，hint 只能一行一个字地往下掉。折行后名称拿回整行宽度。
+	 *
+	 * ⚠️ 用现成的 768px——`check-breakpoints` 盯的就是「不许随手新增断点」。
+	 */
+	@media (max-width: 768px) {
+		grid-template-columns: minmax(0, 1fr);
+		align-items: start;
+		gap: 0.7rem;
+	}
 }
 
 .settings-row-main {
@@ -1046,17 +1110,28 @@ const categories = CATEGORIES.map((category, i) => ({
 	align-items: flex-end;
 	gap: 0.3em;
 	min-width: 0;
+
+	/* 折行后控件独占一行，与名称左对齐，读数与提示跟着一起走 */
+	@media (max-width: 768px) {
+		align-items: stretch;
+	}
 }
 
 .settings-control-inner {
 	display: flex;
 	align-items: center;
 	gap: 0.5em;
-	width: min(18rem, 46vw);
+	/*
+	 * `16.5rem` 而非 `18rem`：宽度让给名称列去。读数列 4ch + 单位 + 滑轨，
+	 * 16.5rem 已经够（滑块本身 `flex-grow: 1`，吃剩下的）。
+	 */
+	width: min(16.5rem, 40vw);
 	min-width: 0;
 
-	/* 读数列固定宽度，否则拖动时数字位数一变，滑块就在 784↔80 之间抽动 */
-	--slider-value: 4ch;
+	/* 窄屏折行后没有「右对齐」可言，让它铺满整行 */
+	@media (max-width: 768px) {
+		width: 100%;
+	}
 }
 
 /*
@@ -1071,6 +1146,13 @@ const categories = CATEGORIES.map((category, i) => ({
 :global(.settings-slider) {
 	flex-grow: 1;
 	min-width: 0;
+
+	/*
+	 * 读数列固定宽度，否则拖动时数字位数一变，滑轨就在 784↔80 之间抽动。
+	 * 挂在这里而不是外层的 `.settings-control-inner`：那个 div 同时包着
+	 * 选择项与开关，只对滑块声明读数宽度才是名副其实（零视觉变化）。
+	 */
+	--slider-value: 4ch;
 }
 
 .settings-unit {
@@ -1093,6 +1175,12 @@ const categories = CATEGORIES.map((category, i) => ({
 	&:hover {
 		border-color: var(--c-primary);
 	}
+
+	/* Esc 与 Tab 都会走到这里，没有焦点环就只能靠 Tab 键的次数盲猜 */
+	&:focus-visible {
+		outline: 2px solid var(--c-primary);
+		outline-offset: 1px;
+	}
 }
 
 .settings-select-icon {
@@ -1112,6 +1200,12 @@ const categories = CATEGORIES.map((category, i) => ({
 
 	&[data-low='true'] {
 		color: var(--c-text-1);
+	}
+
+	/* 折行后不再右对齐：控件铺满整行，文字贴着轨道起点更好读 */
+	@media (max-width: 768px) {
+		max-width: none;
+		text-align: start;
 	}
 }
 
@@ -1241,6 +1335,11 @@ const categories = CATEGORIES.map((category, i) => ({
 			color: var(--c-text-2);
 		}
 	}
+
+	&:focus-visible {
+		outline: 2px solid var(--c-primary);
+		outline-offset: 1px;
+	}
 }
 
 /* ---- 只读信息行（「关于」分类）---- */
@@ -1254,6 +1353,12 @@ const categories = CATEGORIES.map((category, i) => ({
 	overflow-wrap: anywhere;
 	text-align: end;
 	color: var(--c-text-1);
+
+	/* 与设置项一致：窄屏折行后左对齐，值不再悬在行尾 */
+	@media (max-width: 768px) {
+		max-width: none;
+		text-align: start;
+	}
 
 	a {
 		color: var(--c-primary);

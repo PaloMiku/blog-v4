@@ -17,7 +17,9 @@
 /* prose 增强层（ProsePre / ProseA / ProseP / ProseCode / ProseTable 的样式）。
    放在最后：article.css 的 `blockquote > .z-codeblock` 需要能覆盖这里的块间距。 */
 @import "./prose.css";
-/* 访客本地偏好的全站级开关（动效 / 毛玻璃 / 卡片风格）。
-   再放最后一条：它靠 `!important` 压过组件自带的 transition / backdrop-filter，
-   排在 prose 之后是第二重保险。详见该文件头。 */
-@import "./user-prefs.css";
+/* 访客本地偏好的全站级开关（动效 / 毛玻璃 / 卡片风格）**已暂时屏蔽**（2026-10-18）。
+   设置面板下线后没有写入方会往 `<html>` 上打 `data-motion` / `data-blur` / `data-card`，
+   这层样式便失去意义；它整块靠 `!important` 压过组件自带的 transition / backdrop-filter，
+   留着只会让后续样式排查多一份无效的强规则来源。
+   恢复时把下面这行 import 加回来即可（文件本身未改动）。 */
+/* @import "./user-prefs.css"; */

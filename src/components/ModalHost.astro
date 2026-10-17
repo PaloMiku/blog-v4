@@ -17,10 +17,16 @@
  * ## 挂载位置
  * 放进 `Blog.astro` 现有的 `<div id="modal-root" />` 里。所有子元素都是
  * `position: fixed`，因此宿主在文档里的嵌套深度不影响定位。
+ *
+ * ## 设置面板已暂时屏蔽（2026-10-18）
+ *
+ * 面板组件与它的入口按钮都不再渲染，`MODAL_KEYS` 里的 `settings` 键也已摘掉。
+ * 恢复时同步还原四处：本文件的面板组件 import 与渲染、`BlogSidebar.astro` 的
+ * 入口按钮、`src/lib/modal.ts` 的 `MODAL_KEYS`、以及 `Base.astro` 的防闪烁脚本
+ * 与 `styles/index.css` 对 `user-prefs.css` 的引入。
  */
 import LightboxModal from './popover/LightboxModal.astro'
 import SearchModal from './popover/SearchModal.astro'
-import SettingsPanel from './blog/SettingsPanel.astro'
 import { MODAL_KEYS } from '../lib/modal'
 ---
 
@@ -31,7 +37,6 @@ import { MODAL_KEYS } from '../lib/modal'
 
 	<SearchModal />
 	<LightboxModal />
-	<SettingsPanel />
 </div>
 
 <script>

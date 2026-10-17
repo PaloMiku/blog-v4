@@ -10,7 +10,7 @@
 	}
 
 	/*
-	 * 正文字体（访客可在设置面板里改，见 `src/lib/user-settings.ts`）。
+	 * 正文字体（写入方是 `src/lib/user-settings.ts`，面板**已暂时屏蔽**）。
 	 *
 	 * **不要**让面板去改 `--font-basic`：那个被 `main.css` 的 body、侧边栏、
 	 * 按钮、表单一起用，改它等于把全站连同那些逐像素对齐过的布局一起改掉。
@@ -26,6 +26,9 @@
  * 枚举项走 data 属性而非 inline style（与数值项的分工见 user-settings.ts）。
  * `html[data-font=…]` 的特异性 (0,1,1) 高于 `:root` 的 (0,1,0)，稳定压过上面的
  * 缺省值。
+ *
+ * ⚠️ 面板屏蔽期间这两条规则**永不命中**：`data-font` 的唯一写入方是那个面板。
+ * 保留是为了恢复时不至于连同样式一起重写；它们零成本（不匹配就不参与计算）。
  */
 html[data-font="serif"] {
 	--font-article: var(--font-serif);

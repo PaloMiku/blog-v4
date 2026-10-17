@@ -1,6 +1,10 @@
 /**
  * 构建期元信息：构建时间、git commit、框架版本。
- * 供设置面板的「关于」分类消费（见 `src/components/blog/SettingsPanel.astro`）。
+ *
+ * ⚠️ **当前无消费方**：它唯一的消费者是设置面板的「关于」分类，而面板已暂时屏蔽
+ * （2026-10-18，见 `ModalHost.astro` 文件头）。只要没有 frontmatter import 它，
+ * 本模块就不会被执行——`readCommit()` 之类的 `node:child_process` 调用也就不会跑。
+ * 保留是为了恢复面板时不必重写；**恢复时确认它被且仅被 frontmatter import**。
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * ⚠️⚠️ **只能被 frontmatter（构建期）import。绝不能被任何 `<script>` import。** ⚠️⚠️

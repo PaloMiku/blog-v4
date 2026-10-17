@@ -67,8 +67,11 @@ export interface ModalOpenOptions<P> {
 /**
  * `ModalHost.astro` 需要为每种弹窗预渲染一块遮罩，
  * 所以「有哪几种弹窗」是一份共享常量，宿主与组件都从这里取，避免两处写错。
+ *
+ * ⚠️ `settings` 键**已暂时摘掉**（2026-10-18）：设置面板整体屏蔽中，连同它的
+ * 遮罩与入口按钮一起下线。恢复时把它加回这个数组即可，铺满视口的遮罩会自动跟着回来。
  */
-export const MODAL_KEYS = ['search', 'lightbox', 'settings'] as const
+export const MODAL_KEYS = ['search', 'lightbox'] as const
 
 export type ModalKey = typeof MODAL_KEYS[number]
 
