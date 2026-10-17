@@ -68,7 +68,7 @@ export interface ModalOpenOptions<P> {
  * `ModalHost.astro` 需要为每种弹窗预渲染一块遮罩，
  * 所以「有哪几种弹窗」是一份共享常量，宿主与组件都从这里取，避免两处写错。
  */
-export const MODAL_KEYS = ['search', 'lightbox'] as const
+export const MODAL_KEYS = ['search', 'lightbox', 'settings'] as const
 
 export type ModalKey = typeof MODAL_KEYS[number]
 

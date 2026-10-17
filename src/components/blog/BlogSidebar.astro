@@ -50,6 +50,7 @@ import BlogHeader from './BlogHeader.astro'
 import Icon from '../Icon.astro'
 import Key from '../content/Key.astro'
 import Mask from './Mask.astro'
+import SettingsButton from './SettingsButton.astro'
 import ThemeToggle from './ThemeToggle.astro'
 import UtilLink from './UtilLink.astro'
 import { appConfig } from '../../lib/app-config'
@@ -242,6 +243,17 @@ const iconNav = appConfig.footer.iconNav
 
 	<footer class="sidebar-footer">
 		<ThemeToggle />
+		{/*
+			设置面板入口，与 ThemeToggle 同级（用户选定）。
+			只带 `data-modal-open="settings"`，点击由 `lib/modal.ts` 的
+			`bindModalGlobals()` 事件委托统一处理——这里**不得**再绑一份
+			click，否则会触发两次（同下方搜索按钮「两套并行实现」的教训）。
+			面板本体由 `ModalHost.astro` 在 `#modal-root` 下渲染，
+			**不能**放回这个 `<aside>`：移动端 `#blog-sidebar` 带
+			`backdrop-filter` 与 `transform`，两者都会成为 fixed 后代的包含块，
+			面板会被裁进抽屉里。
+		*/}
+		<SettingsButton />
 		{/*
 		 * 对应 `app/components/partial/IconNavList.vue`：
 		 * `<menu>` **没有 class**、`<UtilLink>`（渲染成 `<a>`）**直接是子元素、

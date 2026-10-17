@@ -17,3 +17,7 @@
 /* prose 增强层（ProsePre / ProseA / ProseP / ProseCode / ProseTable 的样式）。
    放在最后：article.css 的 `blockquote > .z-codeblock` 需要能覆盖这里的块间距。 */
 @import "./prose.css";
+/* 访客本地偏好的全站级开关（动效 / 毛玻璃 / 卡片风格）。
+   再放最后一条：它靠 `!important` 压过组件自带的 transition / backdrop-filter，
+   排在 prose 之后是第二重保险。详见该文件头。 */
+@import "./user-prefs.css";

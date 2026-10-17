@@ -48,3 +48,6 @@ docs/
 # Tencent Cloud EdgeOne
 .edgeone/*
 .tef_dist/*
+
+# Other files
+*.zip

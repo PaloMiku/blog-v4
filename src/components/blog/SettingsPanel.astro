@@ -1,0 +1,1277 @@
+---
+/**
+ * 设置面板 —— 访客本地的正文字体 / 字号 / 行高 / 内容区宽度 / 强调色。
+ *
+ * ## 为什么接在模态栈上，而不是自己写一个浮层
+ *
+ * `src/lib/modal.ts` 已经把「Esc 关最上层 / 点遮罩关 / 关闭后归还焦点 /
+ * 背景设 `inert` 挡住 Tab 跑出去（WCAG 2.4.3）」全都做完了。自己再写一套
+ * 抽屉会得到两个互相打架的开关系统。所以这里只提供**内容**：
+ * 根元素带 `data-modal="settings"`、一个 `data-modal-autofocus`、
+ * 关闭按钮带 `data-modal-close`，其余显隐、层级、焦点全交给 `modal.ts`
+ * （契约见 `popover/SearchModal.astro:424-432`）。
+ *
+ * ## 挂载位置不能随便放
+ *
+ * 面板**不在** `BlogSidebar` 里。移动端 `#blog-sidebar` 带
+ * `backdrop-filter: blur(0.5rem)` 与 `transform`，这两者都会成为
+ * `position: fixed` 后代的**包含块**，面板就会被裁进抽屉里。
+ * 它由 `ModalHost.astro` 在 `#modal-root` 下渲染，与 `SearchModal` 同处。
+ *
+ * ## 视觉语言：复用站内既有的三套，不新造
+ *
+ * 这个面板必须读起来像站内长出来的东西，所以下面每条视觉都有出处：
+ *
+ * | 用到的 | 出处 |
+ * | --- | --- |
+ * | 主色描边 + 外发光 + 1em 圆角 + 两层投影 | `SearchModal.astro:467-478`（站内唯一的浮层卡片） |
+ * | `float-in` 入场 / `translateY(var(--float-distance))` 退场 | 同上，与搜索弹层完全一致 |
+ * | 导航项「透明边框 → 选中时主色描边 + 软底」 | `BlogSidebar.astro:436-452` 的 `.sidebar-nav-item` |
+ * | 分类标题的排版 | `BlogSidebar.astro:422-434` 的 `.sidebar-nav h3` |
+ * | 每项一块圆角软底卡片 | `SearchModal.astro:487-496` 的 `.search-item` |
+ * | 滚动区域的边缘羽化 | `reusable.css` 的 `.scrollcheck-y` |
+ *
+ * ## 分类结构（用户明确要求）
+ *
+ * 左栏是**主分类**，右栏是**该分类下的全部设置项**。
+ * 分类与设置项都由下面的 `CATEGORIES` 驱动——以后加新分类就是往数组里追加一条，
+ * 导航、面板切换、计数徽标全部自动跟上，不需要改模板或脚本。
+ *
+ * 每个设置项带 `control` 判别位（`'range'` / `'choice'`），是为了将来加
+ * 开关类设置（`'toggle'`）时有地方落；眼下只有这两类，别提前实现第三种。
+ */
+import type { ArticleFont } from '../../lib/user-settings'
+import { FONT_OPTIONS, RANGES } from '../../lib/user-settings'
+import { pascalCase } from 'es-toolkit/string'
+import Icon from '../Icon.astro'
+import Dropdown from '../partial/Dropdown.astro'
+import Slider from '../partial/Slider.astro'
+import Toggle from '../partial/Toggle.astro'
+
+/*
+ * 下面三个 import **只在本 frontmatter（构建期）求值**，其中 `build-meta` 尤其危险：
+ * 它用 `node:child_process` / `node:fs`，一旦被本组件的 `<script>` 打包进去，
+ * 浏览器端会报「Module node:child_process has been externalized」并让该页脚本整块挂掉。
+ * 见 `src/config/build-meta.ts` 文件头的警告。**别把这个名字写进下面的 `<script>`。**
+ */
+import { buildMeta } from '../../config/build-meta'
+import { deployPlatform, icp, themeName, themeVersion } from '../../config/site-meta'
+import blogConfig from '../../config/blog'
+
+type RangeKey = 'fontSize' | 'lineHeight' | 'articleWidth' | 'hue'
+
+interface SettingItem {
+	/**
+	 * 设置项的标识，同时用作 DOM 上的 `data-setting`。
+	 *
+	 * `range` / `choice` / `toggle` 三类**必须是 `UserSettings` 的键**——
+	 * 面板存下来的值要有人消费，否则就是一个「改了但什么都没发生」的格子。
+	 * `info` 行只是展示，键名自取（它不写进存储）。
+	 */
+	key: string
+	label: string
+	/**
+	 * 所属小节。**连续相同**的项归进同一小节，标题只出现一次。
+	 * 不写归到「其他」。加设置时按语义填，别留空——右栏的小节结构全靠它。
+	 */
+	group: string
+	/**
+	 * 一行说明。留空则整行不渲染说明文字。
+	 *
+	 * ⚠️ **能留空就留空**：这一版的信息密度全靠它压下来。上一版五项全都挂一段
+	 * 常驻灰色小字，整屏灰字互相打架，什么都没 emphasis 出来。
+	 * 只在「用户猜不到」的地方留（标题会不会跟着变、窄屏为什么不生效）。
+	 */
+	hint?: string
+	/** 读数单位。`choice` / `toggle` / `info` 项没有数值读数，不给 */
+	unit?: string
+	/**
+	 * 控件类型。`range` / `choice` / `toggle` 是**可改设置**（写进 localStorage），
+	 * `info` 是只读展示。
+	 *
+	 * ⚠️ 新增一种可改类型时，下面三处都要跟着改，否则「改完不生效」：
+	 * 模板的控件分支、`syncFromStorage()` 的回填、`<script>` 里的事件委托。
+	 */
+	control: 'range' | 'choice' | 'toggle' | 'info'
+	/** `toggle` 项的开关文案（显示在开关旁边） */
+	option?: [string, string]
+	/**
+	 * `choice` 项的候选项。**不给就回退到字体那三项**——那是唯一的既有集合，
+	 * 写出来不如复用（`FONT_OPTIONS` 就在 `user-settings.ts` 里）。
+	 */
+	options?: { value: string, label: string }[]
+	/** `info` 项显示的文本。值为 `null` 时整行不渲染 */
+	value?: string | null
+	/** `info` 项给了就把值渲染成外链（主题仓库、许可证、备案查询） */
+	link?: string
+	/** `info` 项把值渲染成 `<code>`（commit 这种标识符） */
+	mono?: boolean
+}
+
+interface SettingCategory {
+	key: string
+	label: string
+	icon: string
+	/** 右栏顶部的一句话说明，写给人看的 */
+	description: string
+	items: SettingItem[]
+}
+
+/**
+ * ⚠️ **加设置时改这里，别去改模板。** 每项的 `key` 必须是
+ * `UserSettings` 的键，否则面板存下来的值没有地方消费。
+ */
+const CATEGORIES: SettingCategory[] = [
+	{
+		key: 'appearance',
+		label: '外观',
+		icon: 'tabler:palette',
+		description: '只影响你自己看到的样式，存在这台设备上，不影响其他访客。',
+		items: [
+			{
+				key: 'font',
+				label: '正文字体',
+				group: '排版',
+				control: 'choice',
+				hint: '只改正文段落，文章内的小标题不变。',
+			},
+			{
+				key: 'fontSize',
+				label: '正文字号',
+				group: '排版',
+				unit: 'px',
+				control: 'range',
+				hint: '文章内标题会跟着一起缩放。',
+			},
+			{
+				key: 'lineHeight',
+				label: '行高',
+				group: '排版',
+				control: 'range',
+			},
+			{
+				key: 'articleWidth',
+				label: '内容区宽度',
+				group: '布局',
+				unit: 'px',
+				control: 'range',
+				hint: '窄屏（≤768px）不生效。',
+			},
+			{
+				key: 'hue',
+				label: '强调色',
+				group: '颜色',
+				unit: '°',
+				control: 'range',
+				hint: '轨道压暗的那段在浅色模式下对比度低于 3:1。',
+			},
+			{
+				key: 'cardStyle',
+				label: '卡片风格',
+				group: '界面',
+				control: 'choice',
+				options: [
+					{ value: 'card', label: '实心' },
+					{ value: 'flat', label: '扁平' },
+				],
+				hint: '扁平 = 文章里的卡片去掉投影，只靠底色分层。',
+			},
+			{
+				key: 'motion',
+				label: '界面动效',
+				group: '界面',
+				control: 'toggle',
+				option: ['关', '开'],
+				hint: '关掉后所有过渡与动画立即生效，面板也会直接出现而不再移动。',
+			},
+			{
+				key: 'blur',
+				label: '毛玻璃',
+				group: '界面',
+				control: 'toggle',
+				option: ['关', '开'],
+				hint: '关掉会换成不透明底色。低配设备上能省下不少合成开销。',
+			},
+		],
+	},
+	{
+		key: 'about',
+		label: '关于',
+		icon: 'tabler:info-circle',
+		description: '这个站点是怎么来的。只读信息，不影响浏览。',
+		items: [
+			{
+				key: 'theme',
+				label: '主题',
+				group: '站点',
+				control: 'info',
+				value: `${pascalCase(themeName)} ${themeVersion}`,
+				link: 'https://github.com/L33Z22L11/blog-v3',
+			},
+			{
+				key: 'deploy',
+				label: '部署',
+				group: '站点',
+				control: 'info',
+				value: deployPlatform,
+			},
+			{
+				key: 'builtAt',
+				label: '本次构建',
+				group: '构建',
+				control: 'info',
+				/*
+				 * 刻意**不渲染成 `<time datetime="…">`**，只用纯文本。
+				 * `check-dates.mjs` 用 `html.match(/datetime="([^"]*)"/)` 取页面里
+				 * **第一个**匹配并断言它等于该页 frontmatter 的 `date` 派生值——
+				 * 设置面板在**每个页面**的 HTML 里都有一份，撞上就是一道红门禁。
+				 */
+				value: buildMeta.builtAt.replace('T', ' ').slice(0, 16) + ' UTC',
+			},
+			{
+				key: 'commit',
+				label: '提交',
+				group: '构建',
+				control: 'info',
+				/*
+				 * CI 用浅克隆或 Docker 构建时未必有可用 git，`readCommit()` 会回 `null`。
+				 * **整行直接不渲染**——显示一个空的「提交」格比不显示更糟。
+				 */
+				value: buildMeta.commit,
+				mono: true,
+			},
+			{
+				key: 'framework',
+				label: '框架',
+				group: '构建',
+				control: 'info',
+				value: buildMeta.astroVersion ? `Astro ${buildMeta.astroVersion}` : null,
+			},
+			{
+				key: 'license',
+				label: '文章许可',
+				group: '许可',
+				control: 'info',
+				value: blogConfig.copyright.abbr,
+				link: blogConfig.copyright.url,
+			},
+			{
+				key: 'icp',
+				label: '备案',
+				group: '许可',
+				control: 'info',
+				value: icp.number,
+				link: icp.url,
+			},
+		],
+	},
+]
+
+/** 把扁平的 items 折成「小节 → 行」。只合并**相邻**同组，不跨组乱并。 */
+function groupItems(items: SettingItem[]) {
+	const sections: { group: string, rows: SettingItem[] }[] = []
+	for (const item of items) {
+		const group = item.group || '其他'
+		const last = sections.at(-1)
+		if (last && last.group === group)
+			last.rows.push(item)
+		else
+			sections.push({ group, rows: [item] })
+	}
+	return sections
+}
+
+/** 构建期就要算出来的东西：小节、每项的滑块区间与候选项 */
+const categories = CATEGORIES.map((category, i) => ({
+	...category,
+	active: i === 0,
+	sections: groupItems(category.items)
+		// `info` 项取不到值（没有 git 环境等）就整行丢掉：
+		// 留一个空格子比不留更让人以为「坏了」
+		.map(section => ({ ...section, rows: section.rows.filter(item => item.control !== 'info' || item.value) }))
+		.filter(section => section.rows.length > 0)
+		.map(section => ({
+			group: section.group,
+			rows: section.rows.map(item => ({
+				...item,
+				range: item.control === 'range' ? RANGES[item.key as RangeKey] : undefined,
+				// 不给 `options` 的 choice 项一律回退到字体那三项——
+				// `FONT_OPTIONS` 是既有集合（user-settings.ts 的字体校验就认它），
+				// 在这里重抄一份只会被将来某个版本的改名悄悄改到一半
+				choices: item.control === 'choice' ? (item.options ?? FONT_OPTIONS) : undefined,
+			})),
+		})),
+}))
+---
+
+<div class="settings-panel" data-modal="settings" tabindex="-1">
+	<div class="settings-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+		<header class="settings-head">
+			<h2 id="settings-title">设置</h2>
+			<button class="settings-close" type="button" data-modal-close aria-label="关闭设置">
+				<span class="settings-close-icon"><Icon name="tabler:x" /></span>
+			</button>
+		</header>
+
+		<div class="settings-body">
+			{/*
+			 * 左栏：一条**窄导轨**。样式照抄 `.sidebar-nav-item`（见文件头的对照表），
+			 * 但宽度压到 10rem——上一版 12rem 只放一个分类，空得像没做完。
+			 * 分类多起来时这条导轨才开始划算，那时加宽也不迟。
+			 */}
+			<nav class="settings-nav" aria-label="设置分类">
+				{categories.map(category => (
+					<button
+						class="settings-nav-item"
+						class:list={{ active: category.active }}
+						type="button"
+						data-settings-category={category.key}
+						aria-current={category.active ? 'true' : undefined}
+						data-modal-autofocus={category.active ? '' : undefined}
+					>
+						<span class="settings-nav-icon"><Icon name={category.icon} /></span>
+						<span class="settings-nav-text">{category.label}</span>
+					</button>
+				))}
+			</nav>
+
+			{/* 右栏：当前分类下按小节分组，全部铺在一列里 */}
+			{categories.map(category => (
+				<section
+					class="settings-pane scrollcheck-y"
+					data-settings-section={category.key}
+					hidden={!category.active}
+					aria-label={category.label}
+				>
+					<p class="settings-desc">{category.description}</p>
+
+					{category.sections.map(section => (
+						<section class="settings-group" aria-label={section.group}>
+							<h3 class="settings-group-title">{section.group}</h3>
+
+							{section.rows.map(row => (
+								<div class="settings-row">
+									{/* 左：名称 + 说明；右：控件。窄屏下自动折成上下两行 */}
+									<div class="settings-row-main">
+										<span class="settings-row-label">{row.label}</span>
+										{row.hint && <p class="settings-hint">{row.hint}</p>}
+									</div>
+
+									<div class="settings-control">
+														{/*
+														 * 四种控件用四个并列的条件判断，**不套三元**：
+														 * 套两层之后 row.range 的非空断言会被推到眼睛够不着的
+														 * 深度，而 info 分支根本不需要 range。
+														 *
+														 * 注意：JSX 注释里不要出现花括号或反引号——结束标记是
+														 * 按斜杠星括号加花括号匹配的，内部的左花括号会被解析器
+														 * 当成表达式开头，注释当场截断。
+														*/}
+										{row.control === 'info' && (
+											<span class="settings-info">
+												{/* 三种呈现：外链 / 代码 / 纯文本。值本身已由构建期保证非 null。 */}
+												{row.link
+													? <a href={row.link} target="_blank" rel="noopener noreferrer">{row.value}</a>
+													: row.mono
+														? <code>{row.value}</code>
+														: row.value}
+											</span>
+										)}
+
+										{row.control === 'choice' && (
+											/*
+											 * `data-choice` 标记**必须**放在这一层包裹 div 上，
+											 * 不能直接写在 `<Dropdown>` 上：Astro 组件没有
+											 * attribute fallthrough，没在 Props 里声明的属性会被
+											 * **静默丢掉**（`class` / `class:list` 能活下来
+											 * 只是因为它们是声明过的 prop）。见本文件下方的
+											 * 委托监听处的同类注释。
+											 */
+											<div class="settings-control-inner" data-choice={row.key}>
+												<Dropdown trigger="click" class="settings-select">
+													<button class="settings-select-trigger" type="button">
+														<span data-choice-label>{row.choices![0].label}</span>
+														<span class="settings-select-icon"><Icon name="tabler:chevron-down" /></span>
+													</button>
+													<Fragment slot="content">
+														{row.choices!.map(choice => (
+															<button type="button" data-dropdown-item data-choice-option={choice.value}>
+																{choice.label}
+															</button>
+														))}
+													</Fragment>
+												</Dropdown>
+											</div>
+										)}
+
+										{row.control === 'toggle' && (
+											/*
+											 * `Toggle.astro` 从**它自己的根元素**派发冒泡的
+											 * `partial:change`，所以标记挂在外层包裹 div 上同样有效。
+											 */
+											<div class="settings-control-inner" data-toggle={row.key}>
+												<Toggle class="settings-toggle">
+													<span>{row.option![1]}</span>
+												</Toggle>
+											</div>
+										)}
+
+										{row.control === 'range' && (
+											<div class="settings-control-inner" data-setting={row.key}>
+												<Slider
+													value={row.range!.fallback}
+													min={row.range!.min}
+													max={row.range!.max}
+													step={row.range!.step}
+													/* 刻意**不传** `list`（datalist）：Chromium 遇到带 datalist 的 range 会换成
+													   一套不同的轨道渲染（细线加两端刻度），与旁边几条粗轨道不是一回事。 */
+													class="settings-slider"
+													class:list={{ 'setting-hue': row.key === 'hue' }}
+												/>
+												{row.unit && <span class="settings-unit">{row.unit}</span>}
+											</div>
+										)}
+
+										{/* 色相的对比度提示走**文字**通道，不只靠轨道配色：那 190° 低色相区间恰好是
+										   用户最可能拖过去的暖色区；只靠一条暗带说话，Firefox 上更是完全收不到。 */}
+										{row.key === 'hue' && <p class="settings-note" data-hue-note role="status" />}
+									</div>
+								</div>
+							))}
+						</section>
+					))}
+				</section>
+			))}
+		</div>
+
+		<footer class="settings-foot">
+			{/* 导入的可见反馈区。`role=status` 让读屏也能听到失败原因。 */}
+			<p class="settings-io-msg" data-io-msg role="status" />
+
+			<div class="settings-io">
+				{/* 隐藏的 file input：只有它能拿到本地文件，样式藏起来而不是 display:none
+				     （后者在部分浏览器里仍可被 label 触发，但保险起见用 visually-hidden 写法） */}
+				<input
+					class="settings-file"
+					type="file"
+					accept="application/json,.json"
+					data-settings-import-file
+					aria-label="选择要导入的设置文件"
+				>
+				<button class="settings-reset" type="button" data-settings-export>导出</button>
+				<button class="settings-reset" type="button" data-settings-import>导入</button>
+				<button class="settings-reset" type="button" data-settings-reset>恢复默认</button>
+			</div>
+
+			{/*
+			 * 「已修改 N 项」。**放在页脚而不是塞回面板里**，是因为它描述的是
+			 * 整份设置的状态，不属于任何一个分类；关掉面板再打开它依然成立。
+			 */}
+			<p class="settings-modified" data-settings-modified />
+		</footer>
+	</div>
+</div>
+
+<script>
+	import { closeLayout } from '../../lib/layout-state'
+	import { getModalByKey, subscribeModals } from '../../lib/modal'
+	import {
+		LOW_CONTRAST_HUE,
+		RANGES,
+		exportSettings,
+		importSettings,
+		modifiedCount,
+		readSettings,
+		resetSettings,
+		setSetting,
+	} from '../../lib/user-settings'
+
+	const RANGE_KEYS = new Set(['fontSize', 'lineHeight', 'articleWidth', 'hue'])
+
+	function isLowContrastHue(hue: number) {
+		return hue >= LOW_CONTRAST_HUE.min && hue <= LOW_CONTRAST_HUE.max
+	}
+
+	function initPanel(root) {
+		if (!(root instanceof HTMLElement) || root.dataset.settingsReady)
+			return
+		root.dataset.settingsReady = '1'
+
+		/* ---------- 分类切换 ---------- */
+
+		const categoryBtns = [...root.querySelectorAll('[data-settings-category]')]
+
+		function selectCategory(key) {
+			for (const btn of categoryBtns) {
+				const on = btn.dataset.settingsCategory === key
+				btn.classList.toggle('active', on)
+				if (on)
+					btn.setAttribute('aria-current', 'true')
+				else
+					btn.removeAttribute('aria-current')
+			}
+			for (const pane of root.querySelectorAll('[data-settings-section]'))
+				pane.hidden = pane.dataset.settingsSection !== key
+		}
+
+		for (const btn of categoryBtns) {
+			btn.addEventListener('click', () => selectCategory(btn.dataset.settingsCategory))
+		}
+
+		/*
+		 * 左栏的上下键在分类间移动，是纵向列表的常规键盘约定。
+		 * 左右键留给将来可能出现的同级分类，现在不占用。
+		 */
+		root.querySelector('.settings-nav')?.addEventListener('keydown', (e) => {
+			if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')
+				return
+			const current = categoryBtns.findIndex(b => b.classList.contains('active'))
+			const step = e.key === 'ArrowDown' ? 1 : -1
+			const next = categoryBtns[(current + step + categoryBtns.length) % categoryBtns.length]
+			next.focus()
+			selectCategory(next.dataset.settingsCategory)
+			e.preventDefault()
+		})
+
+		/* ---------- 控件 ← 存储 ---------- */
+
+		/**
+		 * 把存储里的当前值写回控件。
+		 *
+		 * `null`（未覆盖）时显示 `RANGES[key].fallback`——那个值刻意等于
+		 * CSS 缺省下**实际渲染出来的**结果（见 user-settings.ts 里的注释），
+		 * 所以用户一打开面板看到的就是现状，而不是一个编出来的数字。
+		 */
+		function syncFromStorage() {
+			const settings = readSettings()
+
+			for (const node of root.querySelectorAll('[data-setting]')) {
+				const key = node.dataset.setting
+				if (!RANGE_KEYS.has(key))
+					continue
+				const range = RANGES[key]
+				const text = String(settings[key] ?? range.fallback)
+
+				const input = node.querySelector('[data-slider-input]')
+				if (input)
+					input.value = text
+
+				/*
+				 * `data-value` / `data-initial-value` 落在 **Slider 自己的根元素**
+				 * 上，不是外层包裹 div——`Slider.astro:87-88` 快照的是它自己那份。
+				 * 不同步的话双击会跳回构建期默认值（= 未覆盖），与本面板
+				 * 「双击 = 回到打开面板时的值」的语义冲突。
+				 */
+				const slider = node.querySelector('[data-slider-root]')
+				if (slider) {
+					slider.dataset.value = text
+					slider.dataset.initialValue = text
+				}
+
+				const readout = node.querySelector('[data-slider-value]')
+				if (readout) {
+					readout.textContent = text
+					readout.setAttribute('value', text)
+				}
+			}
+
+			// 选择项（字体、卡片风格）——通用处理，两种共用一套标记
+			for (const wrapper of root.querySelectorAll('[data-choice]')) {
+				const key = wrapper.dataset.choice
+				const value = settings[key]
+				const label = wrapper.querySelector('[data-choice-label]')
+				if (label) {
+					const current = wrapper.querySelector(`[data-choice-option="${CSS.escape(String(value))}"]`)
+					label.textContent = current?.textContent ?? label.textContent
+				}
+				for (const opt of wrapper.querySelectorAll('[data-choice-option]'))
+					opt.classList.toggle('active', opt.dataset.choiceOption === String(value))
+			}
+
+			// 开关（动效、毛玻璃）
+			for (const wrapper of root.querySelectorAll('[data-toggle]')) {
+				const key = wrapper.dataset.toggle
+				const input = wrapper.querySelector('[data-toggle-input]')
+				if (input)
+					input.checked = settings[key] === true
+				wrapper.dataset.checked = String(settings[key] === true)
+			}
+
+			updateHueNote()
+			updateModified()
+		}
+
+		/* ---------- 色相的对比度提示 ---------- */
+
+		const hueNote = root.querySelector('[data-hue-note]')
+		const hueInput = root.querySelector('[data-setting="hue"] [data-slider-input]')
+
+		function updateHueNote() {
+			if (!hueNote)
+				return
+			const hue = Number(hueInput?.value ?? RANGES.hue.fallback)
+			const low = isLowContrastHue(hue)
+			// 深色模式下 `--c-primary` 是 100% 70% 压在 7% 灰底上，全轮都过 3:1
+			const dark = document.documentElement.classList.contains('dark')
+
+			/*
+			 * 这里**只报当前状态，不解释规则**——规则（哪一段会不达标）已经写在
+			 * 左边那行静态说明里了。早先这里同时讲两者，二十来个字折成两行右对齐，
+			 * 把整行撑高一倍，控件和读数被迫跟着一大段文字抢注意力。
+			 */
+			hueNote.textContent = dark
+				? `当前 ${hue}°，深色模式下达标`
+				: low
+					? `当前 ${hue}°，浅色模式下低于 3:1`
+					: `当前 ${hue}°，浅色模式下达标`
+			hueNote.dataset.low = String(low && !dark)
+		}
+
+		// 主题切换会改变哪一段色相不达标，跟着重算
+		document.addEventListener('theme-change', () => updateHueNote())
+
+		/* ---------- 控件 → 存储 ---------- */
+
+		/*
+		 * `Slider.astro` / `Toggle.astro` 都从**根元素**派发冒泡的
+		 * `partial:change`，所以在面板根上一次委托就够，不必逐控件绑定。
+		 * `Dropdown.astro` 那一支不走这条路——它派发的是自己内部的点击，
+		 * 见下面单独绑定的那一段。
+		 *
+		 * 用 `closest('[data-setting]')` 而不是直接读 `e.target.dataset`：
+		 * 事件是从组件自己的根元素（`.z-slider` / `.z-toggle`）派发的，而标记
+		 * 挂在它外面那层包裹 div 上——Astro 组件不吃未声明的属性，只能自己包一层。
+		 */
+		root.addEventListener('partial:change', (e) => {
+			const source = e.target instanceof Element ? e.target.closest('[data-setting], [data-toggle]') : null
+			if (!source)
+				return
+
+			if (source.dataset.setting) {
+				const key = source.dataset.setting
+				if (!RANGE_KEYS.has(key))
+					return
+				setSetting(key, e.detail.value)
+				updateHueNote()
+				updateModified()
+				return
+			}
+
+			const toggleKey = source.dataset.toggle
+			if (toggleKey)
+				setSetting(toggleKey, e.detail.checked === true)
+		})
+
+		// 选择项：Dropdown 的选项点击不派 `partial:change`（组件契约是
+		// 「带 data-dropdown-item 的元素被点就收起面板」），只能单独委托
+		for (const option of root.querySelectorAll('[data-choice-option]')) {
+			option.addEventListener('click', () => {
+				const key = option.closest('[data-choice]')?.dataset.choice
+				if (!key)
+					return
+				setSetting(key, option.dataset.choiceOption)
+				syncFromStorage()
+			})
+		}
+
+		/* ---------- 「已修改 N 项」与恢复默认的可用状态 ---------- */
+
+		const modifiedEl = root.querySelector('[data-settings-modified]')
+		const resetBtn = root.querySelector('[data-settings-reset]')
+		const ioMsg = root.querySelector('[data-io-msg]')
+
+		/**
+		 * 「恢复默认」到底有没有东西可恢复，用户看不见——除非我们告诉他。
+		 * 零项时用 `disabled` 而不是只改颜色：改颜色的话按钮看上去可点，
+		 * 键盘和读屏用户也拿不到「现在按它不会有反应」这个信息。
+		 */
+		function updateModified() {
+			const count = modifiedCount()
+			if (modifiedEl)
+				modifiedEl.textContent = count ? `已修改 ${count} 项` : '尚未修改任何设置'
+			if (resetBtn)
+				resetBtn.disabled = count === 0
+		}
+
+		function say(message: string, tone: 'ok' | 'bad' | '' = '') {
+			if (!ioMsg)
+				return
+			ioMsg.textContent = message
+			ioMsg.dataset.tone = tone
+		}
+
+		/* ---------- 导出 / 导入 ---------- */
+
+		root.querySelector('[data-settings-export]')?.addEventListener('click', () => {
+			const json = exportSettings()
+			// 走 Blob 而不是 data: URL——后者在部分浏览器对大内容会截断
+			const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+			const link = document.createElement('a')
+			link.href = url
+			link.download = 'blog-settings.json'
+			link.click()
+			// 立刻 revoke 会让还没开始下载的 Firefox 拿到空文件
+			setTimeout(() => URL.revokeObjectURL(url), 10_000)
+			say('已导出到下载目录')
+			updateModified()
+		})
+
+		const importInput = root.querySelector('[data-settings-import-file]')
+		const importBtn = root.querySelector('[data-settings-import]')
+
+		importBtn?.addEventListener('click', () => {
+			if (importInput instanceof HTMLInputElement) {
+				importInput.click()
+				// 同一个文件连点两次不触发 change，用完清空以便重选
+				importInput.value = ''
+			}
+		})
+
+		importInput?.addEventListener('change', async () => {
+			if (!(importInput instanceof HTMLInputElement) || !importInput.files?.[0])
+				return
+			try {
+				const result = importSettings(await importInput.files[0].text())
+				if (result.ok) {
+					say(`已导入，${result.modified} 项生效`, 'ok')
+					syncFromStorage()
+				}
+				else {
+					say(`导入失败：${result.error}`, 'bad')
+				}
+			}
+			catch {
+				say('导入失败：读不到这个文件', 'bad')
+			}
+		})
+
+		root.querySelector('[data-settings-reset]')?.addEventListener('click', () => {
+			resetSettings()
+			syncFromStorage()
+			say('已恢复默认')
+		})
+
+		/* ---------- 显隐与层级：只读模态栈 ---------- */
+
+		subscribeModals(() => {
+			const entry = getModalByKey('settings')
+			root.style.setProperty('--modal-duration', `${entry?.duration ?? 200}ms`)
+			root.style.zIndex = String(entry?.zIndex ?? 510)
+			root.toggleAttribute('data-show', Boolean(entry))
+			root.toggleAttribute('data-closing', entry?.status === 'closing')
+			if (entry)
+				syncFromStorage()
+		})
+
+		/*
+		 * 移动端侧边栏本身是 `position: fixed` 的抽屉，而触发按钮就在抽屉里。
+		 * 不收掉它的话，用户关掉面板后会看到一个还开着的侧边栏。
+		 * （背景 `inert` 由 `modal.ts` 的 `syncPageInert()` 统一处理，这里不重复。）
+		 */
+		document.addEventListener('modal:open', (e) => {
+			if (e.detail?.key !== 'settings')
+				closeLayout()
+		})
+	}
+
+	function initAll() {
+		for (const root of document.querySelectorAll('[data-modal="settings"]'))
+			initPanel(root)
+	}
+
+	if (document.readyState === 'loading')
+		document.addEventListener('DOMContentLoaded', initAll)
+	else
+		initAll()
+	document.addEventListener('astro:page-load', initAll)
+</script>
+
+<style>
+.settings-panel {
+	position: fixed;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	padding: 1rem;
+
+	/*
+	 * ⚠️ **这一行不能少**。本元素是常驻 DOM、`inset: 0` 的全屏盒子，
+	 * 而可见性是挂在内层 `.settings-card` 上的——`.settings-panel` 自身没有
+	 * 任何背景，但 div 在 CSS 里**默认就是命中目标**（不像 SVG），
+	 * 于是关闭状态下它照样铺满视口、吃掉整页的点击。
+	 *
+	 * 这个 bug 已经真实发生过一次：功能断言（JS 里的 `el.click()`）全绿，
+	 * 因为 JS 调用绕过命中测试；而真实指针点不动页面上任何东西。
+	 * 判据只能靠真实指针或 `click_if_interactive`，不能靠 `el.click()`。
+	 */
+	pointer-events: none;
+
+	&[data-show] {
+		pointer-events: auto;
+	}
+
+	/* 面板自身的字号不跟随用户的「正文字号」设置——调正文时把面板也放大没有意义 */
+	font-size: 0.9rem;
+}
+
+/*
+ * 卡片的整套外观照抄 `SearchModal.astro` 的 `.blog-search`（站内唯一的浮层卡片）：
+ * 主色描边 + 一圈主色软光晕 + 两层投影。面板必须和搜索弹层读作同一类东西。
+ */
+.settings-card {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	width: min(44rem, 100%);
+	max-height: min(40rem, 100%);
+	border: 1px solid var(--c-primary);
+	border-radius: 1em;
+	outline: 0.2em solid var(--c-primary-soft);
+	box-shadow: var(--box-shadow-2), var(--box-shadow-3);
+	background-color: var(--ld-bg-card);
+
+	opacity: 0;
+	visibility: hidden;
+	transform: translateY(var(--float-distance, 1rem));
+	transition:
+		opacity var(--modal-duration, 200ms) var(--motion-easing, ease-out),
+		transform var(--modal-duration, 200ms) var(--motion-easing, ease-out),
+		visibility var(--modal-duration, 200ms) var(--motion-easing, ease-out);
+}
+
+.settings-panel[data-show]:not([data-closing]) .settings-card {
+	opacity: 1;
+	visibility: visible;
+	transform: none;
+	/* 与搜索弹层同一个入场动画，两者是同一个动作 */
+	animation: float-in var(--motion-duration, 0.3s) var(--motion-easing, ease-out);
+}
+
+.settings-panel[data-closing] .settings-card {
+	transform: translateY(var(--float-distance, 1rem));
+}
+
+/* ---- 标题栏 ---- */
+
+.settings-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 0.6rem 1.4rem;
+	border-bottom: 1px solid var(--c-border);
+
+	h2 {
+		margin: 0;
+		font-family: var(--font-basic);
+		font-size: 1.1em;
+		font-weight: 700;
+		color: var(--c-text);
+	}
+}
+
+.settings-close {
+	padding: 0.3em;
+	border-radius: 0.5em;
+	color: var(--c-text-2);
+	transition: background-color 0.2s, color 0.2s;
+
+	&:hover {
+		background-color: var(--c-bg-soft);
+		color: var(--c-text);
+	}
+}
+
+.settings-close-icon {
+	display: block;
+	width: 1.2em;
+	height: 1.2em;
+}
+
+/* ---- 主体：左分类 + 右设置项 ---- */
+
+.settings-body {
+	display: grid;
+	flex-grow: 1;
+	overflow: hidden;
+	grid-template-columns: 10rem 1fr;
+
+	@media (max-width: 768px) {
+		/* 单列：分类变成顶部横向标签条 */
+		grid-template-columns: 1fr;
+		grid-template-rows: auto 1fr;
+	}
+}
+
+/*
+ * 分类项的几何逐条对应 `BlogSidebar.astro` 的 `.sidebar-nav-item`
+ * （padding .5em 1em、1px transparent 边框、.5em 圆角、hover 与选中态），
+ * 于是面板左栏与侧边栏读作同一种东西。
+ */
+.settings-nav {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2em;
+	overflow-y: auto;
+	padding: 0.6rem;
+	border-inline-end: 1px solid var(--c-border);
+
+	@media (max-width: 768px) {
+		flex-direction: row;
+		overflow-x: auto;
+		overflow-y: hidden;
+		border-inline-end: none;
+		border-block-end: 1px solid var(--c-border);
+	}
+}
+
+.settings-nav-item {
+	display: flex;
+	align-items: center;
+	gap: 0.6em;
+	padding: 0.5em 1em;
+	border: 1px solid transparent;
+	border-radius: 0.5em;
+	text-align: start;
+	color: var(--c-text-2);
+	transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+
+	&:hover {
+		border-color: var(--c-primary);
+		background-color: var(--c-bg-soft);
+		color: var(--c-text);
+	}
+
+	&.active {
+		border-color: var(--c-primary);
+		background-color: var(--c-bg-soft);
+		color: var(--c-text);
+	}
+}
+
+.settings-nav-icon {
+	display: block;
+	flex-shrink: 0;
+	width: 1.2em;
+	height: 1.2em;
+	color: var(--c-primary);
+}
+
+.settings-nav-text {
+	flex-grow: 1;
+	white-space: nowrap;
+}
+
+/* ---- 右栏 ---- */
+
+.settings-pane {
+	overflow-y: auto;
+	padding: 1rem 1.6rem 1.6rem;
+}
+
+.settings-desc {
+	margin: 0 0 0.2rem;
+	color: var(--c-text-3);
+}
+
+/*
+ * 小节标题。字距拉开 + 极淡的字色 + 一条细线，抄 `BlogSidebar.astro` 里
+ * `.sidebar-nav h3` 的排版（见文件头对照表），但压得更轻——
+ * 它是**分组**不是标题，不该跟面板标题争重量。
+ */
+.settings-group-title {
+	margin: 1.4rem 0 0;
+	padding-bottom: 0.5rem;
+	border-bottom: 1px solid var(--c-border);
+	font-family: var(--font-basic);
+	font-size: 0.85em;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	color: var(--c-text-3);
+
+	/* 第一个小节紧跟说明文字，不要再顶一次 */
+	&:first-of-type {
+		margin-top: 0.8rem;
+	}
+}
+
+/*
+ * 一行 = 左边名称（可带说明）、右边控件，中间靠 `1fr auto` 拉开。
+ *
+ * **不再给每行垫软底块**：上一版五块等权重的圆角卡片并排，谁都不突出，
+ * 整屏看起来像一张没排版的表单。换成一条细分隔线，行的节奏由「线」给出，
+ * 眼睛才有地方歇。
+ */
+.settings-row {
+	display: grid;
+	/*
+	 * `minmax(0, 1fr)` 而不是 `1fr`：`1fr` 的最小值是 auto，名称列遇到长说明
+	 * 不会缩，反而把右边的控件挤出容器。`minmax(0, …)` 让它可以一路缩到 0。
+	 *
+	 * **这里刻意不写窄屏媒体查询**：早先为了「控件放不下就折行」加了个
+	 * `max-width: 520px`，`check-breakpoints.mjs` 直接判红——那道门禁存在的
+	 * 理由就是拦住随手新增断点（断点一多，JS 与 CSS 两边的同源关系就没法核了）。
+	 * 而这条例外其实根本不需要：`minmax` 已经让它能收缩，而控件宽度另有
+	 * `min(18rem, 46vw)` 兜着，窄屏下本来就跟着视口缩。
+	 */
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 1.2rem 1.6rem;
+	padding: 0.7rem 0;
+	border-bottom: 1px solid var(--c-border);
+}
+
+.settings-row-main {
+	min-width: 0;
+}
+
+.settings-row-label {
+	display: block;
+	font-family: var(--font-basic);
+	font-size: 1em;
+	color: var(--c-text);
+}
+
+/* 说明挂在名称下面且更淡更小——上一版每行一块卡片配一大段灰字，噪音全来自这里 */
+.settings-hint {
+	margin: 0.2em 0 0;
+	font-size: 0.85em;
+	color: var(--c-text-3);
+}
+
+/* 控件那一格：纵向排（滑块 + 单位 + 对比度提示），并限宽以免被拉成横贯全屏 */
+.settings-control {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 0.3em;
+	min-width: 0;
+}
+
+.settings-control-inner {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	width: min(18rem, 46vw);
+	min-width: 0;
+
+	/* 读数列固定宽度，否则拖动时数字位数一变，滑块就在 784↔80 之间抽动 */
+	--slider-value: 4ch;
+}
+
+/*
+ * `Slider.astro` 的 `.z-slider` 只有 `display: flex`，**没有 `flex-grow`**——
+ * 它设计时被放进一个本来就占满整行的容器里。直接塞进本组件的 flex 容器就会
+ * 按内容宽度收缩，于是滑块只有一百来像素宽。
+ *
+ * 用 `:global()` 而不是本组件的 `.settings-slider`：那个 class 是作为 prop 传给
+ * `Slider` 的，落在**它自己那份 scope** 的根元素上；不加 `:global()` 会要求元素
+ * 同时带两份 scope id 而永不匹配（与 `BlogSidebar.astro:556-568` 同一个坑）。
+ */
+:global(.settings-slider) {
+	flex-grow: 1;
+	min-width: 0;
+}
+
+.settings-unit {
+	color: var(--c-text-2);
+}
+
+.settings-select-trigger {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5em;
+	width: 100%;
+	padding: 0.35em 0.8em;
+	border: 1px solid var(--c-border-strong);
+	border-radius: 0.5em;
+	text-align: start;
+	color: var(--c-text-1);
+	transition: border-color 0.2s;
+
+	&:hover {
+		border-color: var(--c-primary);
+	}
+}
+
+.settings-select-icon {
+	display: block;
+	width: 1em;
+	height: 1em;
+	color: var(--c-text-2);
+}
+
+/* 色相对比度提示：贴在控件下方，是「这一项的近况」而不是又一段说明 */
+.settings-note {
+	max-width: 22rem;
+	margin: 0.2em 0 0;
+	font-size: 0.8em;
+	text-align: end;
+	color: var(--c-text-3);
+
+	&[data-low='true'] {
+		color: var(--c-text-1);
+	}
+}
+
+/*
+ * Slider 的内部节点（`input.input-slider`）带的是 **Slider.astro 自己的**
+ * scope id，不是本组件的——不加 `:global()` 编译出来会要求两个 id 同时存在，
+ * 永不匹配（与 `BlogSidebar.astro:556-568` 记的是同一个坑）。
+ *
+ * ⚠️ 色相轨道的两条背景**只在 Chromium/WebKit 生效**：原生 `<input type=range>`
+ * 在 Firefox 下由 appearance 渲染，不吃 `background-image`（Slider.astro:196
+ * 那条 `@supports (-moz-appearance: auto)` 分支正说明了这一点）。
+ * 所以对比度提示**不能只靠这条轨道**，上面那段文字是等效的第二通道。
+ */
+:global(.settings-slider.setting-hue .input-slider[type='range']) {
+	/*
+	 * 两条渐变叠在一起：底层是色相光谱，顶层把低对比区压暗。
+	 * `--band-*` 的百分比按 thumb 半径折算过——thumb 直径等于 input 高度 1.2em，
+	 * 于是 thumb 中心只走过 `[0.6em, 100% - 0.6em]` 这一段，
+	 * 直接用 `20/360` 会让整个警示区偏移 1.2em。
+	 */
+	--band-start: calc(0.6em + (100% - 1.2em) * 0.055556);
+	--band-end: calc(0.6em + (100% - 1.2em) * 0.569444);
+
+	background-image:
+		linear-gradient(
+			to right,
+			#0009 0 var(--band-start),
+			#0000 var(--band-start) var(--band-end),
+			#0009 var(--band-end) 100%
+		),
+		linear-gradient(
+			to right,
+			hsl(0 100% 70%), hsl(60 100% 70%), hsl(120 100% 70%),
+			hsl(180 100% 70%), hsl(240 100% 70%), hsl(300 100% 70%), hsl(360 100% 70%)
+		);
+}
+
+/* ---- 页脚 ---- */
+
+.settings-foot {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	align-items: center;
+	gap: 0.3em 1em;
+	padding: 0.6rem 1.4rem;
+	border-top: 1px solid var(--c-border);
+}
+
+.settings-io {
+	display: flex;
+	gap: 0.3em;
+	grid-column: 2;
+}
+
+/*
+ * 隐藏的 file input。
+ *
+ * ⚠️ **不能用 `display: none`**：`display:none` 的元素仍然能被 `<label for>`
+ * 触发，但这里我们是用 JS 调 `.click()`，各家浏览器行为不一致
+ * （Firefox 对 display:none 的 input 点击会静默失败）。
+ * 用 `position: absolute` 移出视口 + `opacity: 0`，元素仍在布局与无障碍树里，
+ * `.click()` 一定有效。
+ */
+.settings-file {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+	pointer-events: none;
+}
+
+/* 导入的反馈。空的时候不占位，免得页脚高度随消息出现而跳 */
+.settings-io-msg {
+	grid-column: 1;
+	margin: 0;
+	font-size: 0.8em;
+	color: var(--c-text-3);
+
+	&:empty {
+		display: none;
+	}
+
+	&[data-tone='ok'] {
+		color: var(--c-text-2);
+	}
+
+	&[data-tone='bad'] {
+		color: var(--c-error);
+	}
+}
+
+.settings-modified {
+	grid-column: 1 / -1;
+	margin: 0;
+	font-size: 0.8em;
+	color: var(--c-text-3);
+}
+
+/*
+ * 恢复默认走侧边栏导航项那套形状（透明边框 → hover 出主色描边），
+ * 不用胶囊描边常驻——它是低频操作，不该跟主导航抢视觉重量。
+ */
+.settings-reset {
+	padding: 0.4em 1em;
+	border: 1px solid transparent;
+	border-radius: 0.5em;
+	color: var(--c-text-2);
+	transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+
+	&:hover {
+		border-color: var(--c-primary);
+		background-color: var(--c-bg-soft);
+		color: var(--c-text);
+	}
+
+	/*
+	 * 禁用态必须**同时**去掉 hover 反馈：只降透明度的话鼠标移上去还会
+	 * 出主色描边，看起来像还能按。
+	 */
+	&:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+
+		&:hover {
+			border-color: transparent;
+			background-color: transparent;
+			color: var(--c-text-2);
+		}
+	}
+}
+
+/* ---- 只读信息行（「关于」分类）---- */
+
+/*
+ * 值靠右，与上面的控件列同一条右边界；链接用主色，hover 加下划线——
+ * 只改颜色的话，键盘用户看不出它能点。
+ */
+.settings-info {
+	max-width: 20rem;
+	overflow-wrap: anywhere;
+	text-align: end;
+	color: var(--c-text-1);
+
+	a {
+		color: var(--c-primary);
+		text-decoration: none;
+
+		&:hover {
+			text-decoration: underline;
+		}
+	}
+
+	/* commit 是代码，用等宽字体 + 一层浅底，读起来像「这是个标识符」而不是散文 */
+	code {
+		padding: 0.1em 0.4em;
+		border-radius: 0.3em;
+		background-color: var(--c-bg-2);
+		font-family: var(--font-monospace);
+		font-size: 0.9em;
+		color: var(--c-text-2);
+	}
+}
+</style>

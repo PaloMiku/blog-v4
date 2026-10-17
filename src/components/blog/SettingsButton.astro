@@ -1,0 +1,81 @@
+---
+/**
+ * 设置面板的入口按钮，放在侧边栏页脚里、紧跟 `ThemeToggle` 之后（用户选定「同级」）。
+ *
+ * ## 为什么要做成胶囊而不是一个裸齿轮图标
+ *
+ * 视觉上要与 ThemeToggle 那条胶囊读作同一组控件。为此**完全照抄** ThemeToggle
+ * 的几何（`ThemeToggle.astro:138-165`）：同样的 `display: flex` / `gap: 3px` /
+ * `padding: 2px` / `border: 1px solid var(--c-border-strong)` /
+ * `border-radius: 1rem` / `background-color: var(--c-bg-2)`，按钮同样
+ * `padding: 4px 1rem` + `border-radius: 1rem`。
+ *
+ * 侧边栏的几何门禁是按选择器比对产物与线上基线的（`BlogSidebar.astro:475-500`
+ * 记着每项 8.64px / 图标内缩 1.72px 那一串逐像素对齐的代价）。**新增一段与
+ * 既有盒同形状的代码，比新增一种新形状更容易通过那类门禁**——形状不一致时
+ * 它们不会报错，只会静默地让整块侧栏高度变掉。
+ *
+ * ⚠️ 图标**不要**包一层 `.nav-icon`：页脚那套 `.sidebar-footer menu a .nav-icon`
+ * 规则只作用于社交图标那个 `<menu>` 里的 `<a>`，包进来既匹配不上、
+ * 又会让图标字号脱离 `:where(.iconify)` 的 1.2em 缺省值。直接放裸 `<Icon>`
+ * 才与 ThemeToggle 里那三个按钮完全一致。
+ *
+ * ## 为什么不自己绑定点击
+ *
+ * 按钮只带一个 `data-modal-open="settings"`，真正的打开动作由
+ * `lib/modal.ts` 的 `bindModalGlobals()` 事件委托统一处理（Esc、点遮罩、
+ * 焦点归还、背景 inert 全在那儿）。这里**不得**再绑一份 onclick，
+ * 否则一次点击会被触发两次（`BlogSidebar.astro:341-374` 记的搜索按钮
+ * 「两套并行实现各写各的」是同一族错误）。
+ */
+import Icon from '../Icon.astro'
+---
+
+<div class="settings-button">
+	<button type="button" data-modal-open="settings" aria-label="设置" title="设置">
+		<Icon name="tabler:settings" />
+		<span class="settings-button-text">设置</span>
+	</button>
+</div>
+
+<style>
+/*
+ * 与 `ThemeToggle.astro` 的 `.theme-toggle` 逐项对应，注释见文件头。
+ * `width: fit-content` + `margin: 0 auto` 让它在页脚的居中布局里居中，
+ * 与 ThemeToggle 对齐（同 `BlogSidebar.astro:691-707` 的 `.sidebar-footer` 规则）。
+ */
+.settings-button {
+	display: flex;
+	gap: 3px;
+	width: fit-content;
+	margin: 0 auto;
+	padding: 2px;
+	border: 1px solid var(--c-border-strong);
+	border-radius: 1rem;
+	background-color: var(--c-bg-2);
+
+	> button {
+		display: flex;
+		align-items: center;
+		gap: 0.4em;
+		padding: 4px 1rem;
+		border-radius: 1rem;
+		color: var(--c-text-1);
+		transition: all 0.1s;
+
+		&:hover {
+			background-color: var(--c-bg-soft);
+			color: var(--c-text);
+		}
+	}
+}
+
+.settings-button-text {
+	/*
+	 * `ThemeToggle` 那三个按钮只有图标，没有文字。给按钮加文字会改变它的
+	 * 固有宽度，进而改变页脚高度——这属于**预期内**的尺寸变化，
+	 * 门禁若因此报几何差异，要拿这条注释当依据去谈，而不是默默改期望值。
+	 */
+	white-space: nowrap;
+}
+</style>

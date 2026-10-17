@@ -8,6 +8,31 @@
 	@media (max-resolution: 1.2dppx) {
 		--font-basic: "InterVariable", system-ui, sans-serif;
 	}
+
+	/*
+	 * 正文字体（访客可在设置面板里改，见 `src/lib/user-settings.ts`）。
+	 *
+	 * **不要**让面板去改 `--font-basic`：那个被 `main.css` 的 body、侧边栏、
+	 * 按钮、表单一起用，改它等于把全站连同那些逐像素对齐过的布局一起改掉。
+	 *
+	 * 默认写成 `var(--font-basic)` 而不是拷贝一份字体栈：var() 引用在**使用时**
+	 * 才解析，上面那个 max-resolution 媒体查询覆盖 `--font-basic` 时，
+	 * 正文会自动跟着变；拷贝就断了。
+	 */
+	--font-article: var(--font-basic);
+}
+
+/*
+ * 枚举项走 data 属性而非 inline style（与数值项的分工见 user-settings.ts）。
+ * `html[data-font=…]` 的特异性 (0,1,1) 高于 `:root` 的 (0,1,0)，稳定压过上面的
+ * 缺省值。
+ */
+html[data-font="serif"] {
+	--font-article: var(--font-serif);
+}
+
+html[data-font="creative"] {
+	--font-article: var(--font-creative);
 }
 
 /* eslint-disable css/no-invalid-at-rules -- CSS Fonts 的 @styleset 暂未被检查器识别 */

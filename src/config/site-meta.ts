@@ -33,3 +33,19 @@ export const themeVersion = '3.8.0'
  * 但它已经在生产产物里，属于既有行为，本次迁移只搬运不修正。
  */
 export const themeHomepage = 'https://blog.sotkg.com'
+
+/**
+ * 备案信息。
+ *
+ * **原先它只是个字符串字面量，孤零零写在 `app-config.ts` 的页脚导航里**，
+ * 于是「关于」面板要显示它时只能再抄一份——两份迟早会漂。
+ * 提到这里是因为本文件的职责就是「站点/主题的标识信息」，
+ * 页脚那条链接改为引用本常量，值逐字不变。
+ */
+export const icp = {
+	number: '鲁ICP备2024102866号-2',
+	url: 'https://beian.miit.gov.cn/',
+} as const
+
+/** 部署平台。`edgeone.json`（仓库根）是它的配置文件 */
+export const deployPlatform = 'EdgeOne Pages'

@@ -1,6 +1,40 @@
+/*
+ * 访客可调的排版变量的**缺省值**（面板见 `src/components/blog/SettingsPanel.astro`，
+ * 写入与取值见 `src/lib/user-settings.ts`）。
+ *
+ * ## 为什么缺省值必须声明在 `:root`，不能声明在各个消费处
+ *
+ * 设置是写在 `<html>` 的 inline style 上的。若某个消费方（比如 `#blog-root`）
+ * 在**自己身上**再声明一次同名的缺省值，那份声明会盖住从 `<html>` 继承下来的
+ * 用户值——用户拖了滑块而布局纹丝不动，且**不报任何错**。
+ * 「声明一次、在别处消费」是这里唯一安全的形状。
+ *
+ * ## 为什么这些值等于「什么都不设」
+ *
+ * - `--font-size-article: 1em` —— `:root` 与 `body` 都没设 font-size
+ *   （`main.css:1-26` 逐条核过），`.article` 继承的就是浏览器默认的 16px。
+ * - `--line-height-article: 1.8` —— 就是原来那个硬编码的行高。
+ * - `--font-article` 不在这里声明，它在 `font.css`（紧挨着字体栈）。
+ * - `--article-width: 784px` —— 实测值，见 `Blog.astro` 里 `#blog-root` 那条注释。
+ */
+:root {
+	--font-size-article: 1em;
+	--line-height-article: 1.8;
+	--article-width: 784px;
+}
+
 .article {
+	/*
+	 * ⚠️ 下面 `> :where(h1,…,h6)` 那条规则显式写了 `font-family: var(--font-basic)`，
+	 * 所以**换正文字体不影响文章内的标题**——这是有意的（用户只要「段落」），
+	 * 不是漏写；但那条规则同时没有 font-size，标题用的是 UA 默认的 em 相对值，
+	 * 所以**调字号会连带把标题一起缩放**。
+	 */
 	margin: 1rem;
-	line-height: 1.8;
+	font-family: var(--font-article);
+	font-size: var(--font-size-article);
+
+	line-height: var(--line-height-article);
 
 	p {
 		margin: 0.5em 0;

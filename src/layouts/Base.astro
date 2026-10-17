@@ -339,6 +339,66 @@ const jsonLdText = JSON.stringify({ '@context': 'https://schema.org', '@graph': 
 		</script>
 
 		<!--
+			访客本地设置的防闪烁应用（正文字体 / 字号 / 行高 / 内容区宽度 / 强调色，
+			以及卡片风格 / 界面动效 / 毛玻璃三个全站开关）。
+
+			为什么必须是**内联且同步**的，理由与上面那段 color-mode 完全一样：
+			Astro 会把普通 `<script>` 改写成 module（见 :237 的注释），module 是
+			defer 的，等它跑起来样式早就生效了，用户会看到一帧默认配色再跳过去。
+			代价是这里**不能 import** `src/lib/user-settings.ts`，于是下面这段是它的
+			运行时等价物——存储键、变量名、取值方式三处必须逐字对齐，改动时两侧一起改。
+			⚠️ **加任何一项设置都要回来改这里**，否则那一项在刷新后不生效，
+			而在面板里改的时候又看着正常——这种「只在刷新后失效」的 bug 最难查。
+
+			整个 IIFE 包在 try/catch 里：隐私模式下 localStorage 会抛
+			（同 `ThemeToggle.astro:62-68` 记录过的），一段抛异常的 head 脚本
+			会让后面的脚本跟着一起不执行。
+		-->
+		<script is:inline>
+			(() => {
+				try {
+					const raw = localStorage.getItem('blog-v4:user-settings')
+					if (!raw)
+						return
+					const s = JSON.parse(raw)
+					if (!s || typeof s !== 'object')
+						return
+					const root = document.documentElement
+
+					// ── 数值项：写 inline style（对应 user-settings.ts 的 CSS_VARS）
+					if (typeof s.fontSize === 'number')
+						root.style.setProperty('--font-size-article', `${s.fontSize}px`)
+					if (typeof s.lineHeight === 'number')
+						root.style.setProperty('--line-height-article', String(s.lineHeight))
+					if (typeof s.articleWidth === 'number')
+						root.style.setProperty('--article-width', `${s.articleWidth}px`)
+					if (typeof s.hue === 'number')
+						root.style.setProperty('--hue-theme', `${s.hue}deg`)
+
+					// ── 枚举与开关：写 data 属性（对应 user-settings.ts 的 DATA_ATTRS）
+					//
+					// 「等于默认值」一律**不写**这个属性，让 CSS 的无属性状态接管——
+					// 与数值项 `null` 时 removeProperty 是同一个道理。
+
+					// 'basic' 与缺省等价，让 font.css 的 :root 兜底接管
+					if (s.font === 'serif' || s.font === 'creative')
+						root.dataset.font = s.font
+					// 'card' 与缺省等价，让 user-prefs.css 的无属性状态接管
+					if (s.cardStyle === 'flat')
+						root.dataset.card = 'flat'
+					// 两个开关都是「true 即缺省」，只有 false 才写 'off'
+					if (s.motion === false)
+						root.dataset.motion = 'off'
+					if (s.blur === false)
+						root.dataset.blur = 'off'
+				}
+				catch {
+					// 隐私模式或存储里的值被改坏：静默退回全部默认，不阻断后续脚本
+				}
+			})()
+		</script>
+
+		<!--
 			anti-mirror：源项目 modules/anti-mirror 往 head 注入的内联脚本，逻辑与框架无关，原样照搬。
 			黑名单来自该模块内的局部常量（未导出），同步到此处时需一并维护。
 		-->

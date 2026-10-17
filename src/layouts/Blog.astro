@@ -213,7 +213,21 @@ const {
 		column-gap: 1rem;
 		width: 100%;
 		min-width: 0;
-		max-width: calc(var(--aside-width) + 1rem + 1080px);
+
+		/*
+		 * 外壳总宽 = 侧边栏 + 正文列 + 右侧栏 + 两个列隙。
+		 *
+		 * 原本写死的是 `calc(var(--aside-width) + 1rem + 1080px)`，那个 "1080px"
+		 * 是**外壳总预算**而不是正文列宽：1376 − 280 − 280 − 32 = **784px**，
+		 * 也就是正文列的真实宽度（1440px 视口下 CDP 实测）。
+		 *
+		 * 改成跟着 `--article-width` 走，是因为访客要在设置面板里调正文宽度——
+		 * 只在 `#main-content` 上加 `max-width` 的话**只能变窄不能变宽**：
+		 * 外壳本身卡在 1376，多出来的宽度无处可去。
+		 * 缺省 `784px`（声明在 `article.css` 的 `:root`）代回上式
+		 * `280 + 784 + 280 + 32 = 1376`，与原值逐位相同，现状零变化。
+		 */
+		max-width: calc(var(--sidebar-width) + var(--article-width) + var(--aside-width) + 2rem);
 		margin-inline: auto;
 
 		&:not(:has(> .blog-aside-track > :global(#blog-aside):not(.is-empty))) {
@@ -253,6 +267,27 @@ const {
 		grid-area: 1 / 2;
 		/* 保留语义 main 和可见溢出，不影响正文内的 sticky 元素。 */
 		min-width: 0;
+
+		/*
+		 * 内容区阅读宽度（访客可在设置面板里调，见 `src/lib/user-settings.ts`）。
+		 *
+		 * **绝不改 `--sidebar-width` / `--aside-width`**：那两者一动，侧边栏内部
+		 * 那些已经逐像素对齐过的排版就全乱了（见 `BlogSidebar.astro` 里关于
+		 * 每项 8.64px / 1.72px 对齐的注释）。给中间这列加 max-width 并居中，
+		 * 是唯一影响面局限在正文内的做法。
+		 *
+		 * 变宽靠的是上一条 `#blog-root` 的 `max-width` 跟着一起放宽；
+		 * 这一条只负责「变窄时居中留白」。
+		 *
+		 * `min-width: 769px` 而非 `not (max-width: 768px)`：用户明确要求
+		 * 窄屏不生效——单列布局下正文本来就该撑满。断点值与
+		 * `LAYOUT_BREAKPOINTS.sidebar` 同源，`scripts/check-breakpoints.mjs`
+		 * 盯着这两处不要漂移。
+		 */
+		@media (min-width: 769px) {
+			max-width: var(--article-width);
+			margin-inline: auto;
+		}
 
 		@media (max-width: 768px) {
 			grid-column: 1;

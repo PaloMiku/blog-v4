@@ -1,0 +1,106 @@
+/**
+ * 访客本地偏好里「**全站级**开关」的 CSS 侧。
+ *
+ * 与 `src/lib/user-settings.ts` 是一对：那边把值写到 `<html>` 的 data 属性上，
+ * 这边消费它们。
+ *
+ * ## 为什么单独一个文件，而不是塞进某个组件的 `<style>`
+ *
+ * 正文排版那几项（字体 / 字号 / 行高 / 宽度）挂在 `.article` 上，是组件自己的
+ * 样式。但下面三个开关影响**整站**——侧边栏、右侧栏、模态遮罩、卡片全都要变。
+ * Astro 的 `<style>` 是 scoped 的，写在设置面板里只会命中面板自己的元素，
+ * 一个都作用不到。必须进全局层。
+ *
+ * ## 为什么排在 index.css 的最后
+ *
+ * 动效那条用了 `!important` 的通配规则，毛玻璃那条同理——它们必须压过
+ * 组件自己写的 `transition: all 0.2s` 与 `backdrop-filter: blur(0.5rem)`。
+ * 放在最后是第二重保险。
+ *
+ * ## 与 reduced-motion 的关系
+ *
+ * `animation.css` 里已经有 `@media (prefers-reduced-motion: reduce)` 的兜底，
+ * 面向「系统层面要求减少动效」的用户。本文件里的 `data-motion='off'` 面向
+ * 「本人不想动」的用户。两条并存、互不覆盖：系统开了它就生效，用户也可以
+ * 在此基础上自己再关（实际上关的本来就是同一件事，所以是幂等的）。
+ */
+
+/*
+ * ── 界面动效 ─────────────────────────────────────────────────────────────
+ *
+ * 做法是「把时长归零」而不是「把元素删掉」：`visibility` / `opacity` 这类
+ * 靠 transition 切换的显隐在 0s 下变成瞬时切换，正是 reduced-motion 该有的样子。
+ *
+ * 用 `0s` 而不是常见的 `0.01ms`：后者是为了让 `animationend` 仍能触发
+ * （某些 JS 靠它收尾）。这个仓库里等价的收尾用的是 `setTimeout` 对齐 CSS 时长
+ * （见 `BlogSidebar.astro` 的 `setCollapsed`），时长归零后超时只是提前到 0，
+ * 不影响正确性。
+ *
+ * ⚠️ **面板自己的开合动画也会一并归零**——这是**预期行为**：关掉动效之后
+ * 面板就该直接出现，而不是「瞬移到位置上」。这不是缺陷。
+ *
+ * 顺带把 `scroll-behavior` 也关掉：平滑滚动在长页面上本身就是一种动效。
+ */
+html[data-motion="off"] {
+	--motion-duration: 0s;
+	--motion-fade-duration: 0s;
+	--motion-exit-duration: 0s;
+	--motion-delay: 0s;
+
+	scroll-behavior: auto;
+}
+
+html[data-motion="off"] *,
+html[data-motion="off"] *::before,
+html[data-motion="off"] *::after {
+	transition-duration: 0s !important;
+	animation-delay: 0s !important;
+	animation-duration: 0s !important;
+}
+
+/*
+ * ── 毛玻璃 ───────────────────────────────────────────────────────────────
+ *
+ * 两件事必须一起做，只做一件会「关出洞来」：
+ *
+ * 1. 把 `backdrop-filter` 关掉——否则底下的内容还是被模糊的，
+ *    只是不再有折射质感，看着像一张脏玻璃。
+ * 2. 把承载模糊层的**底色换成不透明**——`--ld-bg-blur` 在浅色下是
+ *    `--c-bg-1`（本来就 98% 不透明），但在**深色**下是 `--c-bg-a80`
+ *    （80% 透明），只关模糊的话深色模式会露出底下的滚动内容。
+ *    改成 `--c-bg-1` 后两套都是完全不透明。
+ *
+ * `html[data-motion='off']` 那条的特异性是 (0,1,1)，高于 `color.css` 里
+ * `:root, .light` 与 `.dark` 的 (0,1,0)，稳压。
+ *
+ * ⚠️ `Mask.astro` 把 `--bdfilter` 写在**行内样式**上（值由 props 现算），
+ * 所以只覆盖那个变量是压不住它的——真正起作用的是下面这条
+ * `backdrop-filter: none !important` 的通配规则。
+ */
+html[data-blur="off"] {
+	--ld-bg-blur: var(--c-bg-1);
+}
+
+html[data-blur="off"] *,
+html[data-blur="off"] *::before,
+html[data-blur="off"] *::after {
+	-webkit-backdrop-filter: none !important;
+	backdrop-filter: none !important;
+}
+
+/*
+ * ── 卡片风格：扁平 ────────────────────────────────────────────────────────
+ *
+ * 复用 `reusable.css` 里已有的 `.card--flat`（`box-shadow: none`）那套概念，
+ * 只是不给每个卡片加类，而是从 `<html>` 一次性压掉——加类是**作者**逐个加的，
+ * 这里是从**令牌**层收口的，改主题时不会漏掉一半。
+ *
+ * 特异性 (0,2,1) 高于 `.card` 自己的 (0,1,0)。
+ *
+ * ⚠️ **刻意只压 `.card`**，不去覆盖 `--box-shadow-1/2/3` 这三个令牌本身：
+ * 那三个还支撑着设置面板自己、模态弹层、遮罩的层次感，一并压平会让
+ * 浮层「贴」在页面上找不到边界。
+ */
+html[data-card="flat"] .card {
+	box-shadow: none;
+}

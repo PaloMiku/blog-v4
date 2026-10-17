@@ -24,7 +24,7 @@
 // title / subtitle 与 Nuxt 侧一致，来自根 blog.config（Nuxt 侧是 `...blogConfig` 展开进来的）
 import { Temporal } from 'temporal-polyfill'
 import blogConfig from '../config/blog'
-import { themeVersion } from '../config/site-meta'
+import { icp, themeVersion } from '../config/site-meta'
 
 /** 导航项，与 Nuxt 侧 `app/types/nav.ts` 的 NavItem 同构 */
 export interface NavItem {
@@ -139,7 +139,7 @@ export const appConfig = {
 				items: [
 					{ icon: 'simple-icons:nuxtdotjs', text: `主题: Clarity ${themeVersion}`, url: 'https://github.com/L33Z22L11/blog-v3' },
 					{ icon: 'tabler:color-swatch', text: '主题和组件文档', url: '/previews/example' },
-					{ icon: 'tabler:certificate', text: '鲁ICP备2024102866号-2', url: 'https://beian.miit.gov.cn/' },
+					{ icon: 'tabler:certificate', text: icp.number, url: icp.url },
 				],
 			},
 		] satisfies Nav,
